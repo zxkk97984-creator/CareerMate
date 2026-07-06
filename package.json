@@ -1,0 +1,45 @@
+{
+  "name": "careermate",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint . --max-warnings=0",
+    "typecheck": "next typegen && tsc --noEmit",
+    "prisma:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "seed": "tsx prisma/seed.ts",
+    "secret:scan": "node scripts/secret-scan.mjs"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.14.0",
+    "bcryptjs": "^3.0.2",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.468.0",
+    "next": "^16.2.10",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "recharts": "^3.1.2",
+    "tailwind-merge": "^2.5.5",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.1",
+    "@tailwindcss/postcss": "^4.1.12",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^22.13.14",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "eslint": "^9.35.0",
+    "eslint-config-next": "^16.2.10",
+    "prisma": "^6.14.0",
+    "tailwindcss": "^4.1.12",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  }
+}

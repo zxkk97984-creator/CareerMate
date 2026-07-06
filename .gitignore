@@ -1,0 +1,68 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Next.js build output
+.next/
+out/
+
+# Environment files - contains secrets NEVER commit these.
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+!.env.example
+
+# Database and generated local state
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+prisma/dev.db
+prisma/dev.db-journal
+
+# Local generated exports/uploads/screenshots
+exports/
+uploads/
+screenshots/
+private/
+local/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# Testing
+coverage/
+.nyc_output/
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Deployment and certificates
+.vercel/
+*.pem
+
+# Sensitive files
+**/secrets.*
+**/credentials.*
+**/api-key*
+**/*token*
+**/*Token*
