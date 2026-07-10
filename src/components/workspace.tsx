@@ -1104,34 +1104,64 @@ function AdminView({
   refresh: () => Promise<void>;
   setNotice: (value: string) => void;
 }) {
+  const [roleName, setRoleName] = useState("AI 运营分析助理");
+  const [category, setCategory] = useState("AI/运营/数据交叉");
+  const [sourceNotes, setSourceNotes] = useState("管理员整理的公开岗位信息\n脱敏岗位访谈记录");
+
   async function createDraft() {
-    await api("/api/admin/role-drafts", { method: "POST" });
-    setNotice("已生成一个岗位草稿，等待审核。");
+    const response = await api("/api/admin/role-drafts/generate", { method: "POST", body: JSON.stringify({ roleName, category, sourceNotes }) });
+    if (!response.ok) return setNotice(response.error?.message ?? "岗位草稿生成失败。");
+    setNotice("岗位草稿已生成并通过结构校验，等待审核。");
     await refresh();
   }
 
   async function review(id: string, action: "approve" | "reject") {
-    await api("/api/admin/role-drafts", { method: "PATCH", body: JSON.stringify({ id, action }) });
+    const reason = action === "reject" ? window.prompt("请输入拒绝原因")?.trim() : "";
+    if (action === "reject" && !reason) return;
+    const response = await api(`/api/admin/role-drafts/${id}/${action}`, { method: "POST", body: action === "reject" ? JSON.stringify({ reason }) : undefined });
+    if (!response.ok) return setNotice(response.error?.message ?? "岗位草稿审核失败。");
     setNotice(action === "approve" ? "岗位草稿已入库。" : "岗位草稿已拒绝。");
     await refresh();
+  }
+
+  async function editDraft(draft: any) {
+    const content = typeof draft.content === "string" ? JSON.parse(draft.content) : draft.content;
+    const nextName = window.prompt("岗位名称", draft.roleName)?.trim();
+    const nextCategory = window.prompt("岗位分类", draft.category)?.trim();
+    const nextSources = window.prompt("来源（每行一条）", (content.sources ?? []).join("\n"))?.split(/\r?\n/).map((item: string) => item.trim()).filter(Boolean);
+    if (!nextName || !nextCategory || !nextSources?.length) return;
+    const response = await api(`/api/admin/role-drafts/${draft.id}`, { method: "PATCH", body: JSON.stringify({ roleName: nextName, category: nextCategory, content: { ...content, sources: nextSources } }) });
+    if (!response.ok) return setNotice(response.error?.message ?? "岗位草稿编辑失败。");
+    setNotice("岗位草稿已编辑并重新校验。"); await refresh();
   }
 
   return (
     <div className="space-y-5">
       <Panel title="岗位草稿审核" action={<Button onClick={createDraft}>生成草稿</Button>}>
+        <div className="mb-5 grid gap-3 md:grid-cols-3">
+          <input aria-label="岗位名称" className="h-10 rounded-md border border-slate-200 px-3 text-sm" value={roleName} onChange={(event) => setRoleName(event.target.value)} />
+          <input aria-label="岗位分类" className="h-10 rounded-md border border-slate-200 px-3 text-sm" value={category} onChange={(event) => setCategory(event.target.value)} />
+          <textarea aria-label="岗位来源" className="min-h-20 rounded-md border border-slate-200 p-3 text-sm" value={sourceNotes} onChange={(event) => setSourceNotes(event.target.value)} />
+        </div>
         <div className="space-y-3">
-          {drafts.map((draft) => (
+          {drafts.map((draft) => {
+            const content = typeof draft.content === "string" ? JSON.parse(draft.content) : draft.content;
+            const valid = Array.isArray(content.sources) && content.sources.length > 0 && Array.isArray(content.entryRequirements);
+            return (
             <div key={draft.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-slate-200 p-4">
               <div>
                 <div className="font-semibold text-slate-950">{draft.roleName}</div>
                 <div className="mt-1 text-sm text-slate-500">{draft.category} · {draft.status}</div>
+                <div className={`mt-1 text-xs ${valid ? "text-emerald-700" : "text-rose-700"}`}>结构校验：{valid ? "通过" : "失败"} · 来源：{(content.sources ?? []).join("、") || "缺失"}</div>
+                {draft.reviewNote ? <div className="mt-1 text-xs text-slate-500">审核说明：{draft.reviewNote}</div> : null}
               </div>
               <div className="flex gap-2">
-                <Button disabled={draft.status !== "pending"} onClick={() => review(draft.id, "approve")}>通过</Button>
+                <Button variant="secondary" disabled={draft.status !== "pending"} onClick={() => editDraft(draft)}>编辑</Button>
+                <Button disabled={draft.status !== "pending" || !valid} onClick={() => review(draft.id, "approve")}>通过</Button>
                 <Button variant="secondary" disabled={draft.status !== "pending"} onClick={() => review(draft.id, "reject")}>拒绝</Button>
               </div>
             </div>
-          ))}
+          )})}
         </div>
       </Panel>
       <Panel title="正式岗位库">
