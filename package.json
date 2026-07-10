@@ -8,8 +8,13 @@
     "start": "next start",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "next typegen && tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "verify": "npm run secret:scan && npm run lint && npm run typecheck && npm run test && npm run build",
     "prisma:generate": "prisma generate",
-    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:migrate:baseline": "prisma migrate resolve --applied 20260710000000_baseline",
     "seed": "tsx prisma/seed.ts",
     "secret:scan": "node scripts/secret-scan.mjs"
   },
@@ -37,7 +42,8 @@
     "prisma": "^6.14.0",
     "tailwindcss": "^4.1.12",
     "tsx": "^4.20.5",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.6"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

@@ -288,6 +288,7 @@ async function main() {
         profile: {
           create: {
             ...item.profile,
+            onboardingCompleted: true,
             learningPreference: stringify(item.profile.learningPreference),
             interestTags: stringify(item.profile.interestTags),
             constraints: stringify(item.profile.constraints),
