@@ -6,6 +6,12 @@ import { BriefcaseBusiness, Lock, UserRound } from "lucide-react";
 
 type Mode = "login" | "register";
 
+type AuthPayload = {
+  ok: boolean;
+  data?: { nextPath?: string };
+  error?: { message?: string };
+};
+
 export function LoginForm() {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("login");
@@ -18,20 +24,36 @@ export function LoginForm() {
   async function submit() {
     setLoading(true);
     setError("");
-    const endpoint = mode === "login" ? "/api/auth/login" : "/api/auth/register";
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(mode === "login" ? { username, password } : { username, displayName, password }),
-    });
-    const payload = await response.json();
-    setLoading(false);
-    if (!payload.ok) {
-      setError(payload.error?.message ?? "操作失败");
-      return;
+    const unavailableMessage = mode === "login" ? "登录服务暂时不可用，请稍后重试" : "注册服务暂时不可用，请稍后重试";
+
+    try {
+      const endpoint = mode === "login" ? "/api/auth/login" : "/api/auth/register";
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(mode === "login" ? { username, password } : { username, displayName, password }),
+      });
+      const rawPayload = await response.text();
+      if (!rawPayload) throw new Error(unavailableMessage);
+
+      let payload: AuthPayload;
+      try {
+        payload = JSON.parse(rawPayload) as AuthPayload;
+      } catch {
+        throw new Error(unavailableMessage);
+      }
+
+      if (!payload.ok) {
+        setError(payload.error?.message ?? "操作失败");
+        return;
+      }
+      router.push(payload.data?.nextPath ?? (mode === "register" ? "/onboarding" : "/dashboard"));
+      router.refresh();
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : unavailableMessage);
+    } finally {
+      setLoading(false);
     }
-    router.push(payload.data?.nextPath ?? (mode === "register" ? "/onboarding" : "/dashboard"));
-    router.refresh();
   }
 
   return (

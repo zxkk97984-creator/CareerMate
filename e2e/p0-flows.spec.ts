@@ -8,6 +8,16 @@ async function login(page: import("@playwright/test").Page, username = "student_
   await expect(page).toHaveURL(/\/dashboard/);
 }
 
+test("login recovers when the server returns an empty error response", async ({ page }) => {
+  await page.route("**/api/auth/login", async (route) => {
+    await route.fulfill({ status: 500, body: "" });
+  });
+  await page.goto("/login");
+  await page.getByRole("button", { name: "进入 CareerMate" }).click();
+  await expect(page.getByText("登录服务暂时不可用，请稍后重试")).toBeVisible();
+  await expect(page.getByRole("button", { name: "进入 CareerMate" })).toBeEnabled();
+});
+
 test("user completes a three-round simulation and receives one candidate", async ({ page }) => {
   await login(page);
   await page.getByRole("link", { name: "模拟训练" }).click();
