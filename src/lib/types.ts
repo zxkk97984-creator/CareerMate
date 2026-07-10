@@ -68,6 +68,45 @@ export interface CareerPlanDto {
   assumptions: string[];
   riskNotes: string[];
   createdAt: string;
+  updatedAt: string;
+}
+
+export const taskStatuses = ["not_started", "in_progress", "done", "delayed"] as const;
+export type TaskStatus = (typeof taskStatuses)[number];
+
+export interface PlanTask {
+  id: string;
+  title: string;
+  type: string;
+  status: TaskStatus;
+  dueWeek?: number;
+}
+
+export interface PlanMonth {
+  monthIndex: number;
+  goal: string;
+  learningTasks: PlanTask[];
+  practiceOutputs: string[];
+  evaluationMetrics: string[];
+}
+
+export const supportedRoleKeys = ["ai_product_manager", "data_analyst", "aigc_operator"] as const;
+export type SupportedRoleKey = (typeof supportedRoleKeys)[number];
+
+export const resourceTypes = ["course", "practice", "project", "template"] as const;
+export type ResourceType = (typeof resourceTypes)[number];
+
+export interface ResourceItemDto {
+  id: string;
+  title: string;
+  type: string;
+  roleKey: string;
+  abilityKey: string;
+  stage: string;
+  source: string;
+  url?: string | null;
+  estimatedHours?: number | null;
+  description: string;
 }
 
 export interface CandidateDto {

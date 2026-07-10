@@ -62,6 +62,7 @@ export function planDto(plan: {
   assumptions: string;
   riskNotes: string;
   createdAt: Date;
+  updatedAt: Date;
 }): CareerPlanDto {
   return {
     id: plan.id,
@@ -75,6 +76,7 @@ export function planDto(plan: {
     assumptions: parseJson<string[]>(plan.assumptions, []),
     riskNotes: parseJson<string[]>(plan.riskNotes, []),
     createdAt: plan.createdAt.toISOString(),
+    updatedAt: plan.updatedAt.toISOString(),
   };
 }
 

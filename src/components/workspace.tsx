@@ -28,7 +28,21 @@ import {
   type ActiveOnboardingConversation,
 } from "@/lib/onboarding-resume";
 import { consumeFrontendSseResponse } from "@/lib/tbox/frontend-sse";
-import { abilityKeys, abilityLabels, type AiExecutionMeta, type ProfileDto } from "@/lib/types";
+import { groupPlanTimeline } from "@/lib/path";
+import { filterResources } from "@/lib/resources";
+import {
+  abilityKeys,
+  abilityLabels,
+  resourceTypes,
+  supportedRoleKeys,
+  taskStatuses,
+  type AiExecutionMeta,
+  type CareerPlanDto,
+  type PlanMonth,
+  type ProfileDto,
+  type ResourceItemDto,
+  type TaskStatus,
+} from "@/lib/types";
 
 type View = "onboarding" | "dashboard" | "path" | "simulation" | "resources" | "memory" | "chat" | "admin";
 
@@ -56,8 +70,9 @@ interface ProgressLogData {
 interface WorkspaceData {
   user: { id: string; displayName: string; username: string; role: string } | null;
   profile: ProfileDto | null;
-  plan: any | null;
-  resources: any[];
+  plan: CareerPlanDto | null;
+  planExecutionMeta: AiExecutionMeta | null;
+  resources: ResourceItemDto[];
   memories: any[];
   candidates: any[];
   simulations: any[];
@@ -176,6 +191,7 @@ export function Workspace({ initialView }: { initialView: View }) {
     user: null,
     profile: null,
     plan: null,
+    planExecutionMeta: null,
     resources: [],
     memories: [],
     candidates: [],
@@ -223,8 +239,8 @@ export function Workspace({ initialView }: { initialView: View }) {
       return;
     }
     const [plan, resources, memories, candidates, simulations, admin] = await Promise.all([
-      api<{ plan: any | null }>("/api/plans/current"),
-      api<{ items: any[] }>("/api/resources"),
+      api<{ plan: CareerPlanDto | null; executionMeta: AiExecutionMeta | null }>("/api/plans/current"),
+      api<{ items: ResourceItemDto[] }>("/api/resources"),
       api<{ items: any[] }>("/api/memories"),
       api<{ items: any[] }>("/api/profile/candidates"),
       api<{ items: any[] }>("/api/simulations"),
@@ -234,6 +250,7 @@ export function Workspace({ initialView }: { initialView: View }) {
       user: me.data.user,
       profile: me.data.profile,
       plan: plan.ok ? plan.data.plan : null,
+      planExecutionMeta: plan.ok ? plan.data.executionMeta : null,
       resources: resources.ok ? resources.data.items : [],
       memories: memories.ok ? memories.data.items : [],
       candidates: candidates.ok ? candidates.data.items : [],
@@ -332,9 +349,9 @@ export function Workspace({ initialView }: { initialView: View }) {
                   activeConversation={data.activeOnboardingConversation}
                 />
               )}
-              {activeView === "path" && <PathView plan={data.plan} refresh={loadAll} setNotice={setNotice} />}
+              {activeView === "path" && <PathView plan={data.plan} executionMeta={data.planExecutionMeta} refresh={loadAll} setNotice={setNotice} />}
               {activeView === "simulation" && <SimulationView simulations={data.simulations} refresh={loadAll} setNotice={setNotice} />}
-              {activeView === "resources" && <ResourceView resources={data.resources} profile={data.profile} />}
+              {activeView === "resources" && <ResourceView resources={data.resources} profile={data.profile} weakAbilities={data.match?.weakAbilities ?? []} />}
               {activeView === "memory" && <MemoryView memories={data.memories} candidates={data.candidates} refresh={loadAll} setNotice={setNotice} />}
               {activeView === "chat" && <ChatView setNotice={setNotice} />}
               {activeView === "admin" && <AdminView drafts={data.drafts} templates={data.templates} refresh={loadAll} setNotice={setNotice} />}
@@ -349,7 +366,7 @@ export function Workspace({ initialView }: { initialView: View }) {
 
 function Dashboard({ data, refresh, setNotice }: { data: WorkspaceData; refresh: () => Promise<void>; setNotice: (value: string) => void }) {
   const radar = abilityKeys.map((key) => ({ ability: abilityLabels[key], score: data.profile?.abilityScores[key] ?? 0 }));
-  const currentMonth = data.plan?.months?.[Math.max((data.plan?.currentMonthIndex ?? 1) - 1, 0)];
+  const currentMonth = (data.plan?.months?.[Math.max((data.plan?.currentMonthIndex ?? 1) - 1, 0)] ?? null) as PlanMonth | null;
 
   async function generatePlan() {
     setNotice("正在生成 3 年路径...");
@@ -384,7 +401,7 @@ function Dashboard({ data, refresh, setNotice }: { data: WorkspaceData; refresh:
               <div className="mt-1 text-lg font-semibold text-slate-950">{currentMonth?.goal ?? "还没有生成职业路径"}</div>
             </div>
             <div className="grid gap-3">
-              {(currentMonth?.learningTasks ?? []).map((task: any) => (
+              {(currentMonth?.learningTasks ?? []).map((task) => (
                 <div key={task.id} className="flex items-center justify-between rounded-md border border-slate-200 px-4 py-3">
                   <div>
                     <div className="text-sm font-semibold text-slate-900">{task.title}</div>
@@ -613,34 +630,158 @@ function Onboarding({
   );
 }
 
-function PathView({ plan, refresh, setNotice }: { plan: any | null; refresh: () => Promise<void>; setNotice: (value: string) => void }) {
+function PathView({
+  plan,
+  executionMeta,
+  refresh,
+  setNotice,
+}: {
+  plan: CareerPlanDto | null;
+  executionMeta: AiExecutionMeta | null;
+  refresh: () => Promise<void>;
+  setNotice: (value: string) => void;
+}) {
+  const [busyTaskId, setBusyTaskId] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState("");
+
   async function generatePlan() {
+    if (generating) return;
+    setGenerating(true);
+    setError("");
     setNotice("正在生成 36 个月行动计划...");
-    await api("/api/plans/generate", { method: "POST" });
-    setNotice("职业路径已生成。");
-    await refresh();
+    try {
+      const response = await api<{ plan: CareerPlanDto; note: string }>("/api/plans/generate", {
+        method: "POST",
+        body: JSON.stringify({ regenerate: Boolean(plan) }),
+      });
+      if (!response.ok) throw new Error(response.error?.message ?? "职业路径生成失败，请稍后重试。");
+      await refresh();
+      setNotice(response.data.note || "职业路径已生成。");
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "职业路径生成失败，请稍后重试。";
+      setError(message);
+      setNotice(message);
+    } finally {
+      setGenerating(false);
+    }
   }
+
+  async function updateTask(taskId: string, status: TaskStatus) {
+    if (!plan || busyTaskId) return;
+    setBusyTaskId(taskId);
+    setError("");
+    setNotice("正在保存任务状态...");
+    try {
+      const response = await api<{ plan: CareerPlanDto; changed: boolean }>(
+        `/api/plans/${encodeURIComponent(plan.id)}/tasks/${encodeURIComponent(taskId)}`,
+        { method: "PATCH", body: JSON.stringify({ status }) },
+      );
+      if (!response.ok) throw new Error(response.error?.message ?? "任务状态保存失败，请刷新后重试。");
+      await refresh();
+      setNotice(response.data.changed ? "任务状态已更新。" : "任务状态未变化。");
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "任务状态保存失败，请刷新后重试。";
+      setError(message);
+      setNotice(message);
+    } finally {
+      setBusyTaskId(null);
+    }
+  }
+
+  const timeline = plan ? groupPlanTimeline(plan) : [];
+  const months = (plan?.months ?? []) as unknown as PlanMonth[];
+  const currentMonth = months.find((month) => month.monthIndex === plan?.currentMonthIndex);
+
   return (
-    <Panel title="3 年职业路径" action={<Button onClick={generatePlan}>{plan ? "重规划" : "生成路径"}</Button>}>
+    <Panel title="3 年职业路径" action={<Button disabled={generating} onClick={generatePlan}>{generating ? "生成中..." : plan ? "重规划" : "生成路径"}</Button>}>
+      {error ? <p className="mb-4 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
       {!plan ? (
         <div className="rounded-md bg-slate-50 p-5 text-sm text-slate-600">还没有职业路径，请先生成。</div>
       ) : (
         <div className="space-y-5">
-          <div className="grid gap-4 md:grid-cols-3">
-            {plan.years.map((year: any) => (
-              <div key={year.yearIndex} className="rounded-lg border border-slate-200 p-4">
-                <div className="text-sm text-slate-500">第 {year.yearIndex} 年</div>
-                <div className="mt-2 font-semibold text-slate-950">{year.goal}</div>
+          {executionMeta ? (
+            <div className={`rounded-md px-4 py-3 text-sm ${executionMeta.degraded ? "bg-amber-50 text-amber-800" : "bg-emerald-50 text-emerald-800"}`}>
+              AI 执行：{formatAiRuntimeDescription(executionMeta)}{executionMeta.fallbackReason ? ` · 原因：${executionMeta.fallbackReason}` : ""}
+            </div>
+          ) : null}
+
+          {currentMonth ? (
+            <section className="rounded-lg border border-indigo-200 bg-indigo-50/40 p-4">
+              <h3 className="font-semibold text-slate-950">当前月任务 · Month {currentMonth.monthIndex}</h3>
+              <div className="mt-3 space-y-3">
+                {currentMonth.learningTasks.map((task) => (
+                  <div key={task.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-white px-4 py-3">
+                    <div>
+                      <div className="text-sm font-semibold text-slate-900">{task.title}</div>
+                      <div className="text-xs text-slate-500">第 {task.dueWeek ?? "-"} 周前完成</div>
+                    </div>
+                    <select
+                      aria-label={`更新 ${task.title} 状态`}
+                      className="h-9 rounded-md border border-slate-200 bg-white px-3 text-sm"
+                      disabled={busyTaskId === task.id}
+                      value={task.status}
+                      onChange={(event) => void updateTask(task.id, event.target.value as TaskStatus)}
+                    >
+                      {taskStatuses.map((status) => <option key={status} value={status}>{status}</option>)}
+                    </select>
+                  </div>
+                ))}
               </div>
-            ))}
+            </section>
+          ) : null}
+
+          <div className="space-y-3">
+            {timeline.map((section, index) => {
+              const year = section.year as { yearIndex?: number; goal?: string };
+              return (
+                <details key={year.yearIndex ?? index} open={index === 0} className="rounded-lg border border-slate-200 bg-white">
+                  <summary className="cursor-pointer px-4 py-4 font-semibold text-slate-950">
+                    第 {year.yearIndex ?? index + 1} 年 · {year.goal ?? "年度目标"}
+                  </summary>
+                  <div className="space-y-4 border-t border-slate-100 p-4">
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                      {section.quarters.map((item, quarterIndex) => {
+                        const quarter = item as { quarterIndex?: number; goal?: string; milestone?: string };
+                        return (
+                          <div key={quarter.quarterIndex ?? quarterIndex} className="rounded-md border border-slate-200 p-3">
+                            <div className="text-xs font-medium text-slate-500">Q{quarter.quarterIndex ?? quarterIndex + 1}</div>
+                            <div className="mt-1 text-sm font-semibold text-slate-900">{quarter.goal}</div>
+                            {quarter.milestone ? <p className="mt-2 text-xs leading-5 text-slate-500">{quarter.milestone}</p> : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      {section.months.map((item, monthIndex) => {
+                        const month = item as unknown as PlanMonth;
+                        return (
+                          <div key={month.monthIndex ?? monthIndex} className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                            <div className="text-xs font-medium text-slate-500">Month {month.monthIndex}</div>
+                            <div className="mt-1 text-sm font-semibold text-slate-900">{month.goal}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </details>
+              );
+            })}
           </div>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {plan.months.slice(0, 12).map((month: any) => (
-              <div key={month.monthIndex} className="rounded-md border border-slate-200 bg-slate-50 p-3">
-                <div className="text-xs font-medium text-slate-500">Month {month.monthIndex}</div>
-                <div className="mt-1 text-sm font-semibold text-slate-900">{month.goal}</div>
-              </div>
-            ))}
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <section className="rounded-lg border border-slate-200 p-4">
+              <h3 className="font-semibold text-slate-950">计划假设</h3>
+              <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-slate-600">
+                {plan.assumptions.map((item) => <li key={item}>{item}</li>)}
+              </ul>
+            </section>
+            <section className="rounded-lg border border-amber-200 bg-amber-50/40 p-4">
+              <h3 className="font-semibold text-slate-950">风险提示</h3>
+              <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-slate-600">
+                {plan.riskNotes.map((item) => <li key={item}>{item}</li>)}
+              </ul>
+            </section>
           </div>
         </div>
       )}
@@ -701,10 +842,56 @@ function SimulationView({ simulations, refresh, setNotice }: { simulations: any[
   );
 }
 
-function ResourceView({ resources, profile }: { resources: any[]; profile: ProfileDto }) {
-  const relevant = resources.filter((item) => item.roleKey === profile.targetRole || resources.length < 4);
+function ResourceView({
+  resources,
+  profile,
+  weakAbilities,
+}: {
+  resources: ResourceItemDto[];
+  profile: ProfileDto;
+  weakAbilities: MatchData["weakAbilities"];
+}) {
+  const [roleKey, setRoleKey] = useState(profile.targetRole);
+  const [abilityKey, setAbilityKey] = useState<string>("all");
+  const [resourceType, setResourceType] = useState<string>("all");
+  const relevant = filterResources(resources, { roleKey, abilityKey, type: resourceType });
+  const roleLabels: Record<string, string> = {
+    ai_product_manager: "AI 产品经理",
+    data_analyst: "数据分析师",
+    aigc_operator: "AIGC 运营",
+  };
   return (
     <Panel title="资源中心">
+      <div className="mb-5 grid gap-3 md:grid-cols-3">
+        <label className="text-sm text-slate-600">目标岗位
+          <select className="mt-1 block h-10 w-full rounded-md border border-slate-200 bg-white px-3" value={roleKey} onChange={(event) => setRoleKey(event.target.value)}>
+            {supportedRoleKeys.map((role) => <option key={role} value={role}>{roleLabels[role]}</option>)}
+          </select>
+        </label>
+        <label className="text-sm text-slate-600">能力方向
+          <select className="mt-1 block h-10 w-full rounded-md border border-slate-200 bg-white px-3" value={abilityKey} onChange={(event) => setAbilityKey(event.target.value)}>
+            <option value="all">全部能力</option>
+            {abilityKeys.map((ability) => <option key={ability} value={ability}>{abilityLabels[ability]}</option>)}
+          </select>
+        </label>
+        <label className="text-sm text-slate-600">资源类型
+          <select className="mt-1 block h-10 w-full rounded-md border border-slate-200 bg-white px-3" value={resourceType} onChange={(event) => setResourceType(event.target.value)}>
+            <option value="all">全部类型</option>
+            {resourceTypes.map((type) => <option key={type} value={type}>{type}</option>)}
+          </select>
+        </label>
+      </div>
+      {weakAbilities.length ? (
+        <div className="mb-5 flex flex-wrap items-center gap-2 text-sm text-slate-600">
+          <span>优先补弱：</span>
+          {weakAbilities.map((ability) => (
+            <button key={ability} onClick={() => setAbilityKey(ability)} className={`rounded-full px-3 py-1 ${abilityKey === ability ? "bg-amber-500 text-white" : "bg-amber-50 text-amber-800"}`}>
+              {abilityLabels[ability]}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {relevant.length === 0 ? <div className="rounded-md bg-slate-50 p-5 text-sm text-slate-600">没有符合当前筛选条件的资源。</div> : null}
       <div className="grid gap-4 md:grid-cols-2">
         {relevant.map((item) => (
           <div key={item.id} className="rounded-lg border border-slate-200 p-4">
