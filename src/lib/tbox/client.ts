@@ -17,29 +17,45 @@ async function timedResponse<T>(
   url: URL,
   init: RequestInit,
   deps: TboxDependencies,
-  consume: (response: Response) => Promise<T>,
+  consume: (response: Response, onActivity: () => void) => Promise<T>,
+  idleTimeout = false,
 ): Promise<T> {
   const { fetchImpl, clock } = dependencies(deps);
   const controller = new AbortController();
   const timeoutMs = Number.isFinite(deps.config.streamTimeoutMs)
     ? deps.config.streamTimeoutMs
     : 90_000;
-  const timer = clock.setTimeout(() => controller.abort(), timeoutMs);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
+  const armTimeout = () => {
+    if (timer !== undefined) clock.clearTimeout(timer);
+    timer = clock.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
+  };
+  const abortFromCaller = () => controller.abort(deps.signal?.reason);
+  if (deps.signal?.aborted) abortFromCaller();
+  else deps.signal?.addEventListener("abort", abortFromCaller, { once: true });
+  armTimeout();
   let responseReceived = false;
   try {
     const response = await fetchImpl(url, { ...init, signal: controller.signal });
     responseReceived = true;
     if (!response.ok) throw new TboxError("http_error");
-    return await consume(response);
+    if (idleTimeout) armTimeout();
+    return await consume(response, idleTimeout ? armTimeout : () => undefined);
   } catch (error) {
-    if (controller.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
+    if (deps.signal?.aborted) throw new TboxError("aborted");
+    if (timedOut || (controller.signal.aborted && error instanceof Error && error.name === "AbortError")) {
       throw new TboxError("timeout");
     }
     if (error instanceof TboxError) throw error;
     if (!responseReceived) throw new TboxError("http_error");
     throw error;
   } finally {
-    clock.clearTimeout(timer);
+    if (timer !== undefined) clock.clearTimeout(timer);
+    deps.signal?.removeEventListener("abort", abortFromCaller);
   }
 }
 
@@ -57,7 +73,7 @@ export async function consumeChatResponse<T>(
   input: ChatInput,
   stream: boolean,
   deps: TboxDependencies,
-  consume: (response: Response) => Promise<T>,
+  consume: (response: Response, onActivity: () => void) => Promise<T>,
 ): Promise<T> {
   ensureChatConfig(deps);
   const url = new URL(deps.config.chatEndpoint);
@@ -77,6 +93,7 @@ export async function consumeChatResponse<T>(
     { method: "POST", headers, body: JSON.stringify(body) },
     deps,
     consume,
+    stream,
   );
 }
 

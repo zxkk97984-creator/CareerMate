@@ -34,11 +34,14 @@ async function localRetrieval(input: RetrievalInput): Promise<RetrievalItem[]> {
     }));
   }
 
-  const roles = await prisma.roleTemplate.findMany({
-    orderBy: { roleKey: "asc" },
-    take: input.limit,
-  });
-  return roles.flatMap((role) => {
+  const roles = await prisma.roleTemplate.findMany({ orderBy: { roleKey: "asc" } });
+  const queryTokens = input.query
+    .toLocaleLowerCase()
+    .split(/[\s,，。；;、/]+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+  return roles
+    .map((role) => {
     const values =
       input.datasetKey === "roleCompetency"
         ? [
@@ -46,15 +49,23 @@ async function localRetrieval(input: RetrievalInput): Promise<RetrievalItem[]> {
             ...parseJson<string[]>(role.coreWork, []),
           ]
         : parseJson<string[]>(role.simulationScenarios, []);
-    if (!values.length) return [];
-    return [
-      {
+    const searchable = [role.roleKey, role.roleName, role.category, ...values]
+      .join(" ")
+      .toLocaleLowerCase();
+    const score = queryTokens.reduce(
+      (total, token) => total + (searchable.includes(token) ? 1 : 0),
+      0,
+    );
+    if (!values.length || score === 0) return null;
+    return {
         content: `${role.roleName}：${values.join("；")}`,
         source: `local-role-template:${role.roleKey}`,
-        score: 1,
-      },
-    ];
-  });
+        score: score / queryTokens.length,
+      };
+    })
+    .filter((item): item is RetrievalItem => item !== null)
+    .sort((left, right) => right.score - left.score)
+    .slice(0, input.limit);
 }
 
 export async function POST(request: Request) {

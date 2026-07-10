@@ -3,8 +3,8 @@ import { z } from "zod";
 const taskSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
-  type: z.string().min(1),
-  status: z.string().min(1),
+  type: z.enum(["learn", "practice"]),
+  status: z.enum(["not_started", "in_progress", "done"]),
   dueWeek: z.number().int().min(1).max(5),
 });
 
@@ -15,6 +15,22 @@ const monthSchema = z.object({
   practiceOutputs: z.array(z.string().min(1)).min(1),
   evaluationMetrics: z.array(z.string().min(1)).min(1),
 });
+
+function exactSequence(
+  values: number[],
+  expectedLength: number,
+  ctx: z.RefinementCtx,
+  path: string,
+) {
+  const valid = values.every((value, index) => value === index + 1);
+  if (!valid || values.length !== expectedLength) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `${path} must be the ordered sequence 1..${expectedLength}`,
+      path: [path],
+    });
+  }
+}
 
 export const careerPlanSchema = z
   .object({
@@ -41,6 +57,11 @@ export const careerPlanSchema = z
     currentMonth: monthSchema.optional(),
     assumptions: z.array(z.string().min(1)),
     riskNotes: z.array(z.string().min(1)),
+  })
+  .superRefine((plan, ctx) => {
+    exactSequence(plan.years.map((item) => item.yearIndex), 3, ctx, "years");
+    exactSequence(plan.quarters.map((item) => item.quarterIndex), 12, ctx, "quarters");
+    exactSequence(plan.months.map((item) => item.monthIndex), 36, ctx, "months");
   })
   .transform((plan) => ({ ...plan, currentMonth: plan.currentMonth ?? plan.months[0]! }));
 

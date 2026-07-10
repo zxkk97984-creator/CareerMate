@@ -119,6 +119,60 @@ describe("stream chat orchestration", () => {
     expect(result.meta).toMatchObject({ actualMode: "manual", fallbackReason: "timeout" });
   });
 
+  it("treats the stream timeout as an idle timeout", async () => {
+    vi.useFakeTimers();
+    const timedConfig = { ...config, streamTimeoutMs: 10 };
+    const fetchImpl = vi.fn(async (_url: URL | RequestInfo, init?: RequestInit) => {
+      const encoder = new TextEncoder();
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            init?.signal?.addEventListener("abort", () =>
+              controller.error(new DOMException("aborted", "AbortError")),
+            );
+            setTimeout(() => controller.enqueue(encoder.encode("event: conversation.chat.created\ndata: {\"data\":{}}\n\n")), 5);
+            setTimeout(() => controller.enqueue(encoder.encode("event: conversation.chat.in_progress\ndata: {\"data\":{}}\n\n")), 13);
+            setTimeout(() => controller.enqueue(encoder.encode("event: done\ndata: [DONE]\n\n")), 21);
+          },
+        }),
+        { status: 200 },
+      );
+    });
+
+    const pending = streamChatWithTbox(
+      { question: "hello", userId: "user-1" },
+      { config: timedConfig, fetchImpl },
+    );
+    await vi.advanceTimersByTimeAsync(25);
+    const result = await pending;
+    expect(result.meta.actualMode).toBe("api");
+  });
+
+  it("does not start a fallback after the downstream request aborts", async () => {
+    const requestController = new AbortController();
+    const manualChat = vi.fn(async () => "manual answer");
+    const fetchImpl = vi.fn(async (_url: URL | RequestInfo, init?: RequestInit) => {
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            init?.signal?.addEventListener("abort", () =>
+              controller.error(new DOMException("aborted", "AbortError")),
+            );
+          },
+        }),
+        { status: 200 },
+      );
+    });
+
+    const pending = streamChatWithTbox(
+      { question: "hello", userId: "user-1" },
+      { config, fetchImpl, manualChat, signal: requestController.signal },
+    );
+    requestController.abort();
+    await expect(pending).rejects.toMatchObject({ reason: "aborted" });
+    expect(manualChat).not.toHaveBeenCalled();
+  });
+
   it("falls back to mock when a requested manual stream provider throws", async () => {
     const result = await streamChatWithTbox(
       { question: "hello", userId: "user-1" },

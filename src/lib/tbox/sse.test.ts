@@ -66,4 +66,39 @@ describe("upstream SSE normalization", () => {
       { event: "done", data: { conversationId: null } },
     ]);
   });
+
+  it("stops and cancels the upstream reader after a terminal event", async () => {
+    const encoder = new TextEncoder();
+    let canceled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode("event: done\ndata: [DONE]\n\n"));
+      },
+      cancel() {
+        canceled = true;
+      },
+    });
+
+    expect(await collect(stream)).toEqual([
+      { event: "done", data: { conversationId: null } },
+    ]);
+    expect(canceled).toBe(true);
+  });
+
+  it("cancels the upstream reader after malformed data", async () => {
+    const encoder = new TextEncoder();
+    let canceled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode("event: message\ndata: {bad\n\n"));
+      },
+      cancel() {
+        canceled = true;
+      },
+    });
+
+    const events = await collect(stream);
+    expect(events[0]?.event).toBe("error");
+    expect(canceled).toBe(true);
+  });
 });

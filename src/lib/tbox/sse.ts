@@ -28,12 +28,14 @@ function parseSseBlock(block: string) {
 
 export async function* parseUpstreamSse(
   stream: ReadableStream<Uint8Array>,
+  options: { onActivity?: () => void } = {},
 ): AsyncGenerator<NormalizedStreamEvent> {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   let conversationId: string | null = null;
   let terminal = false;
+  let readerDone = false;
 
   function boundary() {
     const match = /\r\n\r\n|\n\n|\r\r/.exec(buffer);
@@ -93,18 +95,31 @@ export async function* parseUpstreamSse(
   try {
     while (true) {
       const { value, done } = await reader.read();
+      if (value?.byteLength) options.onActivity?.();
       buffer += decoder.decode(value, { stream: !done });
       let delimiter = boundary();
       while (delimiter) {
         const block = buffer.slice(0, delimiter.index);
         buffer = buffer.slice(delimiter.index + delimiter.length);
         yield* consume(block);
+        if (terminal) break;
         delimiter = boundary();
       }
-      if (done) break;
+      if (done) {
+        readerDone = true;
+        break;
+      }
+      if (terminal) break;
     }
-    if (buffer.trim()) yield* consume(buffer);
+    if (!terminal && buffer.trim()) yield* consume(buffer);
   } finally {
+    if (!readerDone) {
+      try {
+        await reader.cancel();
+      } catch {
+        // The fetch body may already be errored by an abort.
+      }
+    }
     reader.releaseLock();
   }
 }

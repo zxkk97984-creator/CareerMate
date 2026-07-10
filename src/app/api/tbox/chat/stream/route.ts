@@ -40,7 +40,7 @@ async function handle(request: Request, rawInput: unknown) {
       conversationId: parsed.data.conversationId,
       context: parsed.data.context,
     },
-    { config: getTboxConfig() },
+    { config: getTboxConfig(), signal: request.signal },
   );
 
   await getPrisma().progressLog.create({

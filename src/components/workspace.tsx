@@ -17,7 +17,7 @@ import {
   UserCog,
 } from "lucide-react";
 import { PolarAngleAxis, PolarGrid, Radar, RadarChart, ResponsiveContainer } from "recharts";
-import { parseFrontendSseBlock } from "@/lib/tbox/frontend-sse";
+import { consumeFrontendSseResponse } from "@/lib/tbox/frontend-sse";
 import { abilityKeys, abilityLabels, type ProfileDto } from "@/lib/types";
 
 type View = "onboarding" | "dashboard" | "path" | "simulation" | "resources" | "memory" | "chat" | "admin";
@@ -595,38 +595,21 @@ function ChatView({ setNotice }: { setNotice: (value: string) => void }) {
     setStreaming(true);
     setMessages([]);
     setNotice("CareerMate 正在思考...");
-    const response = await fetch("/api/tbox/chat/stream", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question }),
-    });
-    const reader = response.body?.getReader();
-    const decoder = new TextDecoder();
-    if (!reader) {
+    try {
+      const response = await fetch("/api/tbox/chat/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question }),
+      });
+      await consumeFrontendSseResponse(response, (content) => {
+        setMessages((previous) => [...previous, content]);
+      });
+      setNotice("对话完成，必要时会生成画像更新候选。");
+    } catch {
+      setNotice("对话失败，请检查登录状态或稍后重试。你的输入已保留。");
+    } finally {
       setStreaming(false);
-      setNotice("对话服务暂时不可用，请稍后重试。");
-      return;
     }
-    let buffer = "";
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const events = buffer.split("\n\n");
-      buffer = events.pop() ?? "";
-      for (const event of events) {
-        const parsed = parseFrontendSseBlock(event);
-        if (
-          parsed?.event === "message" &&
-          parsed.data.type === "delta" &&
-          typeof parsed.data.content === "string"
-        ) {
-          setMessages((previous) => [...previous, parsed.data.content as string]);
-        }
-      }
-    }
-    setStreaming(false);
-    setNotice("对话完成，必要时会生成画像更新候选。");
   }
 
   return (

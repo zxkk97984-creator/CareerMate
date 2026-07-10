@@ -53,6 +53,7 @@ export interface TboxDependencies {
   config: TboxConfig;
   fetchImpl?: typeof fetch;
   clock?: Clock;
+  signal?: AbortSignal;
 }
 
 export type NormalizedStreamEvent =

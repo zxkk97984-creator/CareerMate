@@ -44,4 +44,30 @@ describe("career plan schema", () => {
     const plan = buildCareerPlan(profile);
     expect(careerPlanSchema.safeParse({ ...plan, months: plan.months.slice(0, 35) }).success).toBe(false);
   });
+
+  it("rejects duplicate or out-of-order timeline indices", () => {
+    const duplicate = buildCareerPlan(profile);
+    duplicate.years[1]!.yearIndex = 1;
+    duplicate.quarters[4]!.quarterIndex = 4;
+    duplicate.months[8]!.monthIndex = 8;
+    expect(careerPlanSchema.safeParse(duplicate).success).toBe(false);
+  });
+
+  it("rejects unsupported task types and statuses", () => {
+    const plan = buildCareerPlan(profile);
+    const invalid = {
+      ...plan,
+      months: plan.months.map((month, index) =>
+        index === 0
+          ? {
+              ...month,
+              learningTasks: [
+                { ...month.learningTasks[0], type: "bogus", status: "bogus" },
+              ],
+            }
+          : month,
+      ),
+    };
+    expect(careerPlanSchema.safeParse(invalid).success).toBe(false);
+  });
 });

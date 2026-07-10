@@ -15,6 +15,7 @@ interface StreamDependencies {
   fetchImpl?: typeof fetch;
   clock?: Clock;
   manualChat?: (input: ChatInput) => Promise<string | null>;
+  signal?: AbortSignal;
 }
 
 function meta(
@@ -75,10 +76,10 @@ export async function streamChatWithTbox(
 
   let reason: TboxFailureReason;
   try {
-    const events = await consumeChatResponse(input, true, deps, async (response) => {
+    const events = await consumeChatResponse(input, true, deps, async (response, onActivity) => {
       if (!response.body) throw new TboxError("sse_error");
       const normalized: NormalizedStreamEvent[] = [];
-      for await (const event of parseUpstreamSse(response.body)) {
+      for await (const event of parseUpstreamSse(response.body, { onActivity })) {
         if (event.event === "error") throw new TboxError("sse_error");
         normalized.push(event);
       }
@@ -90,6 +91,7 @@ export async function streamChatWithTbox(
     return { data: { events }, meta: meta(requested, "api", null, "tbox-api") };
   } catch (error) {
     reason = failureReason(error);
+    if (reason === "aborted") throw error;
   }
   const events = await manualEvents(input, deps);
   return events

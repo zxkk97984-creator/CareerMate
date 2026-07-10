@@ -7,7 +7,8 @@ export type TboxFailureReason =
   | "invalid_response"
   | "validation_error"
   | "manual_unavailable"
-  | "manual_invalid";
+  | "manual_invalid"
+  | "aborted";
 
 export class TboxError extends Error {
   constructor(public readonly reason: TboxFailureReason) {

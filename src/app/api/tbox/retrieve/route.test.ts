@@ -96,4 +96,41 @@ describe("POST /api/tbox/retrieve", () => {
     expect(content).not.toContain("岗位面试评分规则");
     expect(mocks.roleFindMany).not.toHaveBeenCalled();
   });
+
+  it("filters local role knowledge by query before applying the limit", async () => {
+    mocks.roleFindMany.mockResolvedValue([
+      {
+        roleKey: "ai_product_manager",
+        roleName: "AI 产品经理",
+        category: "产品",
+        entryRequirements: JSON.stringify(["PRD"]),
+        coreWork: JSON.stringify(["需求分析"]),
+        simulationScenarios: JSON.stringify(["跨岗位沟通"]),
+      },
+      {
+        roleKey: "data_analyst",
+        roleName: "数据分析师",
+        category: "数据",
+        entryRequirements: JSON.stringify(["SQL"]),
+        coreWork: JSON.stringify(["数据分析"]),
+        simulationScenarios: JSON.stringify(["分析结论汇报"]),
+      },
+    ]);
+    await POST(
+      new Request("http://localhost/api/tbox/retrieve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ datasetKey: "roleCompetency", query: "数据分析师", limit: 1 }),
+      }),
+    );
+
+    const local = mocks.retrieve.mock.calls[0][1].local as (input: {
+      datasetKey: "roleCompetency";
+      query: string;
+      limit: number;
+    }) => Promise<Array<{ content: string; source: string; score: number }>>;
+    const items = await local({ datasetKey: "roleCompetency", query: "数据分析师", limit: 1 });
+    expect(items).toHaveLength(1);
+    expect(items[0]?.source).toContain("data_analyst");
+  });
 });
