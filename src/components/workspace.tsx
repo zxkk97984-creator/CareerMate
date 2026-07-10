@@ -352,7 +352,7 @@ export function Workspace({ initialView }: { initialView: View }) {
               {activeView === "path" && <PathView plan={data.plan} executionMeta={data.planExecutionMeta} refresh={loadAll} setNotice={setNotice} />}
               {activeView === "simulation" && <SimulationView simulations={data.simulations} refresh={loadAll} setNotice={setNotice} />}
               {activeView === "resources" && <ResourceView resources={data.resources} profile={data.profile} weakAbilities={data.match?.weakAbilities ?? []} />}
-              {activeView === "memory" && <MemoryView memories={data.memories} candidates={data.candidates} refresh={loadAll} setNotice={setNotice} />}
+              {activeView === "memory" && <MemoryView memories={data.memories} candidates={data.candidates} memoryEnabled={data.profile.memoryEnabled} refresh={loadAll} setNotice={setNotice} />}
               {activeView === "chat" && <ChatView setNotice={setNotice} />}
               {activeView === "admin" && <AdminView drafts={data.drafts} templates={data.templates} refresh={loadAll} setNotice={setNotice} />}
             </div>
@@ -946,14 +946,19 @@ function ResourceView({
 function MemoryView({
   memories,
   candidates,
+  memoryEnabled,
   refresh,
   setNotice,
 }: {
   memories: any[];
   candidates: any[];
+  memoryEnabled: boolean;
   refresh: () => Promise<void>;
   setNotice: (value: string) => void;
 }) {
+  const [content, setContent] = useState("");
+  const [clearConfirmation, setClearConfirmation] = useState("");
+
   async function operate(candidateId: string, action: "accept" | "reject") {
     await api("/api/profile/candidates", { method: "PATCH", body: JSON.stringify({ candidateId, action }) });
     setNotice(action === "accept" ? "画像更新已确认。" : "画像更新已拒绝。");
@@ -961,24 +966,70 @@ function MemoryView({
   }
 
   async function deleteMemory(id: string) {
-    await fetch(`/api/memories?id=${id}`, { method: "DELETE" });
+    await api(`/api/memory/${id}`, { method: "DELETE" });
     setNotice("记忆已删除。");
     await refresh();
   }
 
+  async function createMemory() {
+    const response = await api<{ memory: any }>("/api/memories", { method: "POST", body: JSON.stringify({ content, sensitivity: "normal" }) });
+    if (!response.ok) return setNotice(response.error?.message ?? "记忆创建失败。");
+    setContent(""); setNotice("记忆已创建。"); await refresh();
+  }
+
+  async function editMemory(memory: any) {
+    const next = window.prompt("编辑记忆", memory.content)?.trim();
+    if (!next || next === memory.content) return;
+    const response = await api(`/api/memory/${memory.id}`, { method: "PATCH", body: JSON.stringify({ content: next }) });
+    if (!response.ok) return setNotice(response.error?.message ?? "记忆编辑失败。");
+    setNotice("记忆已更新。"); await refresh();
+  }
+
+  async function toggleMemory() {
+    const response = await api<{ enabled: boolean }>("/api/memory/toggle", { method: "POST", body: JSON.stringify({ enabled: !memoryEnabled }) });
+    if (!response.ok) return setNotice(response.error?.message ?? "记忆开关保存失败。");
+    setNotice(response.data.enabled ? "长期记忆已开启。" : "长期记忆已关闭，已有记忆仍被保留。"); await refresh();
+  }
+
+  async function exportData() {
+    const response = await api<Record<string, unknown>>("/api/privacy/export");
+    if (!response.ok) return setNotice(response.error?.message ?? "数据导出失败。");
+    const url = URL.createObjectURL(new Blob([JSON.stringify(response.data, null, 2)], { type: "application/json" }));
+    const anchor = document.createElement("a"); anchor.href = url; anchor.download = "careermate-data.json"; anchor.click(); URL.revokeObjectURL(url);
+    setNotice("账号成长数据已导出，敏感凭据未包含在文件中。");
+  }
+
+  async function clearData() {
+    const response = await api<{ cleared: boolean }>("/api/privacy/account-data", { method: "DELETE", body: JSON.stringify({ confirmation: clearConfirmation }) });
+    if (!response.ok) return setNotice(response.error?.message ?? "成长数据清空失败。");
+    setClearConfirmation(""); setNotice("成长数据已清空，账号仍然保留，请重新完成画像引导。"); await refresh();
+  }
+
   return (
     <div className="grid gap-5 lg:grid-cols-2">
-      <Panel title="长期记忆">
+      <Panel title="长期记忆" action={<Button variant="secondary" onClick={toggleMemory}>{memoryEnabled ? "关闭长期记忆" : "开启长期记忆"}</Button>}>
+        <div className="mb-4 flex gap-2">
+          <input aria-label="新记忆" disabled={!memoryEnabled} className="h-10 flex-1 rounded-md border border-slate-200 px-3 text-sm" placeholder={memoryEnabled ? "添加一条长期记忆" : "长期记忆已关闭"} value={content} onChange={(event) => setContent(event.target.value)} />
+          <Button disabled={!memoryEnabled || !content.trim()} onClick={createMemory}>创建</Button>
+        </div>
         <div className="space-y-3">
           {memories.map((memory) => (
             <div key={memory.id} className="rounded-md border border-slate-200 p-4">
               <p className="text-sm leading-6 text-slate-700">{memory.content}</p>
               <div className="mt-3 flex items-center justify-between">
                 <span className="text-xs text-slate-500">{memory.sensitivity}</span>
-                <Button variant="danger" onClick={() => deleteMemory(memory.id)}>删除</Button>
+                <div className="flex gap-2"><Button variant="secondary" onClick={() => editMemory(memory)}>编辑</Button><Button variant="danger" onClick={() => deleteMemory(memory.id)}>删除</Button></div>
               </div>
             </div>
           ))}
+        </div>
+      </Panel>
+      <Panel title="隐私与数据">
+        <div className="space-y-3">
+          <Button variant="secondary" onClick={exportData}>导出 JSON</Button>
+          <p className="text-sm text-slate-600">清空会删除画像成长数据并重新进入引导，但保留账号、角色和当前登录态。请输入确认词 <code>CLEAR_MY_DATA</code>。</p>
+          <input aria-label="清空确认词" className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm" value={clearConfirmation} onChange={(event) => setClearConfirmation(event.target.value)} />
+          <Button variant="danger" disabled={clearConfirmation !== "CLEAR_MY_DATA"} onClick={clearData}>清空成长数据</Button>
         </div>
       </Panel>
       <Panel title="画像更新候选">
