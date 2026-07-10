@@ -25,16 +25,7 @@ const onboardingChatSchema = z.object({
 interface TranscriptTurn {
   role: "user" | "assistant";
   content: string;
-}
-
-function localMeta(mode: "manual" | "mock"): AiExecutionMeta {
-  return {
-    requestedMode: mode,
-    actualMode: mode,
-    degraded: false,
-    fallbackReason: null,
-    source: mode === "manual" ? "onboarding-local-manual" : "onboarding-local-mock",
-  };
+  meta?: AiExecutionMeta;
 }
 
 function safeStoredDraft(value: string): OnboardingDraft {
@@ -90,30 +81,25 @@ export async function POST(request: Request) {
   const completeness = calculateOnboardingCompleteness(draft);
   const deterministicQuestion = nextOnboardingQuestion(draft);
 
+  const result = await chatWithTbox(
+    {
+      question: buildApiPrompt(parsed.data.message, draft),
+      userId: user.id,
+      conversationId: conversation.id,
+      context: { draft, missingGroups: missingOnboardingGroups(draft) },
+    },
+    { config },
+  );
+  const executionMeta = result.meta;
   let assistantMessage = deterministicQuestion;
-  let executionMeta: AiExecutionMeta;
-  if (config.mode === "api") {
-    const result = await chatWithTbox(
-      {
-        question: buildApiPrompt(parsed.data.message, draft),
-        userId: user.id,
-        conversationId: conversation.id,
-        context: { draft, missingGroups: missingOnboardingGroups(draft) },
-      },
-      { config },
-    );
-    executionMeta = result.meta;
-    if (result.meta.actualMode === "api" && result.data.answer.trim()) {
-      assistantMessage = result.data.answer.trim();
-    }
-  } else {
-    executionMeta = localMeta(config.mode);
+  if (result.meta.actualMode === "api" && result.data.answer.trim()) {
+    assistantMessage = result.data.answer.trim();
   }
 
   const transcript = parseJson<TranscriptTurn[]>(conversation.transcript, []);
   transcript.push(
     { role: "user", content: parsed.data.message },
-    { role: "assistant", content: assistantMessage },
+    { role: "assistant", content: assistantMessage, meta: executionMeta },
   );
   await prisma.onboardingConversation.update({
     where: { id: conversation.id },

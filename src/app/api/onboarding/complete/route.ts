@@ -48,7 +48,16 @@ export async function POST(request: Request) {
 
   const draft = draftResult.data;
   const existing = user.profile;
-  const updatedProfile = await prisma.$transaction(async (transaction) => {
+  const completion = await prisma.$transaction(async (transaction) => {
+    const claim = await transaction.onboardingConversation.updateMany({
+      where: { id: conversation.id, userId: user.id, status: "active" },
+      data: { status: "completed" },
+    });
+    if (claim.count === 0) {
+      const profile = await transaction.userProfile.findUnique({ where: { userId: user.id } });
+      return { profile, alreadyCompleted: true } as const;
+    }
+
     const profile = await transaction.userProfile.update({
       where: { userId: user.id },
       data: {
@@ -65,10 +74,6 @@ export async function POST(request: Request) {
         onboardingCompleted: true,
       },
     });
-    await transaction.onboardingConversation.update({
-      where: { id: conversation.id },
-      data: { status: "completed" },
-    });
     await transaction.progressLog.create({
       data: {
         userId: user.id,
@@ -78,8 +83,14 @@ export async function POST(request: Request) {
         metadata: toJson({ conversationId: conversation.id, completeness }),
       },
     });
-    return profile;
+    return { profile, alreadyCompleted: false } as const;
   });
 
-  return ok({ profile: profileDto(updatedProfile), alreadyCompleted: false });
+  if (!completion.profile?.onboardingCompleted) {
+    return fail("PROFILE_NOT_COMPLETED", "画像对话状态与用户画像不一致", 409);
+  }
+  return ok({
+    profile: profileDto(completion.profile),
+    alreadyCompleted: completion.alreadyCompleted,
+  });
 }

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   conversationFindUnique: vi.fn(),
   conversationUpdate: vi.fn(),
+  conversationUpdateMany: vi.fn(),
   logCreate: vi.fn(),
   profileFindUnique: vi.fn(),
   profileUpdate: vi.fn(),
@@ -79,9 +80,13 @@ beforeEach(() => {
   });
   mocks.transaction.mockImplementation(async (callback) => callback({
     userProfile: { update: mocks.profileUpdate },
-    onboardingConversation: { update: mocks.conversationUpdate },
+    onboardingConversation: {
+      update: mocks.conversationUpdate,
+      updateMany: mocks.conversationUpdateMany,
+    },
     progressLog: { create: mocks.logCreate },
   }));
+  mocks.conversationUpdateMany.mockResolvedValue({ count: 1 });
 });
 
 describe("POST /api/onboarding/complete", () => {
@@ -154,8 +159,8 @@ describe("POST /api/onboarding/complete", () => {
         onboardingCompleted: true,
       },
     });
-    expect(mocks.conversationUpdate).toHaveBeenCalledWith({
-      where: { id: "conversation-1" },
+    expect(mocks.conversationUpdateMany).toHaveBeenCalledWith({
+      where: { id: "conversation-1", userId: "user-1", status: "active" },
       data: { status: "completed" },
     });
     expect(mocks.logCreate).toHaveBeenCalledTimes(1);
@@ -184,5 +189,37 @@ describe("POST /api/onboarding/complete", () => {
     });
     expect(mocks.transaction).not.toHaveBeenCalled();
     expect(mocks.logCreate).not.toHaveBeenCalled();
+  });
+
+  it("atomically claims an active conversation so concurrent completion creates one log", async () => {
+    let claimed = false;
+    mocks.conversationUpdateMany.mockImplementation(async () => {
+      if (claimed) return { count: 0 };
+      claimed = true;
+      return { count: 1 };
+    });
+    mocks.transaction.mockImplementation(async (callback) => callback({
+      userProfile: {
+        update: mocks.profileUpdate,
+        findUnique: mocks.profileFindUnique,
+      },
+      onboardingConversation: {
+        update: mocks.conversationUpdate,
+        updateMany: mocks.conversationUpdateMany,
+      },
+      progressLog: { create: mocks.logCreate },
+    }));
+    mocks.profileFindUnique.mockResolvedValue({ ...profile, onboardingCompleted: true });
+
+    const responses = await Promise.all([
+      POST(request({ conversationId: "conversation-1" })),
+      POST(request({ conversationId: "conversation-1" })),
+    ]);
+    const payloads = await Promise.all(responses.map((response) => response.json()));
+
+    expect(responses.map((response) => response.status)).toEqual([200, 200]);
+    expect(payloads.map((payload) => payload.data.alreadyCompleted).sort()).toEqual([false, true]);
+    expect(mocks.conversationUpdateMany).toHaveBeenCalledTimes(2);
+    expect(mocks.logCreate).toHaveBeenCalledTimes(1);
   });
 });

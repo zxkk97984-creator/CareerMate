@@ -3,8 +3,8 @@ import { z } from "zod";
 import { fail, ok } from "@/lib/api";
 import { setSession } from "@/lib/auth";
 import { userDto } from "@/lib/dto";
-import { toJson } from "@/lib/json";
 import { getPrisma } from "@/lib/prisma";
+import { createIncompleteProfileDefaults } from "@/lib/profile-defaults";
 
 const registerSchema = z.object({
   username: z.string().min(3).max(32).regex(/^[a-zA-Z0-9_]+$/),
@@ -26,26 +26,7 @@ export async function POST(request: Request) {
       displayName: parsed.data.displayName,
       passwordHash,
       profile: {
-        create: {
-          educationStage: "junior",
-          major: "",
-          targetRole: "ai_product_manager",
-          targetRoleLabel: "AI 产品经理",
-          weeklyAvailableHours: 5,
-          learningPreference: toJson(["project", "practice"]),
-          experienceSummary: "新用户，等待 CareerMate 完成画像采集。",
-          interestTags: toJson(["AI 工具", "职业探索"]),
-          constraints: toJson([]),
-          onboardingCompleted: false,
-          abilityScores: toJson({
-            aiTooling: 45,
-            roleFoundation: 35,
-            dataAnalysis: 35,
-            businessProduct: 40,
-            communication: 45,
-            projectPractice: 30,
-          }),
-        },
+        create: createIncompleteProfileDefaults(),
       },
     },
   });

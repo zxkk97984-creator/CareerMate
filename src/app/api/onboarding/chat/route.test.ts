@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   chat: vi.fn(),
+  configMode: "api" as "api" | "manual" | "mock",
   conversationCreate: vi.fn(),
   conversationFindUnique: vi.fn(),
   conversationUpdate: vi.fn(),
@@ -11,7 +12,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/auth", () => ({ requireCurrentUser: mocks.requireCurrentUser }));
 vi.mock("@/lib/env", () => ({
   getTboxConfig: () => ({
-    mode: "api",
+    mode: mocks.configMode,
     apiKey: "",
     appId: "app",
     agentId: "agent",
@@ -53,6 +54,7 @@ function request(body: unknown) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.configMode = "api";
   mocks.requireCurrentUser.mockResolvedValue({ id: "user-1" });
   mocks.conversationCreate.mockResolvedValue({
     id: "conversation-1",
@@ -124,7 +126,11 @@ describe("POST /api/onboarding/chat", () => {
     expect(updated.where).toEqual({ id: "conversation-1" });
     expect(JSON.parse(updated.data.transcript)).toEqual([
       { role: "user", content: "我是大三统计学专业，想做数据分析师，每周投入 8 小时，喜欢项目实操。" },
-      { role: "assistant", content: expect.stringContaining("过去做过") },
+      {
+        role: "assistant",
+        content: expect.stringContaining("过去做过"),
+        meta: degradedMeta,
+      },
     ]);
     expect(JSON.parse(updated.data.draft)).toEqual(payload.data.draft);
     expect(updated.data).toMatchObject({ completeness: 5 / 7, requestedMode: "api", actualMode: "mock" });
@@ -157,4 +163,33 @@ describe("POST /api/onboarding/chat", () => {
     expect(adapterInput.question).toContain("weeklyAvailableHours");
     expect(adapterInput.question).not.toContain("https://example.test/chat");
   });
+
+  it.each(["mock", "manual"] as const)(
+    "invokes the unified adapter in requested %s mode and persists its honest metadata",
+    async (mode) => {
+      mocks.configMode = mode;
+      const meta = {
+        requestedMode: mode,
+        actualMode: mode,
+        degraded: false,
+        fallbackReason: null,
+        source: mode === "mock" ? "local-mock" : "manual-fixture",
+      };
+      mocks.chat.mockResolvedValue({
+        data: { conversationId: null, answer: `${mode} generic answer` },
+        meta,
+      });
+
+      const response = await POST(request({ message: "我是大三" }));
+      const payload = await response.json();
+
+      expect(mocks.chat).toHaveBeenCalledTimes(1);
+      expect(payload.meta).toEqual(meta);
+      expect(payload.data.assistantMessage).toContain("专业或主要背景");
+      expect(mocks.conversationUpdate).toHaveBeenCalledWith({
+        where: { id: "conversation-1" },
+        data: expect.objectContaining({ requestedMode: mode, actualMode: mode }),
+      });
+    },
+  );
 });

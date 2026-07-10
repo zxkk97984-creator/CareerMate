@@ -17,10 +17,14 @@ import {
   UserCog,
 } from "lucide-react";
 import { PolarAngleAxis, PolarGrid, Radar, RadarChart, ResponsiveContainer } from "recharts";
-import { formatAiRuntimeBadge } from "@/lib/ai-runtime";
+import {
+  formatAiRuntimeBadge,
+  formatAiRuntimeDescription,
+  type AiRuntimeSnapshot,
+} from "@/lib/ai-runtime";
 import { canCompleteOnboarding, type OnboardingDraft } from "@/lib/onboarding";
 import { consumeFrontendSseResponse } from "@/lib/tbox/frontend-sse";
-import { abilityKeys, abilityLabels, type AiExecutionMeta, type AiMode, type ProfileDto } from "@/lib/types";
+import { abilityKeys, abilityLabels, type AiExecutionMeta, type ProfileDto } from "@/lib/types";
 
 type View = "onboarding" | "dashboard" | "path" | "simulation" | "resources" | "memory" | "chat" | "admin";
 
@@ -57,7 +61,7 @@ interface WorkspaceData {
   templates: any[];
   match: MatchData | null;
   recentProgressLogs: ProgressLogData[];
-  aiRuntime: { requestedMode: AiMode };
+  aiRuntime: AiRuntimeSnapshot;
 }
 
 const navItems: Array<{ href: string; view: View; label: string; icon: React.ElementType }> = [
@@ -136,7 +140,7 @@ function Button({
   );
 }
 
-function CareerMateCompanion({ status }: { status: string }) {
+function CareerMateCompanion({ status, runtime }: { status: string; runtime: AiRuntimeSnapshot }) {
   const mood = status.includes("完成") ? "完成" : status.includes("生成") ? "思考" : status.includes("训练") ? "鼓励" : "提醒";
   return (
     <aside className="sticky top-5 hidden w-72 self-start rounded-lg border border-slate-200 bg-white p-5 shadow-sm xl:block">
@@ -153,7 +157,7 @@ function CareerMateCompanion({ status }: { status: string }) {
       <p className="mt-4 text-sm leading-6 text-slate-600">{status}</p>
       <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-slate-500">
         <div className="rounded-md bg-slate-50 p-2">画像更新需确认</div>
-        <div className="rounded-md bg-slate-50 p-2">默认 mock 模式</div>
+        <div className="rounded-md bg-slate-50 p-2">{formatAiRuntimeDescription(runtime)}</div>
       </div>
     </aside>
   );
@@ -175,15 +179,23 @@ export function Workspace({ initialView }: { initialView: View }) {
     templates: [],
     match: null,
     recentProgressLogs: [],
-    aiRuntime: { requestedMode: "mock" },
+    aiRuntime: {
+      requestedMode: "mock",
+      actualMode: "mock",
+      degraded: false,
+      fallbackReason: null,
+      source: "runtime-config",
+    },
   });
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState("正在读取成长档案...");
-  const [aiExecution, setAiExecution] = useState<{
-    requestedMode: AiMode;
-    actualMode?: AiMode;
-    degraded?: boolean;
-  }>({ requestedMode: "mock" });
+  const [aiExecution, setAiExecution] = useState<AiRuntimeSnapshot>({
+    requestedMode: "mock",
+    actualMode: "mock",
+    degraded: false,
+    fallbackReason: null,
+    source: "runtime-config",
+  });
 
   const activeView = useMemo(() => {
     const active = navItems.find((item) => item.href === pathname);
@@ -197,7 +209,7 @@ export function Workspace({ initialView }: { initialView: View }) {
       profile: ProfileDto | null;
       match: MatchData | null;
       recentProgressLogs: ProgressLogData[];
-      aiRuntime: { requestedMode: AiMode };
+      aiRuntime: AiRuntimeSnapshot;
     }>("/api/me");
     if (!me.ok) {
       router.push("/login");
@@ -225,10 +237,7 @@ export function Workspace({ initialView }: { initialView: View }) {
       recentProgressLogs: me.data.recentProgressLogs,
       aiRuntime: me.data.aiRuntime,
     });
-    setAiExecution((current) => ({
-      ...current,
-      requestedMode: me.data.aiRuntime.requestedMode,
-    }));
+    setAiExecution(me.data.aiRuntime);
     setLoading(false);
     setNotice("CareerMate 已准备好，可以继续推进你的本月任务。");
   }
@@ -321,7 +330,7 @@ export function Workspace({ initialView }: { initialView: View }) {
               {activeView === "chat" && <ChatView setNotice={setNotice} />}
               {activeView === "admin" && <AdminView drafts={data.drafts} templates={data.templates} refresh={loadAll} setNotice={setNotice} />}
             </div>
-            <CareerMateCompanion status={notice} />
+            <CareerMateCompanion status={notice} runtime={aiExecution} />
           </div>
         </div>
       </div>
@@ -442,7 +451,7 @@ function Onboarding({
 }: {
   refresh: () => Promise<void>;
   setNotice: (value: string) => void;
-  setAiExecution: (value: { requestedMode: AiMode; actualMode?: AiMode; degraded?: boolean }) => void;
+  setAiExecution: (value: AiRuntimeSnapshot) => void;
 }) {
   const router = useRouter();
   const [conversationId, setConversationId] = useState<string>();
@@ -485,11 +494,7 @@ function Onboarding({
         { role: "assistant", content: response.data.assistantMessage },
       ]);
       if (response.meta) {
-        setAiExecution({
-          requestedMode: response.meta.requestedMode,
-          actualMode: response.meta.actualMode,
-          degraded: response.meta.degraded,
-        });
+        setAiExecution(response.meta);
       }
       setNotice(`画像完整度已更新到 ${Math.round(response.data.profileCompleteness * 100)}%。`);
     } catch (caught) {

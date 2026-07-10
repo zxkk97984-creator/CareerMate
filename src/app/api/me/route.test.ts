@@ -2,16 +2,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   findLogs: vi.fn(),
+  findOnboardingConversation: vi.fn(),
   findRole: vi.fn(),
   getCurrentUser: vi.fn(),
+  upsertProfile: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ getCurrentUser: mocks.getCurrentUser }));
 vi.mock("@/lib/env", () => ({ getTboxConfig: () => ({ mode: "manual" }) }));
 vi.mock("@/lib/prisma", () => ({
   getPrisma: () => ({
+    onboardingConversation: { findFirst: mocks.findOnboardingConversation },
     progressLog: { findMany: mocks.findLogs },
     roleTemplate: { findUnique: mocks.findRole },
+    userProfile: { upsert: mocks.upsertProfile },
   }),
 }));
 
@@ -70,6 +74,23 @@ beforeEach(() => {
       createdAt: new Date("2026-07-10T01:00:00.000Z"),
     },
   ]);
+  mocks.findOnboardingConversation.mockResolvedValue({
+    requestedMode: "api",
+    actualMode: "mock",
+    transcript: JSON.stringify([
+      {
+        role: "assistant",
+        content: "继续补充信息",
+        meta: {
+          requestedMode: "api",
+          actualMode: "mock",
+          degraded: true,
+          fallbackReason: "network_error",
+          source: "local-mock",
+        },
+      },
+    ]),
+  });
 });
 
 describe("GET /api/me", () => {
@@ -96,7 +117,13 @@ describe("GET /api/me", () => {
             createdAt: "2026-07-10T01:00:00.000Z",
           },
         ],
-        aiRuntime: { requestedMode: "manual" },
+        aiRuntime: {
+          requestedMode: "manual",
+          actualMode: "mock",
+          degraded: true,
+          fallbackReason: "network_error",
+          source: "local-mock",
+        },
       },
     });
     expect(payload.data.match.score).not.toBe(arithmeticAverage);
@@ -105,6 +132,64 @@ describe("GET /api/me", () => {
       orderBy: { createdAt: "desc" },
       take: 8,
       select: { id: true, eventType: true, title: true, summary: true, createdAt: true },
+    });
+    expect(mocks.findOnboardingConversation).toHaveBeenCalledWith({
+      where: { userId: "user-1" },
+      orderBy: { updatedAt: "desc" },
+      select: { requestedMode: true, actualMode: true, transcript: true },
+    });
+    expect(mocks.upsertProfile).not.toHaveBeenCalled();
+  });
+
+  it("defaults actual mode to the requested runtime mode when no execution was persisted", async () => {
+    mocks.findOnboardingConversation.mockResolvedValue(null);
+
+    const payload = await (await GET()).json();
+
+    expect(payload.data.aiRuntime).toEqual({
+      requestedMode: "manual",
+      actualMode: "manual",
+      degraded: false,
+      fallbackReason: null,
+      source: "runtime-config",
+    });
+  });
+
+  it("repairs a missing profile once so onboarding can render an incomplete ProfileDto", async () => {
+    mocks.getCurrentUser.mockResolvedValue({
+      id: "user-without-profile",
+      username: "legacy",
+      displayName: "待引导用户",
+      role: "user",
+      profile: null,
+    });
+    const repairedProfile = {
+      ...profile,
+      id: "profile-repaired",
+      userId: "user-without-profile",
+      targetRole: "ai_product_manager",
+      targetRoleLabel: "AI 产品经理",
+      onboardingCompleted: false,
+    };
+    mocks.upsertProfile.mockResolvedValue(repairedProfile);
+
+    const response = await GET();
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.data.profile).toMatchObject({
+      userId: "user-without-profile",
+      onboardingCompleted: false,
+      targetRole: "ai_product_manager",
+    });
+    expect(mocks.upsertProfile).toHaveBeenCalledWith({
+      where: { userId: "user-without-profile" },
+      update: {},
+      create: expect.objectContaining({
+        userId: "user-without-profile",
+        onboardingCompleted: false,
+        targetRole: "ai_product_manager",
+      }),
     });
   });
 });
