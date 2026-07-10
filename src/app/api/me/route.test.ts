@@ -211,6 +211,59 @@ describe("GET /api/me", () => {
     });
   });
 
+  it.each(["null", "{}"])("does not throw when the stored transcript is %s", async (transcript) => {
+    mocks.findOnboardingConversation.mockResolvedValue({
+      id: "conversation-invalid-root",
+      status: "active",
+      requestedMode: "manual",
+      actualMode: "manual",
+      transcript,
+      draft: "{}",
+      completeness: 0,
+    });
+
+    const response = await GET();
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.data.activeOnboardingConversation.transcript).toEqual([]);
+    expect(payload.data.aiRuntime.source).toBe("configured-no-execution");
+  });
+
+  it("filters malformed transcript entries but preserves safe turns and execution metadata", async () => {
+    const executionMeta = {
+      requestedMode: "manual",
+      actualMode: "mock",
+      degraded: true,
+      fallbackReason: "network_error",
+      source: "local-mock",
+    };
+    mocks.findOnboardingConversation.mockResolvedValue({
+      id: "conversation-mixed",
+      status: "active",
+      requestedMode: "manual",
+      actualMode: "mock",
+      transcript: JSON.stringify([
+        null,
+        {},
+        { role: "system", content: "drop" },
+        { role: "user", content: 42 },
+        { role: "user", content: "保留用户消息", unexpected: "drop" },
+        { role: "assistant", content: "保留助手消息", meta: executionMeta },
+      ]),
+      draft: "{}",
+      completeness: 0,
+    });
+
+    const payload = await (await GET()).json();
+
+    expect(payload.data.activeOnboardingConversation.transcript).toEqual([
+      { role: "user", content: "保留用户消息" },
+      { role: "assistant", content: "保留助手消息" },
+    ]);
+    expect(payload.data.aiRuntime).toEqual(executionMeta);
+  });
+
   it("repairs a missing profile once so onboarding can render an incomplete ProfileDto", async () => {
     mocks.getCurrentUser.mockResolvedValue({
       id: "user-without-profile",

@@ -14,19 +14,13 @@ import {
   type OnboardingDraft,
 } from "@/lib/onboarding";
 import { getPrisma } from "@/lib/prisma";
+import { parseOnboardingTranscript } from "@/lib/onboarding-transcript";
 import { chatWithTbox } from "@/lib/tbox/adapter";
-import type { AiExecutionMeta } from "@/lib/types";
 
 const onboardingChatSchema = z.object({
   message: z.string().trim().min(1).max(2_000),
   conversationId: z.string().trim().min(1).max(100).optional(),
 });
-
-interface TranscriptTurn {
-  role: "user" | "assistant";
-  content: string;
-  meta?: AiExecutionMeta;
-}
 
 function safeStoredDraft(value: string): OnboardingDraft {
   const parsed = onboardingDraftSchema.safeParse(parseJson<unknown>(value, {}));
@@ -96,7 +90,7 @@ export async function POST(request: Request) {
     assistantMessage = result.data.answer.trim();
   }
 
-  const transcript = parseJson<TranscriptTurn[]>(conversation.transcript, []);
+  const transcript = parseOnboardingTranscript(conversation.transcript);
   transcript.push(
     { role: "user", content: parsed.data.message },
     { role: "assistant", content: assistantMessage, meta: executionMeta },

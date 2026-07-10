@@ -1,18 +1,10 @@
 import { z } from "zod";
-import { parseJson } from "@/lib/json";
+import { parseOnboardingExecutionMetadata } from "@/lib/onboarding-transcript";
 import type { AiExecutionMeta, AiMode } from "@/lib/types";
 
 export type AiRuntimeSnapshot = AiExecutionMeta;
 
 const modeSchema = z.enum(["api", "manual", "mock"]);
-const executionMetaSchema = z.object({
-  requestedMode: modeSchema,
-  actualMode: modeSchema,
-  degraded: z.boolean(),
-  fallbackReason: z.string().nullable(),
-  source: z.string().min(1),
-});
-
 function configuredWithoutExecution(requestedMode: AiMode, source: string): AiRuntimeSnapshot {
   return {
     requestedMode,
@@ -28,14 +20,12 @@ export function recoverAiRuntime(
   conversation: { requestedMode: string; actualMode: string; transcript: string } | null,
 ): AiRuntimeSnapshot {
   if (conversation) {
-    const transcript = parseJson<Array<{ meta?: unknown }>>(conversation.transcript, []);
-    for (let index = transcript.length - 1; index >= 0; index -= 1) {
-      const parsed = executionMetaSchema.safeParse(transcript[index]?.meta);
-      if (parsed.success) {
-        return parsed.data.requestedMode === requestedMode
-          ? parsed.data
-          : configuredWithoutExecution(requestedMode, "configured-no-execution");
-      }
+    const executionMetadata = parseOnboardingExecutionMetadata(conversation.transcript);
+    const executionMeta = executionMetadata.at(-1);
+    if (executionMeta) {
+      return executionMeta.requestedMode === requestedMode
+        ? executionMeta
+        : configuredWithoutExecution(requestedMode, "configured-no-execution");
     }
     const persistedRequestedMode = modeSchema.safeParse(conversation.requestedMode);
     if (persistedRequestedMode.success && persistedRequestedMode.data !== requestedMode) {

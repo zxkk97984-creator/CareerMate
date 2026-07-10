@@ -1,4 +1,3 @@
-import { z } from "zod";
 import { recoverAiRuntime, type AiRuntimeSnapshot } from "@/lib/ai-runtime";
 import {
   calculateOnboardingCompleteness,
@@ -6,12 +5,8 @@ import {
   type OnboardingDraft,
 } from "@/lib/onboarding";
 import { parseJson } from "@/lib/json";
+import { parseOnboardingTranscript } from "@/lib/onboarding-transcript";
 import type { AiMode } from "@/lib/types";
-
-const transcriptSchema = z.array(z.object({
-  role: z.enum(["user", "assistant"]),
-  content: z.string(),
-}));
 
 export interface OnboardingTranscriptMessage {
   role: "user" | "assistant";
@@ -46,14 +41,14 @@ export function recoverActiveOnboardingConversation(
 ): ActiveOnboardingConversation | null {
   if (!conversation || conversation.status !== "active") return null;
 
-  const transcriptResult = transcriptSchema.safeParse(parseJson<unknown>(conversation.transcript, null));
+  const transcript = parseOnboardingTranscript(conversation.transcript);
   const draftResult = onboardingDraftSchema.safeParse(parseJson<unknown>(conversation.draft, null));
   const draft = draftResult.success ? draftResult.data : {};
 
   return {
     id: conversation.id,
     status: "active",
-    transcript: transcriptResult.success ? transcriptResult.data : [],
+    transcript: transcript.map(({ role, content }) => ({ role, content })),
     draft,
     completeness: calculateOnboardingCompleteness(draft),
     executionMeta: recoverAiRuntime(requestedMode, conversation),

@@ -171,6 +171,44 @@ describe("POST /api/onboarding/chat", () => {
     expect(adapterInput.question).not.toContain("https://example.test/chat");
   });
 
+  it.each([
+    ["null", []],
+    ["{}", []],
+    [
+      JSON.stringify([
+        null,
+        {},
+        { role: "system", content: "drop" },
+        { role: "user", content: 42 },
+        { role: "user", content: "保留已有消息", unexpected: "drop" },
+        { role: "assistant", content: "保留已有回答", meta: degradedMeta },
+      ]),
+      [
+        { role: "user", content: "保留已有消息" },
+        { role: "assistant", content: "保留已有回答", meta: degradedMeta },
+      ],
+    ],
+  ])("safely appends to stored transcript %s", async (transcript, expectedPrefix) => {
+    mocks.conversationFindUnique.mockResolvedValue({
+      id: "conversation-1",
+      userId: "user-1",
+      status: "active",
+      transcript,
+      draft: "{}",
+      updatedAt: new Date("2026-07-10T00:00:00.000Z"),
+    });
+
+    const response = await POST(request({ message: "我是大三", conversationId: "conversation-1" }));
+    const updatedTranscript = JSON.parse(mocks.conversationUpdateMany.mock.calls[0][0].data.transcript);
+
+    expect(response.status).toBe(200);
+    expect(updatedTranscript.slice(0, expectedPrefix.length)).toEqual(expectedPrefix);
+    expect(updatedTranscript.slice(-2)).toEqual([
+      { role: "user", content: "我是大三" },
+      { role: "assistant", content: expect.any(String), meta: degradedMeta },
+    ]);
+  });
+
   it.each(["mock", "manual"] as const)(
     "invokes the unified adapter in requested %s mode and persists its honest metadata",
     async (mode) => {

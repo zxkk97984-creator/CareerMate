@@ -77,4 +77,40 @@ describe("formatAiRuntimeBadge", () => {
       expect(formatAiRuntimeDescription(runtime)).toContain("尚未执行");
     }
   });
+
+  it.each(["null", "{}"])("treats non-array transcript %s as no execution", (transcript) => {
+    expect(recoverAiRuntime("manual", {
+      requestedMode: "manual",
+      actualMode: "manual",
+      transcript,
+    })).toEqual({
+      requestedMode: "manual",
+      actualMode: "manual",
+      degraded: false,
+      fallbackReason: null,
+      source: "configured-no-execution",
+    });
+  });
+
+  it("ignores malformed turns while preserving valid execution metadata", () => {
+    const validMeta = {
+      requestedMode: "manual" as const,
+      actualMode: "mock" as const,
+      degraded: true,
+      fallbackReason: "network_error",
+      source: "local-mock",
+    };
+
+    expect(recoverAiRuntime("manual", {
+      requestedMode: "manual",
+      actualMode: "mock",
+      transcript: JSON.stringify([
+        null,
+        {},
+        { role: "system", content: "ignore" },
+        { role: "assistant", content: 42, meta: validMeta },
+        { role: "assistant", content: "valid", meta: validMeta },
+      ]),
+    })).toEqual(validMeta);
+  });
 });
