@@ -43,13 +43,17 @@ describe("formatAiRuntimeBadge", () => {
       ]),
     };
 
-    expect(recoverAiRuntime("api", conversation)).toEqual({
+    const configuredOnly = recoverAiRuntime("api", conversation);
+    expect(configuredOnly).toEqual({
       requestedMode: "api",
       actualMode: "api",
       degraded: false,
       fallbackReason: null,
       source: "configured-no-execution",
     });
+    expect(formatAiRuntimeBadge(configuredOnly)).toBe("TBOX_MODE=api（尚未执行）");
+    expect(formatAiRuntimeDescription(configuredOnly)).toBe("配置 api · 尚未执行");
+    expect(formatAiRuntimeDescription(configuredOnly)).not.toContain("实际");
     expect(recoverAiRuntime("manual", conversation)).toEqual({
       requestedMode: "manual",
       actualMode: "manual",

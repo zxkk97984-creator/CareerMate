@@ -64,8 +64,10 @@ export function formatAiRuntimeBadge(runtime: {
   requestedMode: AiMode;
   actualMode?: AiMode;
   degraded?: boolean;
+  source?: string;
 }) {
   const requested = `TBOX_MODE=${runtime.requestedMode}`;
+  if (runtime.source === "configured-no-execution") return `${requested}（尚未执行）`;
   if (!runtime.actualMode || runtime.actualMode === runtime.requestedMode) {
     return runtime.degraded ? `${requested}（已降级）` : requested;
   }
@@ -76,7 +78,11 @@ export function formatAiRuntimeDescription(runtime: {
   requestedMode: AiMode;
   actualMode?: AiMode;
   degraded?: boolean;
+  source?: string;
 }) {
+  if (runtime.source === "configured-no-execution") {
+    return `配置 ${runtime.requestedMode} · 尚未执行`;
+  }
   const actualMode = runtime.actualMode ?? runtime.requestedMode;
   return `请求 ${runtime.requestedMode} · 实际 ${actualMode}${runtime.degraded ? " · 已降级" : ""}`;
 }
