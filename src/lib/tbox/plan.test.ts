@@ -25,6 +25,7 @@ const profile: ProfileDto = {
     projectPractice: 60,
   },
   memoryEnabled: true,
+  onboardingCompleted: true,
   updatedAt: "2026-07-10T00:00:00.000Z",
 };
 

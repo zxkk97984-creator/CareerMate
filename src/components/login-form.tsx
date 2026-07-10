@@ -30,7 +30,7 @@ export function LoginForm() {
       setError(payload.error?.message ?? "操作失败");
       return;
     }
-    router.push("/dashboard");
+    router.push(payload.data?.nextPath ?? (mode === "register" ? "/onboarding" : "/dashboard"));
     router.refresh();
   }
 

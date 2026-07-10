@@ -5,5 +5,6 @@ import { getCurrentUser } from "@/lib/auth";
 export async function WorkspacePage({ view }: { view: Parameters<typeof Workspace>[0]["initialView"] }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  if (view !== "onboarding" && !user.profile?.onboardingCompleted) redirect("/onboarding");
   return <Workspace initialView={view} />;
 }

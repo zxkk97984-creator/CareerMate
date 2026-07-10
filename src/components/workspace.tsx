@@ -17,8 +17,10 @@ import {
   UserCog,
 } from "lucide-react";
 import { PolarAngleAxis, PolarGrid, Radar, RadarChart, ResponsiveContainer } from "recharts";
+import { formatAiRuntimeBadge } from "@/lib/ai-runtime";
+import { canCompleteOnboarding, type OnboardingDraft } from "@/lib/onboarding";
 import { consumeFrontendSseResponse } from "@/lib/tbox/frontend-sse";
-import { abilityKeys, abilityLabels, type ProfileDto } from "@/lib/types";
+import { abilityKeys, abilityLabels, type AiExecutionMeta, type AiMode, type ProfileDto } from "@/lib/types";
 
 type View = "onboarding" | "dashboard" | "path" | "simulation" | "resources" | "memory" | "chat" | "admin";
 
@@ -26,6 +28,21 @@ interface ApiPayload<T> {
   ok: boolean;
   data: T;
   error?: { message: string };
+  meta?: AiExecutionMeta;
+}
+
+interface MatchData {
+  score: number;
+  explanation: string;
+  weakAbilities: Array<(typeof abilityKeys)[number]>;
+}
+
+interface ProgressLogData {
+  id: string;
+  eventType: string;
+  title: string;
+  summary: string;
+  createdAt: string;
 }
 
 interface WorkspaceData {
@@ -38,6 +55,9 @@ interface WorkspaceData {
   simulations: any[];
   drafts: any[];
   templates: any[];
+  match: MatchData | null;
+  recentProgressLogs: ProgressLogData[];
+  aiRuntime: { requestedMode: AiMode };
 }
 
 const navItems: Array<{ href: string; view: View; label: string; icon: React.ElementType }> = [
@@ -153,9 +173,17 @@ export function Workspace({ initialView }: { initialView: View }) {
     simulations: [],
     drafts: [],
     templates: [],
+    match: null,
+    recentProgressLogs: [],
+    aiRuntime: { requestedMode: "mock" },
   });
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState("正在读取成长档案...");
+  const [aiExecution, setAiExecution] = useState<{
+    requestedMode: AiMode;
+    actualMode?: AiMode;
+    degraded?: boolean;
+  }>({ requestedMode: "mock" });
 
   const activeView = useMemo(() => {
     const active = navItems.find((item) => item.href === pathname);
@@ -164,7 +192,13 @@ export function Workspace({ initialView }: { initialView: View }) {
 
   async function loadAll() {
     setLoading(true);
-    const me = await api<{ user: WorkspaceData["user"]; profile: ProfileDto | null }>("/api/me");
+    const me = await api<{
+      user: WorkspaceData["user"];
+      profile: ProfileDto | null;
+      match: MatchData | null;
+      recentProgressLogs: ProgressLogData[];
+      aiRuntime: { requestedMode: AiMode };
+    }>("/api/me");
     if (!me.ok) {
       router.push("/login");
       return;
@@ -187,7 +221,14 @@ export function Workspace({ initialView }: { initialView: View }) {
       simulations: simulations.ok ? simulations.data.items : [],
       drafts: admin.ok ? admin.data.drafts : [],
       templates: admin.ok ? admin.data.templates : [],
+      match: me.data.match,
+      recentProgressLogs: me.data.recentProgressLogs,
+      aiRuntime: me.data.aiRuntime,
     });
+    setAiExecution((current) => ({
+      ...current,
+      requestedMode: me.data.aiRuntime.requestedMode,
+    }));
     setLoading(false);
     setNotice("CareerMate 已准备好，可以继续推进你的本月任务。");
   }
@@ -259,14 +300,20 @@ export function Workspace({ initialView }: { initialView: View }) {
             </div>
             <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600 shadow-sm">
               <Gauge size={18} />
-              `TBOX_MODE=mock`
+              {formatAiRuntimeBadge(aiExecution)}
             </div>
           </header>
 
           <div className="grid gap-5 xl:grid-cols-[1fr_288px]">
             <div className="space-y-5">
               {activeView === "dashboard" && <Dashboard data={data} refresh={loadAll} setNotice={setNotice} />}
-              {activeView === "onboarding" && <Onboarding profile={data.profile} refresh={loadAll} setNotice={setNotice} />}
+              {activeView === "onboarding" && (
+                <Onboarding
+                  refresh={loadAll}
+                  setNotice={setNotice}
+                  setAiExecution={setAiExecution}
+                />
+              )}
               {activeView === "path" && <PathView plan={data.plan} refresh={loadAll} setNotice={setNotice} />}
               {activeView === "simulation" && <SimulationView simulations={data.simulations} refresh={loadAll} setNotice={setNotice} />}
               {activeView === "resources" && <ResourceView resources={data.resources} profile={data.profile} />}
@@ -285,7 +332,6 @@ export function Workspace({ initialView }: { initialView: View }) {
 function Dashboard({ data, refresh, setNotice }: { data: WorkspaceData; refresh: () => Promise<void>; setNotice: (value: string) => void }) {
   const radar = abilityKeys.map((key) => ({ ability: abilityLabels[key], score: data.profile?.abilityScores[key] ?? 0 }));
   const currentMonth = data.plan?.months?.[Math.max((data.plan?.currentMonthIndex ?? 1) - 1, 0)];
-  const average = Math.round(abilityKeys.reduce((sum, key) => sum + (data.profile?.abilityScores[key] ?? 0), 0) / abilityKeys.length);
 
   async function generatePlan() {
     setNotice("正在生成 3 年路径...");
@@ -297,7 +343,7 @@ function Dashboard({ data, refresh, setNotice }: { data: WorkspaceData; refresh:
   return (
     <>
       <div className="grid gap-4 md:grid-cols-3">
-        <Metric title="岗位匹配度" value={`${average}%`} tone="indigo" />
+        <Metric title="加权岗位匹配度" value={`${data.match?.score ?? 0}%`} tone="indigo" />
         <Metric title="本月任务" value={`${currentMonth?.learningTasks?.length ?? 0} 项`} tone="emerald" />
         <Metric title="待确认画像" value={`${data.candidates.filter((item) => item.status === "pending").length} 条`} tone="amber" />
       </div>
@@ -333,6 +379,39 @@ function Dashboard({ data, refresh, setNotice }: { data: WorkspaceData; refresh:
           </div>
         </Panel>
       </div>
+      <div className="grid gap-5 lg:grid-cols-2">
+        <Panel title="匹配度说明">
+          <p className="text-sm leading-6 text-slate-600">
+            {data.match?.explanation ?? "完成画像后将生成岗位匹配度说明。"}
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {(data.match?.weakAbilities ?? []).map((ability) => (
+              <span key={ability} className="rounded-full bg-amber-50 px-3 py-1 text-xs text-amber-700">
+                优先提升：{abilityLabels[ability]}
+              </span>
+            ))}
+          </div>
+        </Panel>
+        <Panel title="近期成长记录">
+          <div className="space-y-3">
+            {data.recentProgressLogs.length === 0 ? (
+              <p className="text-sm text-slate-500">还没有成长记录。</p>
+            ) : (
+              data.recentProgressLogs.map((log) => (
+                <div key={log.id} className="rounded-md border border-slate-200 px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-sm font-semibold text-slate-900">{log.title}</div>
+                    <time className="text-xs text-slate-400" dateTime={log.createdAt}>
+                      {new Date(log.createdAt).toLocaleDateString("zh-CN")}
+                    </time>
+                  </div>
+                  {log.summary ? <p className="mt-1 text-xs leading-5 text-slate-500">{log.summary}</p> : null}
+                </div>
+              ))
+            )}
+          </div>
+        </Panel>
+      </div>
     </>
   );
 }
@@ -351,74 +430,174 @@ function Metric({ title, value, tone }: { title: string; value: string; tone: "i
   );
 }
 
-function Onboarding({ profile, refresh, setNotice }: { profile: ProfileDto; refresh: () => Promise<void>; setNotice: (value: string) => void }) {
-  const [form, setForm] = useState({
-    major: profile.major ?? "",
-    targetRole: profile.targetRole,
-    targetRoleLabel: profile.targetRoleLabel,
-    weeklyAvailableHours: profile.weeklyAvailableHours,
-    experienceSummary: profile.experienceSummary,
-  });
-
-  async function save() {
-    setNotice("正在保存画像...");
-    await api("/api/profile", { method: "PATCH", body: JSON.stringify(form) });
-    setNotice("画像已保存，重要能力变化仍会走确认候选。");
-    await refresh();
-  }
-
-  return (
-    <Panel title="对话式画像引导">
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Field label="专业/背景" value={form.major} onChange={(value) => setForm({ ...form, major: value })} />
-        <label className="block">
-          <span className="mb-2 block text-sm font-medium text-slate-700">目标岗位</span>
-          <select
-            className="h-11 w-full rounded-md border border-slate-200 px-3 text-sm"
-            value={form.targetRole}
-            onChange={(event) => {
-              const label = event.target.selectedOptions[0].textContent ?? "AI 产品经理";
-              setForm({ ...form, targetRole: event.target.value, targetRoleLabel: label });
-            }}
-          >
-            <option value="ai_product_manager">AI 产品经理</option>
-            <option value="data_analyst">数据分析师</option>
-            <option value="aigc_operator">AIGC 内容运营</option>
-          </select>
-        </label>
-        <label className="block">
-          <span className="mb-2 block text-sm font-medium text-slate-700">每周可投入时间</span>
-          <input
-            type="number"
-            min={1}
-            max={40}
-            className="h-11 w-full rounded-md border border-slate-200 px-3 text-sm"
-            value={form.weeklyAvailableHours}
-            onChange={(event) => setForm({ ...form, weeklyAvailableHours: Number(event.target.value) })}
-          />
-        </label>
-        <label className="block lg:col-span-2">
-          <span className="mb-2 block text-sm font-medium text-slate-700">经历摘要</span>
-          <textarea
-            className="min-h-32 w-full rounded-md border border-slate-200 p-3 text-sm leading-6"
-            value={form.experienceSummary}
-            onChange={(event) => setForm({ ...form, experienceSummary: event.target.value })}
-          />
-        </label>
-      </div>
-      <div className="mt-5">
-        <Button onClick={save}>保存画像</Button>
-      </div>
-    </Panel>
-  );
+interface OnboardingMessage {
+  role: "user" | "assistant";
+  content: string;
 }
 
-function Field({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+function Onboarding({
+  refresh,
+  setNotice,
+  setAiExecution,
+}: {
+  refresh: () => Promise<void>;
+  setNotice: (value: string) => void;
+  setAiExecution: (value: { requestedMode: AiMode; actualMode?: AiMode; degraded?: boolean }) => void;
+}) {
+  const router = useRouter();
+  const [conversationId, setConversationId] = useState<string>();
+  const [draft, setDraft] = useState<OnboardingDraft>({});
+  const [completeness, setCompleteness] = useState(0);
+  const [message, setMessage] = useState("");
+  const [messages, setMessages] = useState<OnboardingMessage[]>([
+    {
+      role: "assistant",
+      content: "你好，我会通过几轮简短对话了解你的阶段、目标和现实条件。你目前处于什么学习或工作阶段？",
+    },
+  ]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function send() {
+    const content = message.trim();
+    if (!content || loading) return;
+    setLoading(true);
+    setError("");
+    setMessage("");
+    setMessages((current) => [...current, { role: "user", content }]);
+    setNotice("CareerMate 正在整理画像信息...");
+    try {
+      const response = await api<{
+        assistantMessage: string;
+        conversationId: string;
+        draft: OnboardingDraft;
+        profileCompleteness: number;
+      }>("/api/onboarding/chat", {
+        method: "POST",
+        body: JSON.stringify({ message: content, conversationId }),
+      });
+      if (!response.ok) throw new Error(response.error?.message ?? "画像对话失败");
+      setConversationId(response.data.conversationId);
+      setDraft(response.data.draft);
+      setCompleteness(response.data.profileCompleteness);
+      setMessages((current) => [
+        ...current,
+        { role: "assistant", content: response.data.assistantMessage },
+      ]);
+      if (response.meta) {
+        setAiExecution({
+          requestedMode: response.meta.requestedMode,
+          actualMode: response.meta.actualMode,
+          degraded: response.meta.degraded,
+        });
+      }
+      setNotice(`画像完整度已更新到 ${Math.round(response.data.profileCompleteness * 100)}%。`);
+    } catch (caught) {
+      const detail = caught instanceof Error ? caught.message : "画像对话失败，请稍后重试";
+      setError(detail);
+      setMessage(content);
+      setNotice("画像对话失败，你的输入已保留，可以重试。");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function complete() {
+    if (!conversationId || !canCompleteOnboarding(completeness) || loading) return;
+    setLoading(true);
+    setError("");
+    setNotice("正在确认并保存职业画像...");
+    try {
+      const response = await api<{ alreadyCompleted: boolean }>("/api/onboarding/complete", {
+        method: "POST",
+        body: JSON.stringify({ conversationId }),
+      });
+      if (!response.ok) throw new Error(response.error?.message ?? "画像确认失败");
+      setNotice(response.data.alreadyCompleted ? "画像此前已经确认。" : "职业画像已确认，成长工作台已更新。");
+      await refresh();
+      router.push("/dashboard");
+      router.refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "画像确认失败，请稍后重试");
+      setNotice("画像尚未保存，请检查完整度后重试。");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const summary = [
+    ["阶段", draft.educationStage],
+    ["专业/背景", draft.major],
+    ["目标岗位", draft.targetRoleLabel],
+    ["每周投入", draft.weeklyAvailableHours ? `${draft.weeklyAvailableHours} 小时` : undefined],
+    ["学习偏好", draft.learningPreference?.join("、")],
+    ["相关经历", draft.experienceSummary],
+    ["现实限制", draft.constraints?.join("、")],
+  ];
+
   return (
-    <label className="block">
-      <span className="mb-2 block text-sm font-medium text-slate-700">{label}</span>
-      <input className="h-11 w-full rounded-md border border-slate-200 px-3 text-sm" value={value} onChange={(event) => onChange(event.target.value)} />
-    </label>
+    <div className="grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.8fr)]">
+      <Panel title="对话式画像引导">
+        <div className="mb-4">
+          <div className="flex items-center justify-between text-sm">
+            <span className="font-medium text-slate-700">画像完整度</span>
+            <span className="font-semibold text-slate-950">{Math.round(completeness * 100)}%</span>
+          </div>
+          <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
+            <div
+              className="h-full rounded-full bg-indigo-600 transition-[width]"
+              style={{ width: `${Math.round(completeness * 100)}%` }}
+            />
+          </div>
+        </div>
+        <div className="max-h-[430px] space-y-3 overflow-y-auto rounded-lg bg-slate-50 p-4">
+          {messages.map((item, index) => (
+            <div
+              key={`${item.role}-${index}`}
+              className={`max-w-[88%] rounded-lg px-4 py-3 text-sm leading-6 ${
+                item.role === "user"
+                  ? "ml-auto bg-slate-950 text-white"
+                  : "border border-slate-200 bg-white text-slate-700"
+              }`}
+            >
+              {item.content}
+            </div>
+          ))}
+        </div>
+        <textarea
+          className="mt-4 min-h-24 w-full rounded-md border border-slate-200 p-3 text-sm leading-6"
+          placeholder="一次可以告诉我多项信息，例如：我是大三统计学专业，想做数据分析，每周有 8 小时……"
+          value={message}
+          onChange={(event) => setMessage(event.target.value)}
+        />
+        {error ? <p className="mt-3 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
+        <div className="mt-4 flex items-center gap-3">
+          <Button disabled={loading || !message.trim()} onClick={send}>
+            {loading ? "处理中..." : "发送"}
+          </Button>
+          <span className="text-xs text-slate-500">确认前不会改写正式画像</span>
+        </div>
+      </Panel>
+
+      <Panel title="画像摘要">
+        <dl className="space-y-3">
+          {summary.map(([label, value]) => (
+            <div key={label} className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2">
+              <dt className="text-xs font-medium text-slate-500">{label}</dt>
+              <dd className="mt-1 text-sm text-slate-900">{value || "待补充"}</dd>
+            </div>
+          ))}
+        </dl>
+        <div className="mt-5">
+          <Button disabled={loading || !conversationId || !canCompleteOnboarding(completeness)} onClick={complete}>
+            确认并生成成长工作台
+          </Button>
+          {!canCompleteOnboarding(completeness) ? (
+            <p className="mt-2 text-xs leading-5 text-slate-500">完整度达到 80% 后可以确认。</p>
+          ) : null}
+        </div>
+      </Panel>
+    </div>
   );
 }
 

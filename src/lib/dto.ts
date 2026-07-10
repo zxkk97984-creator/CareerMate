@@ -30,6 +30,7 @@ export function profileDto(profile: {
   constraints: string;
   abilityScores: string;
   memoryEnabled: boolean;
+  onboardingCompleted: boolean;
   updatedAt: Date;
 }): ProfileDto {
   return {

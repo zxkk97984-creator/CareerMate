@@ -45,6 +45,7 @@ export interface ProfileDto {
   constraints: string[];
   abilityScores: AbilityScores;
   memoryEnabled: boolean;
+  onboardingCompleted: boolean;
   updatedAt: string;
 }
 

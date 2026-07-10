@@ -36,6 +36,7 @@ export async function POST(request: Request) {
           experienceSummary: "新用户，等待 CareerMate 完成画像采集。",
           interestTags: toJson(["AI 工具", "职业探索"]),
           constraints: toJson([]),
+          onboardingCompleted: false,
           abilityScores: toJson({
             aiTooling: 45,
             roleFoundation: 35,
@@ -50,5 +51,5 @@ export async function POST(request: Request) {
   });
 
   await setSession(user.id);
-  return ok({ user: userDto(user) });
+  return ok({ user: userDto(user), nextPath: "/onboarding" });
 }
