@@ -14,7 +14,7 @@ function nonEmptyString(value: unknown) {
 function responseData(input: unknown) {
   const root = record(input);
   if (!root) throw new TboxError("invalid_response");
-  return { root, data: record(root.data) ?? root };
+  return { root, data: record(root.result) ?? record(root.data) ?? root };
 }
 
 export function normalizeNonStreamChatResponse(input: unknown): NormalizedChat {

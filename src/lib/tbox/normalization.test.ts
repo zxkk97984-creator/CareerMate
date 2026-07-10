@@ -2,6 +2,29 @@ import { describe, expect, it } from "vitest";
 import { normalizeNonStreamChatResponse } from "./normalization";
 
 describe("non-stream chat normalization", () => {
+  it("accepts the live API result envelope", () => {
+    expect(
+      normalizeNonStreamChatResponse({
+        success: true,
+        result: {
+          conversation_id: "conversation-live",
+          messages: [
+            {
+              type: "answer",
+              content_type: "text",
+              content: "真实百宝箱回答",
+            },
+            {
+              type: "follow_up",
+              content_type: "text",
+              content: "下一步想了解什么？",
+            },
+          ],
+        },
+      }),
+    ).toEqual({ conversationId: "conversation-live", answer: "真实百宝箱回答" });
+  });
+
   it.each([
     ["conversationId", { conversationId: "conversation-1" }],
     ["converstionId", { converstionId: "conversation-1" }],
