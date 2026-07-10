@@ -2,6 +2,7 @@ export type TboxFailureReason =
   | "missing_config"
   | "timeout"
   | "http_error"
+  | "provider_error"
   | "sse_error"
   | "invalid_response"
   | "validation_error"

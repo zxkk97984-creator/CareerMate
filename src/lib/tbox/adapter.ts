@@ -38,12 +38,16 @@ function mockChat(input: ChatInput): NormalizedChat {
 }
 
 async function manualChat(input: ChatInput, deps: AdapterDependencies) {
-  const answer = deps.manualChat
-    ? await deps.manualChat(input)
-    : createManualChatAnswer(input.question);
-  return answer?.trim()
-    ? { conversationId: input.conversationId ?? null, answer: answer.trim() }
-    : null;
+  try {
+    const answer = deps.manualChat
+      ? await deps.manualChat(input)
+      : createManualChatAnswer(input.question);
+    return answer?.trim()
+      ? { conversationId: input.conversationId ?? null, answer: answer.trim() }
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function chatWithTbox(
@@ -76,21 +80,20 @@ export async function chatWithTbox(
 function extractJson(text: string) {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]?.trim();
   const candidate = fenced ?? text.trim();
-  const objectStart = candidate.indexOf("{");
-  const objectEnd = candidate.lastIndexOf("}");
-  const arrayStart = candidate.indexOf("[");
-  const arrayEnd = candidate.lastIndexOf("]");
-  const json =
-    objectStart >= 0 && objectEnd > objectStart
-      ? candidate.slice(objectStart, objectEnd + 1)
-      : arrayStart >= 0 && arrayEnd > arrayStart
-        ? candidate.slice(arrayStart, arrayEnd + 1)
-        : candidate;
-  try {
-    return JSON.parse(json);
-  } catch {
-    throw new TboxError("validation_error");
+  const spans = [
+    [candidate.indexOf("{"), candidate.lastIndexOf("}")],
+    [candidate.indexOf("["), candidate.lastIndexOf("]")],
+  ]
+    .filter(([start, end]) => start >= 0 && end > start)
+    .sort(([left], [right]) => left - right);
+  for (const json of [candidate, ...spans.map(([start, end]) => candidate.slice(start, end + 1))]) {
+    try {
+      return JSON.parse(json);
+    } catch {
+      // Try the next complete object or array span without exposing upstream text.
+    }
   }
+  throw new TboxError("validation_error");
 }
 
 interface StructuredGenerationOptions<T> {

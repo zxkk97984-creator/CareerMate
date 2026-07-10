@@ -9,8 +9,12 @@ import {
   type RetrievalInput,
 } from "@/lib/tbox/retrieval";
 import type { RetrievalItem } from "@/lib/tbox/types";
+import { getMockRetrievalItems } from "@/lib/tbox/fixtures";
 
 async function localRetrieval(input: RetrievalInput): Promise<RetrievalItem[]> {
+  if (input.datasetKey === "ethicsRules") {
+    return getMockRetrievalItems("ethicsRules", input.limit);
+  }
   const prisma = getPrisma();
   if (input.datasetKey === "learningResources") {
     const items = await prisma.resourceItem.findMany({
@@ -41,9 +45,7 @@ async function localRetrieval(input: RetrievalInput): Promise<RetrievalItem[]> {
             ...parseJson<string[]>(role.entryRequirements, []),
             ...parseJson<string[]>(role.coreWork, []),
           ]
-        : input.datasetKey === "simulationScenes"
-          ? parseJson<string[]>(role.simulationScenarios, [])
-          : parseJson<string[]>(role.evaluationRules, []);
+        : parseJson<string[]>(role.simulationScenarios, []);
     if (!values.length) return [];
     return [
       {

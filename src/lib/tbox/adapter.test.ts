@@ -66,7 +66,7 @@ describe("Tbox fallback adapter", () => {
       question: "Next question",
       user_id: "user-1",
       stream: false,
-      business_data: { targetRole: "data_analyst" },
+      business_data: JSON.stringify({ targetRole: "data_analyst" }),
     });
   });
 
@@ -120,6 +120,29 @@ describe("Tbox fallback adapter", () => {
       degraded: true,
       fallbackReason: "validation_error",
     });
+  });
+
+  it("omits business_data when no context is supplied", async () => {
+    const fetchImpl = vi.fn(async (_url: URL | RequestInfo, _init?: RequestInit) => {
+      void _url;
+      void _init;
+      return new Response(
+        JSON.stringify({
+          conversation_id: "conversation-1",
+          messages: [{ type: "answer", content_type: "text", content: "answer" }],
+        }),
+        { status: 200 },
+      );
+    });
+
+    await chatWithTbox(
+      { question: "hello", userId: "user-1" },
+      { config: baseConfig, fetchImpl },
+    );
+
+    expect(JSON.parse(String(fetchImpl.mock.calls[0][1]?.body))).not.toHaveProperty(
+      "business_data",
+    );
   });
 
   it("falls back on timeout using an injected clock", async () => {
@@ -183,5 +206,73 @@ describe("Tbox fallback adapter", () => {
 
     expect(result.data).toBe(false);
     expect(result.meta.actualMode).toBe("manual");
+  });
+
+  it("falls back to mock when a requested manual chat provider throws", async () => {
+    const result = await chatWithTbox(
+      { question: "hello", userId: "user-1" },
+      {
+        config: { ...baseConfig, mode: "manual" },
+        manualChat: async () => {
+          throw new Error("private manual failure");
+        },
+      },
+    );
+
+    expect(result.meta).toEqual({
+      requestedMode: "manual",
+      actualMode: "mock",
+      degraded: true,
+      fallbackReason: "manual_unavailable",
+      source: "local-mock",
+    });
+    expect(JSON.stringify(result)).not.toContain("private manual failure");
+  });
+
+  it("falls back to mock when API and its manual fallback provider fail", async () => {
+    const result = await chatWithTbox(
+      { question: "hello", userId: "user-1" },
+      {
+        config: { ...baseConfig, apiKey: "" },
+        manualChat: async () => {
+          throw new Error("private manual failure");
+        },
+      },
+    );
+
+    expect(result.meta).toEqual({
+      requestedMode: "api",
+      actualMode: "mock",
+      degraded: true,
+      fallbackReason: "missing_config",
+      source: "local-mock",
+    });
+    expect(JSON.stringify(result)).not.toContain("private manual failure");
+  });
+
+  it.each([
+    ['```json\n[{"value":"first"},{"value":"second"}]\n```'],
+    ['[{"value":"first"},{"value":"second"}]'],
+  ])("extracts a complete top-level JSON array from %s output", async (answer) => {
+    const result = await generateStructuredWithTbox({
+      config: baseConfig,
+      userId: "user-1",
+      prompt: "Return JSON",
+      schema: z.array(valueSchema),
+      manual: async () => null,
+      mock: () => [{ value: "mock" }],
+      fetchImpl: vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            conversation_id: "conversation-1",
+            messages: [{ type: "answer", content_type: "text", content: answer }],
+          }),
+          { status: 200 },
+        ),
+      ),
+    });
+
+    expect(result.data).toEqual([{ value: "first" }, { value: "second" }]);
+    expect(result.meta.actualMode).toBe("api");
   });
 });

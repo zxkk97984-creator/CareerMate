@@ -40,7 +40,11 @@ const retrievalFixtures: Record<DatasetKey, RetrievalItem[]> = {
     { content: "本地模拟场景：跨角色沟通、需求澄清和 AI 办公任务。", source: "local-role-template", score: 1 },
   ],
   ethicsRules: [
-    { content: "AI 建议仅供参考；避免上传敏感数据，并保留人工确认。", source: "local-ethics-rule", score: 1 },
+    {
+      content: "保护个人隐私并取得知情同意；AI 建议仅供参考且须保留人工确认；禁止未经授权抓取数据。",
+      source: "local-ethics-rule",
+      score: 1,
+    },
   ],
 };
 

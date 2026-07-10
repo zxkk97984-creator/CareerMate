@@ -69,7 +69,7 @@ export async function consumeChatResponse<T>(
     stream,
   };
   if (input.history !== undefined) body.history = input.history;
-  if (input.context !== undefined) body.business_data = input.context;
+  if (input.context !== undefined) body.business_data = JSON.stringify(input.context);
   const headers: Record<string, string> = authorizationHeaders(deps.config.apiKey);
   if (stream) headers.Accept = "text/event-stream";
   return timedResponse(

@@ -44,11 +44,28 @@ export function normalizeNonStreamChatResponse(input: unknown): NormalizedChat {
 }
 
 export function normalizeRetrievalResponse(input: unknown): RetrievalItem[] {
-  const { root, data } = responseData(input);
-  const candidates = [data.results, data.records, data.items, root.results, root.records, root.items];
-  const values = candidates.find(Array.isArray) ?? [];
+  const root = record(input);
+  if (!root) throw new TboxError("invalid_response");
+  const officialResponse = "success" in root || "errorCode" in root;
+  if (officialResponse && (root.success !== true || String(root.errorCode) !== "0")) {
+    throw new TboxError("provider_error");
+  }
 
-  return values.flatMap((value) => {
+  const nestedData = record(root.data);
+  const candidates = officialResponse
+    ? [root.data]
+    : [
+        nestedData?.results,
+        nestedData?.records,
+        nestedData?.items,
+        root.results,
+        root.records,
+        root.items,
+      ];
+  const values = candidates.find(Array.isArray);
+  if (!values) throw new TboxError("invalid_response");
+
+  const items = values.flatMap((value) => {
     const item = record(value);
     if (!item) return [];
     const content =
@@ -59,6 +76,15 @@ export function normalizeRetrievalResponse(input: unknown): RetrievalItem[] {
     if (!content) return [];
     const rawScore = item.score ?? item.relevance_score ?? item.similarity;
     const score = typeof rawScore === "number" && Number.isFinite(rawScore) ? rawScore : 0;
-    return [{ content, source: nonEmptyString(item.source) ?? "tbox-dataset", score }];
+    return [{
+      content,
+      source:
+        nonEmptyString(item.originFileName) ??
+        nonEmptyString(item.source) ??
+        "tbox-dataset",
+      score,
+    }];
   });
+  if (values.length && !items.length) throw new TboxError("invalid_response");
+  return items;
 }

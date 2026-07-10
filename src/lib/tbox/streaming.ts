@@ -42,10 +42,14 @@ function localEvents(chunks: string[], conversationId?: string): NormalizedStrea
 }
 
 async function manualEvents(input: ChatInput, deps: StreamDependencies) {
-  const answer = deps.manualChat
-    ? await deps.manualChat(input)
-    : createManualChatAnswer(input.question);
-  return answer?.trim() ? localEvents([answer.trim()], input.conversationId) : null;
+  try {
+    const answer = deps.manualChat
+      ? await deps.manualChat(input)
+      : createManualChatAnswer(input.question);
+    return answer?.trim() ? localEvents([answer.trim()], input.conversationId) : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function streamChatWithTbox(

@@ -66,4 +66,34 @@ describe("POST /api/tbox/retrieve", () => {
     expect(body.data.items[0]).toEqual({ content: "SQL", source: "local", score: 1 });
     expect(body.meta.actualMode).toBe("mock");
   });
+
+  it("uses dedicated ethics guidance instead of role evaluation rules", async () => {
+    mocks.roleFindMany.mockResolvedValue([
+      {
+        roleKey: "data_analyst",
+        roleName: "数据分析师",
+        evaluationRules: JSON.stringify(["岗位面试评分规则"]),
+      },
+    ]);
+    await POST(
+      new Request("http://localhost/api/tbox/retrieve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ datasetKey: "ethicsRules", query: "隐私", limit: 3 }),
+      }),
+    );
+
+    const local = mocks.retrieve.mock.calls[0][1].local as (input: {
+      datasetKey: "ethicsRules";
+      query: string;
+      limit: number;
+    }) => Promise<Array<{ content: string; source: string; score: number }>>;
+    const items = await local({ datasetKey: "ethicsRules", query: "隐私", limit: 3 });
+    const content = items.map((item) => item.content).join("\n");
+
+    expect(content).toMatch(/隐私|同意|授权/);
+    expect(content).toContain("未经授权抓取");
+    expect(content).not.toContain("岗位面试评分规则");
+    expect(mocks.roleFindMany).not.toHaveBeenCalled();
+  });
 });

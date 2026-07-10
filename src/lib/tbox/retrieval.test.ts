@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { datasetKeySchema, resolveDatasetId, retrieveWithTbox } from "./retrieval";
+import {
+  datasetKeySchema,
+  resolveDatasetId,
+  retrievalInputSchema,
+  retrieveWithTbox,
+} from "./retrieval";
 import type { TboxConfig } from "./types";
 
 const config: TboxConfig = {
@@ -32,15 +37,17 @@ describe("retrieval dataset mapping", () => {
     expect(resolveDatasetId(config, key)).toBe(expected);
   });
 
-  it("posts the mapped ID and normalizes source and score", async () => {
+  it("posts the mapped ID and normalizes the official retrieval response", async () => {
     const fetchImpl = vi.fn(async (_url: URL | RequestInfo, _init?: RequestInit) => {
       void _url;
       void _init;
       return new Response(
         JSON.stringify({
-          data: {
-            results: [{ text: "SQL 基础", source: "knowledge-base", relevance_score: 0.91 }],
-          },
+          success: true,
+          errorCode: "0",
+          errorMsg: "",
+          traceId: "trace-1",
+          data: [{ content: "SQL 基础", originFileName: "sql-guide.md", score: 0.91 }],
         }),
         { status: 200 },
       );
@@ -57,7 +64,7 @@ describe("retrieval dataset mapping", () => {
       limit: 3,
     });
     expect(result).toEqual({
-      data: { items: [{ content: "SQL 基础", source: "knowledge-base", score: 0.91 }] },
+      data: { items: [{ content: "SQL 基础", source: "sql-guide.md", score: 0.91 }] },
       meta: {
         requestedMode: "api",
         actualMode: "api",
@@ -66,6 +73,32 @@ describe("retrieval dataset mapping", () => {
         source: "tbox-api",
       },
     });
+  });
+
+  it.each([
+    [{ success: false, errorCode: "0", errorMsg: "provider rejected", data: [] }],
+    [{ success: true, errorCode: "DATASET_ERROR", errorMsg: "provider rejected", data: [] }],
+  ])("falls back when the official response reports provider failure", async (payload) => {
+    const result = await retrieveWithTbox(
+      { datasetKey: "learningResources", query: "SQL", limit: 3 },
+      {
+        config,
+        fetchImpl: vi.fn(async () => new Response(JSON.stringify(payload), { status: 200 })),
+        local: async () => [{ content: "local SQL", source: "local-resource-item", score: 1 }],
+      },
+    );
+
+    expect(result).toEqual({
+      data: { items: [{ content: "local SQL", source: "local-resource-item", score: 1 }] },
+      meta: {
+        requestedMode: "api",
+        actualMode: "manual",
+        degraded: true,
+        fallbackReason: "provider_error",
+        source: "local-knowledge-base",
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain("provider rejected");
   });
 
   it("falls back to mock when the manual retrieval provider is unavailable", async () => {
@@ -88,5 +121,15 @@ describe("retrieval dataset mapping", () => {
       source: "local-mock",
     });
     expect(result.data.items.length).toBeGreaterThan(0);
+  });
+
+  it("rejects limits above the official maximum of 10", () => {
+    expect(
+      retrievalInputSchema.safeParse({
+        datasetKey: "learningResources",
+        query: "SQL",
+        limit: 11,
+      }).success,
+    ).toBe(false);
   });
 });

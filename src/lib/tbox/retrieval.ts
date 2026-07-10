@@ -21,7 +21,7 @@ export const datasetKeySchema = z.enum([
 export const retrievalInputSchema = z.object({
   datasetKey: datasetKeySchema,
   query: z.string().trim().min(1).max(2_000),
-  limit: z.number().int().min(1).max(20).default(5),
+  limit: z.number().int().min(1).max(10).default(5),
 });
 
 export type RetrievalInput = z.infer<typeof retrievalInputSchema>;

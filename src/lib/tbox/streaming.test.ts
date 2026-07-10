@@ -118,6 +118,48 @@ describe("stream chat orchestration", () => {
 
     expect(result.meta).toMatchObject({ actualMode: "manual", fallbackReason: "timeout" });
   });
+
+  it("falls back to mock when a requested manual stream provider throws", async () => {
+    const result = await streamChatWithTbox(
+      { question: "hello", userId: "user-1" },
+      {
+        config: { ...config, mode: "manual" },
+        manualChat: async () => {
+          throw new Error("private stream failure");
+        },
+      },
+    );
+
+    expect(result.meta).toEqual({
+      requestedMode: "manual",
+      actualMode: "mock",
+      degraded: true,
+      fallbackReason: "manual_unavailable",
+      source: "local-mock",
+    });
+    expect(JSON.stringify(result)).not.toContain("private stream failure");
+  });
+
+  it("falls back to mock when API and its manual stream fallback provider fail", async () => {
+    const result = await streamChatWithTbox(
+      { question: "hello", userId: "user-1" },
+      {
+        config: { ...config, apiKey: "" },
+        manualChat: async () => {
+          throw new Error("private stream failure");
+        },
+      },
+    );
+
+    expect(result.meta).toEqual({
+      requestedMode: "api",
+      actualMode: "mock",
+      degraded: true,
+      fallbackReason: "missing_config",
+      source: "local-mock",
+    });
+    expect(JSON.stringify(result)).not.toContain("private stream failure");
+  });
 });
 
 afterEach(() => {
