@@ -166,6 +166,7 @@ describe("POST /api/onboarding/chat", () => {
       targetRole: "ai_product_manager",
     });
     const adapterInput = mocks.chat.mock.calls[0][0];
+    expect(adapterInput).not.toHaveProperty("conversationId");
     expect(adapterInput.question).toContain("当前画像草稿");
     expect(adapterInput.question).toContain("weeklyAvailableHours");
     expect(adapterInput.question).not.toContain("https://example.test/chat");

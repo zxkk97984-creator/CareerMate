@@ -79,7 +79,6 @@ export async function POST(request: Request) {
     {
       question: buildApiPrompt(parsed.data.message, draft),
       userId: user.id,
-      conversationId: conversation.id,
       context: { draft, missingGroups: missingOnboardingGroups(draft) },
     },
     { config },
