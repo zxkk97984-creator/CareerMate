@@ -115,7 +115,7 @@ export async function* parseUpstreamSse(
   } finally {
     if (!readerDone) {
       try {
-        await reader.cancel();
+        void reader.cancel().catch(() => undefined);
       } catch {
         // The fetch body may already be errored by an abort.
       }

@@ -173,6 +173,24 @@ describe("stream chat orchestration", () => {
     expect(manualChat).not.toHaveBeenCalled();
   });
 
+  it("does not start local work when the request was aborted before transport", async () => {
+    const requestController = new AbortController();
+    requestController.abort();
+    const manualChat = vi.fn(async () => "manual answer");
+
+    await expect(
+      streamChatWithTbox(
+        { question: "hello", userId: "user-1" },
+        {
+          config: { ...config, apiKey: "" },
+          manualChat,
+          signal: requestController.signal,
+        },
+      ),
+    ).rejects.toMatchObject({ reason: "aborted" });
+    expect(manualChat).not.toHaveBeenCalled();
+  });
+
   it("falls back to mock when a requested manual stream provider throws", async () => {
     const result = await streamChatWithTbox(
       { question: "hello", userId: "user-1" },

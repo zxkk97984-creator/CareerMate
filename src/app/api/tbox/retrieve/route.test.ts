@@ -132,5 +132,12 @@ describe("POST /api/tbox/retrieve", () => {
     const items = await local({ datasetKey: "roleCompetency", query: "数据分析师", limit: 1 });
     expect(items).toHaveLength(1);
     expect(items[0]?.source).toContain("data_analyst");
+
+    const natural = await local({
+      datasetKey: "roleCompetency",
+      query: "数据分析师需要哪些核心能力",
+      limit: 1,
+    });
+    expect(natural[0]?.source).toContain("data_analyst");
   });
 });

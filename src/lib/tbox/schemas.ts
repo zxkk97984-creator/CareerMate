@@ -3,9 +3,9 @@ import { z } from "zod";
 const taskSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
-  type: z.enum(["learn", "practice"]),
-  status: z.enum(["not_started", "in_progress", "done"]),
-  dueWeek: z.number().int().min(1).max(5),
+  type: z.enum(["learn", "practice", "review", "simulation"]),
+  status: z.enum(["not_started", "in_progress", "done", "delayed"]),
+  dueWeek: z.number().int().min(1).max(5).optional(),
 });
 
 const monthSchema = z.object({

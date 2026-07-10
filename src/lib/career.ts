@@ -129,7 +129,13 @@ export function buildSimulationFeedback(input: {
   };
 }
 
-export function serializePlan(plan: ReturnType<typeof buildCareerPlan>) {
+export function serializePlan(plan: {
+  years: unknown;
+  quarters: unknown;
+  months: unknown;
+  assumptions: unknown;
+  riskNotes: unknown;
+}) {
   return {
     years: toJson(plan.years),
     quarters: toJson(plan.quarters),

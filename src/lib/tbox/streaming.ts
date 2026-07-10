@@ -42,6 +42,10 @@ function localEvents(chunks: string[], conversationId?: string): NormalizedStrea
   ];
 }
 
+function throwIfAborted(signal?: AbortSignal) {
+  if (signal?.aborted) throw new TboxError("aborted");
+}
+
 async function manualEvents(input: ChatInput, deps: StreamDependencies) {
   try {
     const answer = deps.manualChat
@@ -57,6 +61,7 @@ export async function streamChatWithTbox(
   input: ChatInput,
   deps: StreamDependencies,
 ): Promise<AiResult<{ events: NormalizedStreamEvent[] }>> {
+  throwIfAborted(deps.signal);
   const requested = deps.config.mode;
   if (requested === "mock") {
     return {
@@ -66,6 +71,7 @@ export async function streamChatWithTbox(
   }
   if (requested === "manual") {
     const events = await manualEvents(input, deps);
+    throwIfAborted(deps.signal);
     return events
       ? { data: { events }, meta: meta(requested, "manual", null, "manual-fixture") }
       : {
@@ -91,9 +97,11 @@ export async function streamChatWithTbox(
     return { data: { events }, meta: meta(requested, "api", null, "tbox-api") };
   } catch (error) {
     reason = failureReason(error);
-    if (reason === "aborted") throw error;
+    if (reason === "aborted" || deps.signal?.aborted) throw new TboxError("aborted");
   }
+  throwIfAborted(deps.signal);
   const events = await manualEvents(input, deps);
+  throwIfAborted(deps.signal);
   return events
     ? { data: { events }, meta: meta(requested, "manual", reason, "manual-fixture") }
     : {

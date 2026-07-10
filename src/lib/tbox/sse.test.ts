@@ -101,4 +101,21 @@ describe("upstream SSE normalization", () => {
     expect(events[0]?.event).toBe("error");
     expect(canceled).toBe(true);
   });
+
+  it("does not wait forever for an underlying cancel promise", async () => {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode("event: done\ndata: [DONE]\n\n"));
+      },
+      cancel() {
+        return new Promise<void>(() => undefined);
+      },
+    });
+    const outcome = await Promise.race([
+      collect(stream),
+      new Promise<"hung">((resolve) => setTimeout(() => resolve("hung"), 50)),
+    ]);
+    expect(outcome).not.toBe("hung");
+  });
 });

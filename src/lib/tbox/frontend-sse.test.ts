@@ -70,4 +70,26 @@ describe("frontend SSE response consumption", () => {
       ),
     ).rejects.toThrow("流式响应格式无效");
   });
+
+  it("does not block UI cleanup on an unsettled cancel promise", async () => {
+    const encoder = new TextEncoder();
+    const response = new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            encoder.encode('event: done\ndata: {"conversationId":"c1"}\n\n'),
+          );
+        },
+        cancel() {
+          return new Promise<void>(() => undefined);
+        },
+      }),
+      { status: 200, headers: { "Content-Type": "text/event-stream" } },
+    );
+    const outcome = await Promise.race([
+      consumeFrontendSseResponse(response, () => undefined).then(() => "done" as const),
+      new Promise<"hung">((resolve) => setTimeout(() => resolve("hung"), 50)),
+    ]);
+    expect(outcome).toBe("done");
+  });
 });

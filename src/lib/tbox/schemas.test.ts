@@ -70,4 +70,15 @@ describe("career plan schema", () => {
     };
     expect(careerPlanSchema.safeParse(invalid).success).toBe(false);
   });
+
+  it("accepts every documented task type, delayed status, and optional dueWeek", () => {
+    const plan = buildCareerPlan(profile) as any;
+    plan.months[0].learningTasks = [
+      { id: "learn", title: "学习", type: "learn", status: "not_started" },
+      { id: "practice", title: "实践", type: "practice", status: "in_progress", dueWeek: 2 },
+      { id: "review", title: "复盘", type: "review", status: "delayed", dueWeek: 3 },
+      { id: "simulation", title: "模拟", type: "simulation", status: "done", dueWeek: 4 },
+    ];
+    expect(careerPlanSchema.safeParse(plan).success).toBe(true);
+  });
 });

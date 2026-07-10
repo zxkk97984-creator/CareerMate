@@ -80,7 +80,7 @@ export async function consumeFrontendSseResponse(
   } finally {
     if (!readerDone) {
       try {
-        await reader.cancel();
+        void reader.cancel().catch(() => undefined);
       } catch {
         // The browser may already have closed or errored the stream.
       }

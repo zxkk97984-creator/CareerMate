@@ -40,6 +40,7 @@ async function localRetrieval(input: RetrievalInput): Promise<RetrievalItem[]> {
     .split(/[\s,，。；;、/]+/)
     .map((token) => token.trim())
     .filter(Boolean);
+  const normalizedQuery = input.query.toLocaleLowerCase().replace(/\s+/g, "");
   return roles
     .map((role) => {
     const values =
@@ -49,13 +50,21 @@ async function localRetrieval(input: RetrievalInput): Promise<RetrievalItem[]> {
             ...parseJson<string[]>(role.coreWork, []),
           ]
         : parseJson<string[]>(role.simulationScenarios, []);
-    const searchable = [role.roleKey, role.roleName, role.category, ...values]
+    const fields = [role.roleKey.replaceAll("_", " "), role.roleName, role.category, ...values]
+      .map((value) => value.toLocaleLowerCase());
+    const searchable = fields
       .join(" ")
       .toLocaleLowerCase();
-    const score = queryTokens.reduce(
+    const tokenScore = queryTokens.reduce(
       (total, token) => total + (searchable.includes(token) ? 1 : 0),
       0,
     );
+    const phraseScore = fields.reduce((total, field) => {
+      const compact = field.replace(/\s+/g, "");
+      if (compact.length < 2) return total;
+      return total + (normalizedQuery.includes(compact) || compact.includes(normalizedQuery) ? 2 : 0);
+    }, 0);
+    const score = tokenScore + phraseScore;
     if (!values.length || score === 0) return null;
     return {
         content: `${role.roleName}：${values.join("；")}`,
