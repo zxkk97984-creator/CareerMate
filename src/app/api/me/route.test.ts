@@ -75,14 +75,14 @@ beforeEach(() => {
     },
   ]);
   mocks.findOnboardingConversation.mockResolvedValue({
-    requestedMode: "api",
+    requestedMode: "manual",
     actualMode: "mock",
     transcript: JSON.stringify([
       {
         role: "assistant",
         content: "继续补充信息",
         meta: {
-          requestedMode: "api",
+          requestedMode: "manual",
           actualMode: "mock",
           degraded: true,
           fallbackReason: "network_error",

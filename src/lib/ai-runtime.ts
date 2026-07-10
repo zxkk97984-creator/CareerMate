@@ -13,6 +13,16 @@ const executionMetaSchema = z.object({
   source: z.string().min(1),
 });
 
+function configuredWithoutExecution(requestedMode: AiMode, source: string): AiRuntimeSnapshot {
+  return {
+    requestedMode,
+    actualMode: requestedMode,
+    degraded: false,
+    fallbackReason: null,
+    source,
+  };
+}
+
 export function recoverAiRuntime(
   requestedMode: AiMode,
   conversation: { requestedMode: string; actualMode: string; transcript: string } | null,
@@ -21,11 +31,21 @@ export function recoverAiRuntime(
     const transcript = parseJson<Array<{ meta?: unknown }>>(conversation.transcript, []);
     for (let index = transcript.length - 1; index >= 0; index -= 1) {
       const parsed = executionMetaSchema.safeParse(transcript[index]?.meta);
-      if (parsed.success) return { ...parsed.data, requestedMode };
+      if (parsed.success) {
+        return parsed.data.requestedMode === requestedMode
+          ? parsed.data
+          : configuredWithoutExecution(requestedMode, "configured-no-execution");
+      }
     }
     const actualMode = modeSchema.safeParse(conversation.actualMode);
     const persistedRequestedMode = modeSchema.safeParse(conversation.requestedMode);
+    if (persistedRequestedMode.success && persistedRequestedMode.data !== requestedMode) {
+      return configuredWithoutExecution(requestedMode, "configured-no-execution");
+    }
     if (actualMode.success) {
+      if (!persistedRequestedMode.success && actualMode.data !== requestedMode) {
+        return configuredWithoutExecution(requestedMode, "configured-no-execution");
+      }
       return {
         requestedMode,
         actualMode: actualMode.data,
@@ -37,13 +57,7 @@ export function recoverAiRuntime(
       };
     }
   }
-  return {
-    requestedMode,
-    actualMode: requestedMode,
-    degraded: false,
-    fallbackReason: null,
-    source: "runtime-config",
-  };
+  return configuredWithoutExecution(requestedMode, "runtime-config");
 }
 
 export function formatAiRuntimeBadge(runtime: {
