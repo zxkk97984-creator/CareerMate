@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({
   configMode: "api" as "api" | "manual" | "mock",
   conversationCreate: vi.fn(),
   conversationFindUnique: vi.fn(),
-  conversationUpdate: vi.fn(),
+  conversationUpdateMany: vi.fn(),
   requireCurrentUser: vi.fn(),
 }));
 
@@ -29,7 +29,7 @@ vi.mock("@/lib/prisma", () => ({
     onboardingConversation: {
       create: mocks.conversationCreate,
       findUnique: mocks.conversationFindUnique,
-      update: mocks.conversationUpdate,
+      updateMany: mocks.conversationUpdateMany,
     },
   }),
 }));
@@ -63,12 +63,13 @@ beforeEach(() => {
     transcript: "[]",
     draft: "{}",
     completeness: 0,
+    updatedAt: new Date("2026-07-10T00:00:00.000Z"),
   });
   mocks.chat.mockResolvedValue({
     data: { conversationId: null, answer: "generic mock answer" },
     meta: degradedMeta,
   });
-  mocks.conversationUpdate.mockImplementation(async ({ data }) => ({ id: "conversation-1", ...data }));
+  mocks.conversationUpdateMany.mockResolvedValue({ count: 1 });
 });
 
 describe("POST /api/onboarding/chat", () => {
@@ -91,7 +92,7 @@ describe("POST /api/onboarding/chat", () => {
 
     expect(response.status).toBe(status);
     expect(mocks.chat).not.toHaveBeenCalled();
-    expect(mocks.conversationUpdate).not.toHaveBeenCalled();
+    expect(mocks.conversationUpdateMany).not.toHaveBeenCalled();
   });
 
   it("creates a conversation, persists both transcript turns and returns deterministic fallback with meta", async () => {
@@ -122,8 +123,13 @@ describe("POST /api/onboarding/chat", () => {
     expect(mocks.conversationCreate).toHaveBeenCalledWith({
       data: expect.objectContaining({ userId: "user-1", status: "active", requestedMode: "api", actualMode: "api" }),
     });
-    const updated = mocks.conversationUpdate.mock.calls[0][0];
-    expect(updated.where).toEqual({ id: "conversation-1" });
+    const updated = mocks.conversationUpdateMany.mock.calls[0][0];
+    expect(updated.where).toEqual({
+      id: "conversation-1",
+      userId: "user-1",
+      status: "active",
+      updatedAt: new Date("2026-07-10T00:00:00.000Z"),
+    });
     expect(JSON.parse(updated.data.transcript)).toEqual([
       { role: "user", content: "我是大三统计学专业，想做数据分析师，每周投入 8 小时，喜欢项目实操。" },
       {
@@ -143,6 +149,7 @@ describe("POST /api/onboarding/chat", () => {
       status: "active",
       transcript: JSON.stringify([{ role: "assistant", content: "你的目标岗位是什么？" }]),
       draft: JSON.stringify({ educationStage: "junior", major: "统计学" }),
+      updatedAt: new Date("2026-07-10T00:00:00.000Z"),
     });
     mocks.chat.mockResolvedValue({
       data: { conversationId: "remote-1", answer: "很好。接下来请告诉我每周可投入的小时数。" },
@@ -186,10 +193,37 @@ describe("POST /api/onboarding/chat", () => {
       expect(mocks.chat).toHaveBeenCalledTimes(1);
       expect(payload.meta).toEqual(meta);
       expect(payload.data.assistantMessage).toContain("专业或主要背景");
-      expect(mocks.conversationUpdate).toHaveBeenCalledWith({
-        where: { id: "conversation-1" },
+      expect(mocks.conversationUpdateMany).toHaveBeenCalledWith({
+        where: {
+          id: "conversation-1",
+          userId: "user-1",
+          status: "active",
+          updatedAt: new Date("2026-07-10T00:00:00.000Z"),
+        },
         data: expect.objectContaining({ requestedMode: mode, actualMode: mode }),
       });
     },
   );
+
+  it("rejects a stale concurrent write without overwriting the newer conversation", async () => {
+    mocks.conversationFindUnique.mockResolvedValue({
+      id: "conversation-1",
+      userId: "user-1",
+      status: "active",
+      transcript: "[]",
+      draft: "{}",
+      updatedAt: new Date("2026-07-10T00:00:00.000Z"),
+    });
+    mocks.conversationUpdateMany.mockResolvedValueOnce({ count: 0 });
+
+    const response = await POST(request({ message: "我是大三", conversationId: "conversation-1" }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload).toMatchObject({
+      ok: false,
+      error: { code: "CONVERSATION_CHANGED" },
+    });
+    expect(mocks.conversationUpdateMany).toHaveBeenCalledTimes(1);
+  });
 });

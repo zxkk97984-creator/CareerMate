@@ -6,6 +6,7 @@ import { profileDto, userDto } from "@/lib/dto";
 import { getTboxConfig } from "@/lib/env";
 import { getPrisma } from "@/lib/prisma";
 import { createIncompleteProfileDefaults } from "@/lib/profile-defaults";
+import { recoverActiveOnboardingConversation } from "@/lib/onboarding-resume";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -28,11 +29,23 @@ export async function GET() {
       select: { id: true, eventType: true, title: true, summary: true, createdAt: true },
     }),
     prisma.onboardingConversation.findFirst({
-      where: { userId: user.id },
+      where: { userId: user.id, status: "active" },
       orderBy: { updatedAt: "desc" },
-      select: { requestedMode: true, actualMode: true, transcript: true },
+      select: {
+        id: true,
+        status: true,
+        transcript: true,
+        draft: true,
+        completeness: true,
+        requestedMode: true,
+        actualMode: true,
+      },
     }),
   ]);
+  const activeOnboardingConversation = recoverActiveOnboardingConversation(
+    latestOnboardingConversation,
+    requestedMode,
+  );
 
   return ok({
     user: userDto(user),
@@ -42,6 +55,7 @@ export async function GET() {
       ...log,
       createdAt: log.createdAt.toISOString(),
     })),
-    aiRuntime: recoverAiRuntime(requestedMode, latestOnboardingConversation),
+    aiRuntime: activeOnboardingConversation?.executionMeta ?? recoverAiRuntime(requestedMode, null),
+    activeOnboardingConversation,
   });
 }

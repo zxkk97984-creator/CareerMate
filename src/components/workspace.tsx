@@ -23,6 +23,10 @@ import {
   type AiRuntimeSnapshot,
 } from "@/lib/ai-runtime";
 import { canCompleteOnboarding, type OnboardingDraft } from "@/lib/onboarding";
+import {
+  createOnboardingInitialState,
+  type ActiveOnboardingConversation,
+} from "@/lib/onboarding-resume";
 import { consumeFrontendSseResponse } from "@/lib/tbox/frontend-sse";
 import { abilityKeys, abilityLabels, type AiExecutionMeta, type ProfileDto } from "@/lib/types";
 
@@ -62,6 +66,7 @@ interface WorkspaceData {
   match: MatchData | null;
   recentProgressLogs: ProgressLogData[];
   aiRuntime: AiRuntimeSnapshot;
+  activeOnboardingConversation: ActiveOnboardingConversation | null;
 }
 
 const navItems: Array<{ href: string; view: View; label: string; icon: React.ElementType }> = [
@@ -186,6 +191,7 @@ export function Workspace({ initialView }: { initialView: View }) {
       fallbackReason: null,
       source: "runtime-config",
     },
+    activeOnboardingConversation: null,
   });
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState("正在读取成长档案...");
@@ -210,6 +216,7 @@ export function Workspace({ initialView }: { initialView: View }) {
       match: MatchData | null;
       recentProgressLogs: ProgressLogData[];
       aiRuntime: AiRuntimeSnapshot;
+      activeOnboardingConversation: ActiveOnboardingConversation | null;
     }>("/api/me");
     if (!me.ok) {
       router.push("/login");
@@ -236,6 +243,7 @@ export function Workspace({ initialView }: { initialView: View }) {
       match: me.data.match,
       recentProgressLogs: me.data.recentProgressLogs,
       aiRuntime: me.data.aiRuntime,
+      activeOnboardingConversation: me.data.activeOnboardingConversation,
     });
     setAiExecution(me.data.aiRuntime);
     setLoading(false);
@@ -321,6 +329,7 @@ export function Workspace({ initialView }: { initialView: View }) {
                   refresh={loadAll}
                   setNotice={setNotice}
                   setAiExecution={setAiExecution}
+                  activeConversation={data.activeOnboardingConversation}
                 />
               )}
               {activeView === "path" && <PathView plan={data.plan} refresh={loadAll} setNotice={setNotice} />}
@@ -448,22 +457,20 @@ function Onboarding({
   refresh,
   setNotice,
   setAiExecution,
+  activeConversation,
 }: {
   refresh: () => Promise<void>;
   setNotice: (value: string) => void;
   setAiExecution: (value: AiRuntimeSnapshot) => void;
+  activeConversation: ActiveOnboardingConversation | null;
 }) {
   const router = useRouter();
-  const [conversationId, setConversationId] = useState<string>();
-  const [draft, setDraft] = useState<OnboardingDraft>({});
-  const [completeness, setCompleteness] = useState(0);
+  const initialState = createOnboardingInitialState(activeConversation);
+  const [conversationId, setConversationId] = useState<string | undefined>(initialState.conversationId);
+  const [draft, setDraft] = useState<OnboardingDraft>(initialState.draft);
+  const [completeness, setCompleteness] = useState(initialState.completeness);
   const [message, setMessage] = useState("");
-  const [messages, setMessages] = useState<OnboardingMessage[]>([
-    {
-      role: "assistant",
-      content: "你好，我会通过几轮简短对话了解你的阶段、目标和现实条件。你目前处于什么学习或工作阶段？",
-    },
-  ]);
+  const [messages, setMessages] = useState<OnboardingMessage[]>(initialState.messages);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 

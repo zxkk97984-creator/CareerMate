@@ -101,8 +101,13 @@ export async function POST(request: Request) {
     { role: "user", content: parsed.data.message },
     { role: "assistant", content: assistantMessage, meta: executionMeta },
   );
-  await prisma.onboardingConversation.update({
-    where: { id: conversation.id },
+  const updateResult = await prisma.onboardingConversation.updateMany({
+    where: {
+      id: conversation.id,
+      userId: user.id,
+      status: "active",
+      updatedAt: conversation.updatedAt,
+    },
     data: {
       transcript: toJson(transcript),
       draft: toJson(draft),
@@ -111,6 +116,9 @@ export async function POST(request: Request) {
       actualMode: executionMeta.actualMode,
     },
   });
+  if (updateResult.count === 0) {
+    return fail("CONVERSATION_CHANGED", "画像对话已被更新，请刷新后重试", 409);
+  }
 
   const profileUpdateCandidate = profileUpdateCandidateFromExtraction(previousDraft, extracted);
   return ok(

@@ -75,8 +75,12 @@ beforeEach(() => {
     },
   ]);
   mocks.findOnboardingConversation.mockResolvedValue({
+    id: "conversation-1",
+    status: "active",
     requestedMode: "manual",
     actualMode: "mock",
+    draft: JSON.stringify({ educationStage: "junior", major: "统计学" }),
+    completeness: 2 / 7,
     transcript: JSON.stringify([
       {
         role: "assistant",
@@ -124,6 +128,20 @@ describe("GET /api/me", () => {
           fallbackReason: "network_error",
           source: "local-mock",
         },
+        activeOnboardingConversation: {
+          id: "conversation-1",
+          status: "active",
+          transcript: [{ role: "assistant", content: "继续补充信息" }],
+          draft: { educationStage: "junior", major: "统计学" },
+          completeness: 2 / 7,
+          executionMeta: {
+            requestedMode: "manual",
+            actualMode: "mock",
+            degraded: true,
+            fallbackReason: "network_error",
+            source: "local-mock",
+          },
+        },
       },
     });
     expect(payload.data.match.score).not.toBe(arithmeticAverage);
@@ -134,9 +152,17 @@ describe("GET /api/me", () => {
       select: { id: true, eventType: true, title: true, summary: true, createdAt: true },
     });
     expect(mocks.findOnboardingConversation).toHaveBeenCalledWith({
-      where: { userId: "user-1" },
+      where: { userId: "user-1", status: "active" },
       orderBy: { updatedAt: "desc" },
-      select: { requestedMode: true, actualMode: true, transcript: true },
+      select: {
+        id: true,
+        status: true,
+        transcript: true,
+        draft: true,
+        completeness: true,
+        requestedMode: true,
+        actualMode: true,
+      },
     });
     expect(mocks.upsertProfile).not.toHaveBeenCalled();
   });
@@ -151,7 +177,37 @@ describe("GET /api/me", () => {
       actualMode: "manual",
       degraded: false,
       fallbackReason: null,
-      source: "runtime-config",
+      source: "configured-no-execution",
+    });
+    expect(payload.data.activeOnboardingConversation).toBeNull();
+  });
+
+  it("safely falls back when the active conversation stores malformed JSON", async () => {
+    mocks.findOnboardingConversation.mockResolvedValue({
+      id: "conversation-broken",
+      status: "active",
+      requestedMode: "manual",
+      actualMode: "manual",
+      transcript: "{broken",
+      draft: JSON.stringify({ weeklyAvailableHours: 99 }),
+      completeness: 0.95,
+    });
+
+    const payload = await (await GET()).json();
+
+    expect(payload.data.activeOnboardingConversation).toEqual({
+      id: "conversation-broken",
+      status: "active",
+      transcript: [],
+      draft: {},
+      completeness: 0,
+      executionMeta: {
+        requestedMode: "manual",
+        actualMode: "manual",
+        degraded: false,
+        fallbackReason: null,
+        source: "configured-no-execution",
+      },
     });
   });
 

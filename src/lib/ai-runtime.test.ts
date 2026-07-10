@@ -62,4 +62,19 @@ describe("formatAiRuntimeBadge", () => {
       source: "manual-fixture",
     });
   });
+
+  it("shows a fresh runtime and invalid persisted execution as pending", () => {
+    const fresh = recoverAiRuntime("api", null);
+    const invalid = recoverAiRuntime("manual", {
+      requestedMode: "manual",
+      actualMode: "manual",
+      transcript: JSON.stringify([{ role: "assistant", meta: { source: "missing-fields" } }]),
+    });
+
+    for (const runtime of [fresh, invalid]) {
+      expect(runtime.source).toBe("configured-no-execution");
+      expect(formatAiRuntimeBadge(runtime)).toContain("尚未执行");
+      expect(formatAiRuntimeDescription(runtime)).toContain("尚未执行");
+    }
+  });
 });

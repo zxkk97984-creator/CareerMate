@@ -37,27 +37,12 @@ export function recoverAiRuntime(
           : configuredWithoutExecution(requestedMode, "configured-no-execution");
       }
     }
-    const actualMode = modeSchema.safeParse(conversation.actualMode);
     const persistedRequestedMode = modeSchema.safeParse(conversation.requestedMode);
     if (persistedRequestedMode.success && persistedRequestedMode.data !== requestedMode) {
       return configuredWithoutExecution(requestedMode, "configured-no-execution");
     }
-    if (actualMode.success) {
-      if (!persistedRequestedMode.success && actualMode.data !== requestedMode) {
-        return configuredWithoutExecution(requestedMode, "configured-no-execution");
-      }
-      return {
-        requestedMode,
-        actualMode: actualMode.data,
-        degraded: persistedRequestedMode.success
-          ? persistedRequestedMode.data !== actualMode.data
-          : requestedMode !== actualMode.data,
-        fallbackReason: null,
-        source: "persisted-onboarding-conversation",
-      };
-    }
   }
-  return configuredWithoutExecution(requestedMode, "runtime-config");
+  return configuredWithoutExecution(requestedMode, "configured-no-execution");
 }
 
 export function formatAiRuntimeBadge(runtime: {
