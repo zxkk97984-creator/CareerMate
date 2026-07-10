@@ -375,13 +375,19 @@ async function main() {
     },
   });
 
-  await prisma.manualAiSample.create({
-    data: {
-      scenario: "plan_generate_ai_product_manager",
-      source: "百宝箱平台手工复制输出样例",
-      payload: stringify(buildPlan("AI 产品经理")),
-    },
-  });
+  for (const [roleKey, roleName] of [
+    ["ai_product_manager", "AI 产品经理"],
+    ["data_analyst", "数据分析师"],
+    ["aigc_operator", "AIGC 运营"],
+  ]) {
+    await prisma.manualAiSample.create({
+      data: {
+        scenario: `plan_generate_${roleKey}`,
+        source: "百宝箱平台手工复制输出样例",
+        payload: stringify(buildPlan(roleName)),
+      },
+    });
+  }
 }
 
 main()

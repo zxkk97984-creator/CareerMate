@@ -17,6 +17,7 @@ import {
   UserCog,
 } from "lucide-react";
 import { PolarAngleAxis, PolarGrid, Radar, RadarChart, ResponsiveContainer } from "recharts";
+import { parseFrontendSseBlock } from "@/lib/tbox/frontend-sse";
 import { abilityKeys, abilityLabels, type ProfileDto } from "@/lib/types";
 
 type View = "onboarding" | "dashboard" | "path" | "simulation" | "resources" | "memory" | "chat" | "admin";
@@ -601,7 +602,11 @@ function ChatView({ setNotice }: { setNotice: (value: string) => void }) {
     });
     const reader = response.body?.getReader();
     const decoder = new TextDecoder();
-    if (!reader) return;
+    if (!reader) {
+      setStreaming(false);
+      setNotice("对话服务暂时不可用，请稍后重试。");
+      return;
+    }
     let buffer = "";
     while (true) {
       const { value, done } = await reader.read();
@@ -610,9 +615,14 @@ function ChatView({ setNotice }: { setNotice: (value: string) => void }) {
       const events = buffer.split("\n\n");
       buffer = events.pop() ?? "";
       for (const event of events) {
-        const raw = event.replace(/^data:\s*/, "");
-        const parsed = JSON.parse(raw);
-        if (parsed.content) setMessages((previous) => [...previous, parsed.content]);
+        const parsed = parseFrontendSseBlock(event);
+        if (
+          parsed?.event === "message" &&
+          parsed.data.type === "delta" &&
+          typeof parsed.data.content === "string"
+        ) {
+          setMessages((previous) => [...previous, parsed.data.content as string]);
+        }
       }
     }
     setStreaming(false);

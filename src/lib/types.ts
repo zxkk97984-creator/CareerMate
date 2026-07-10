@@ -19,7 +19,17 @@ export const abilityLabels: Record<AbilityKey, string> = {
 
 export const abilityKeys = Object.keys(abilityLabels) as AbilityKey[];
 
-export type TboxMode = "api" | "manual" | "mock";
+export type AiMode = "api" | "manual" | "mock";
+
+export type TboxMode = AiMode;
+
+export interface AiExecutionMeta {
+  requestedMode: AiMode;
+  actualMode: AiMode;
+  degraded: boolean;
+  fallbackReason: string | null;
+  source: string;
+}
 
 export interface ProfileDto {
   id: string;
