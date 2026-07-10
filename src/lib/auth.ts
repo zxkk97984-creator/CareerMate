@@ -14,8 +14,14 @@ async function getSessionToken() {
 }
 
 export async function setSession(userId: string) {
-  const credentials = createSessionCredentials();
-  await getPrisma().authSession.create({
+  const now = new Date();
+  const credentials = createSessionCredentials(now);
+  const prisma = getPrisma();
+
+  await prisma.authSession.deleteMany({
+    where: { expiresAt: { lte: now } },
+  });
+  await prisma.authSession.create({
     data: {
       userId,
       tokenHash: credentials.tokenHash,

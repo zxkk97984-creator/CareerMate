@@ -44,6 +44,7 @@ Plugin endpoints deny requests when `CAREERMATE_PLUGIN_TOKEN` is missing. In non
 ```bash
 npm.cmd run test
 npm.cmd run test:watch
+npm.cmd run test:migrations
 npm.cmd run lint
 npm.cmd run typecheck
 npm.cmd run build
@@ -51,4 +52,4 @@ npm.cmd run secret:scan
 npm.cmd run verify
 ```
 
-`npm.cmd run verify` runs the secret scan, lint, typecheck, unit tests, and production build in sequence.
+`npm.cmd run verify` runs the secret scan, lint, typecheck, unit tests, isolated migration smoke tests, and production build in sequence.
