@@ -3,6 +3,7 @@ import {
   copyFileSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -15,9 +16,13 @@ import { PrismaClient } from "@prisma/client";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const prismaCli = join(root, "node_modules", "prisma", "build", "index.js");
 const schemaPath = join(root, "prisma", "schema.prisma");
+const migrationsPath = join(root, "prisma", "migrations");
 const liveDatabasePath = resolve(root, "prisma", "dev.db");
 const baselineName = "20260710000000_baseline";
-const p0Name = "20260710010000_p0_foundation";
+const expectedMigrationNames = readdirSync(migrationsPath, { withFileTypes: true })
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => entry.name)
+  .sort();
 const tempRoot = mkdtempSync(join(tmpdir(), "careermate-migrations-"));
 const debugEnabled = process.env.MIGRATION_SMOKE_DEBUG === "1";
 
@@ -111,7 +116,7 @@ async function verifyFreshDatabase() {
       'SELECT migration_name FROM "_prisma_migrations" WHERE finished_at IS NOT NULL ORDER BY migration_name',
     );
     assert(
-      migrations.map((row) => row.migration_name).join(",") === `${baselineName},${p0Name}`,
+      migrations.map((row) => row.migration_name).join(",") === expectedMigrationNames.join(","),
       `Fresh database did not apply the expected migrations: ${JSON.stringify(migrations)}`,
     );
     const foreignKeyProblems = await prisma.$queryRawUnsafe("PRAGMA foreign_key_check");
