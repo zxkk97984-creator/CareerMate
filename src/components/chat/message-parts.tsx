@@ -46,7 +46,8 @@ function ProfileCandidateRef({ candidateId }: { candidateId: string }) {
       .then((r) => r.json())
       .then((body) => {
         if (body.ok) {
-          const found = (body.data as Array<{ id: string }>).find((c) => c.id === candidateId);
+          const items = (body.data as { items?: Array<{ id: string }> })?.items ?? [];
+          const found = items.find((c) => c.id === candidateId);
           if (found) setCandidate(found as Record<string, unknown>);
         }
       })

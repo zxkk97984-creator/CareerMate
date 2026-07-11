@@ -92,7 +92,7 @@ const navItems: Array<{ href: string; view: View; label: string; icon: React.Ele
   { href: "/simulation", view: "simulation", label: "模拟训练", icon: BrainCircuit },
   { href: "/resources", view: "resources", label: "资源中心", icon: Database },
   { href: "/memory", view: "memory", label: "记忆权限", icon: ShieldCheck },
-  { href: "/chat", view: "chat", label: "AI 聊天", icon: MessageSquareText },
+  { href: "/", view: "chat", label: "AI 聊天", icon: MessageSquareText },
   { href: "/admin", view: "admin", label: "Admin", icon: UserCog },
 ];
 
@@ -527,7 +527,7 @@ function Onboarding({
       if (!response.ok) throw new Error(response.error?.message ?? "画像确认失败");
       setNotice(response.data.alreadyCompleted ? "画像此前已经确认。" : "职业画像已确认，成长工作台已更新。");
       await refresh();
-      router.push("/dashboard");
+      router.push("/");
       router.refresh();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "画像确认失败，请稍后重试");

@@ -144,9 +144,9 @@ export async function handleStreamRequest(
           }),
         });
 
-        // 写入远端会话 ID 到会话记录
+        // 写入远端会话 ID 到会话记录，确保下一轮多轮对话可恢复
         if (remoteConversationId) {
-          await svc.touchConversation(conversationId).catch(() => {});
+          await svc.touchConversation(conversationId, remoteConversationId).catch(() => {});
         }
 
         // 发送 done 事件

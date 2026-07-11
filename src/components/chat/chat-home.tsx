@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ConversationSidebar } from "./conversation-sidebar";
 import { ChatThread } from "./chat-thread";
 import { ChatComposer } from "./chat-composer";
@@ -19,7 +19,13 @@ export function ChatHomePage({ displayName }: ChatHomePageProps) {
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<MessageItem[]>([]);
+  const [isStreaming, setIsStreaming] = useState(false);
   const [pendingCandidateCount, setPendingCandidateCount] = useState(0);
+
+  // 用 ref 追踪当前活跃会话和流式状态，避免闭包过期
+  const activeCidRef = useRef<string | null>(null);
+  const streamingRef = useRef(false);
+
   // 加载会话列表
   const loadConversations = useCallback(async () => {
     const res = await fetch("/api/chat/conversations?limit=30");
@@ -36,7 +42,8 @@ export function ChatHomePage({ displayName }: ChatHomePageProps) {
       .then(r => r.json())
       .then(b => {
         if (b.ok) {
-          const pending = b.data.filter((c: { status: string }) => c.status === "pending");
+          const items = (b.data as { items?: Array<{ status: string }> })?.items ?? [];
+          const pending = items.filter((c) => c.status === "pending");
           setPendingCandidateCount(pending.length);
         }
       })
@@ -45,6 +52,7 @@ export function ChatHomePage({ displayName }: ChatHomePageProps) {
 
   // 切换会话时加载消息
   useEffect(() => {
+    activeCidRef.current = activeConversationId;
     if (!activeConversationId) {
       setMessages([]);
       return;
@@ -55,64 +63,11 @@ export function ChatHomePage({ displayName }: ChatHomePageProps) {
       .catch(() => {});
   }, [activeConversationId]);
 
-  const handleNewChat = useCallback(async () => {
-    const res = await fetch("/api/chat/conversations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    });
-    if (!res.ok) return;
-    const body = await res.json();
-    if (body.ok) {
-      setConversations(prev => [body.data, ...prev]);
-      setActiveConversationId(body.data.id);
-      setMessages([]);
-    }
-  }, []);
-
-  const handleDeleteConversation = useCallback(async (id: string) => {
-    const res = await fetch(`/api/chat/conversations/${id}`, { method: "DELETE" });
-    if (!res.ok) return;
-    setConversations(prev => prev.filter(c => c.id !== id));
-    if (activeConversationId === id) {
-      setActiveConversationId(null);
-      setMessages([]);
-    }
-  }, [activeConversationId]);
-
-  const handleRenameConversation = useCallback(async (id: string, title: string) => {
-    const res = await fetch(`/api/chat/conversations/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title }),
-    });
-    if (!res.ok) return;
-    const body = await res.json();
-    if (body.ok) {
-      setConversations(prev => prev.map(c => c.id === id ? { ...c, title: body.data.title } : c));
-    }
-  }, []);
-
-  const handleSendMessage = useCallback(async (text: string) => {
-    let convId: string | null = activeConversationId;
-
-    // 如果还没有活跃会话，先创建一个
-    if (!convId) {
-      const res = await fetch("/api/chat/conversations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      if (!res.ok) return;
-      const body = await res.json();
-      if (!body.ok) return;
-      convId = body.data.id as string;
-      setConversations(prev => [body.data, ...prev]);
-      setActiveConversationId(convId);
-    }
-
-    // 此时 convId 必定不为 null（上面已守卫）
-    const cid: string = convId;
+  /** 核心发送逻辑：给定会话 ID 和文本，执行 SSE 流式请求 */
+  const doSend = useCallback(async (cid: string, text: string) => {
+    if (streamingRef.current) return; // 防止并发发送
+    streamingRef.current = true;
+    setIsStreaming(true);
 
     // 添加用户消息到本地
     const userMsg: MessageItem = {
@@ -156,6 +111,8 @@ export function ChatHomePage({ displayName }: ChatHomePageProps) {
           : m,
         ),
       );
+      streamingRef.current = false;
+      setIsStreaming(false);
       return;
     }
 
@@ -220,9 +177,80 @@ export function ChatHomePage({ displayName }: ChatHomePageProps) {
       reader.releaseLock();
     }
 
+    streamingRef.current = false;
+    setIsStreaming(false);
+
     // 刷新会话列表以获取更新的标题
     loadConversations();
-  }, [activeConversationId, loadConversations]);
+  }, [loadConversations]);
+
+  /** 创建新会话，可选自动发送初始消息 */
+  const handleNewChat = useCallback(async (initialMessage?: string) => {
+    const res = await fetch("/api/chat/conversations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    if (!res.ok) return;
+    const body = await res.json();
+    if (body.ok) {
+      setConversations(prev => [body.data, ...prev]);
+      setActiveConversationId(body.data.id);
+      activeCidRef.current = body.data.id;
+      setMessages([]);
+      // 如果传入了初始消息，直接发送（使用新会话 ID，避免闭包问题）
+      if (initialMessage) {
+        doSend(body.data.id, initialMessage);
+      }
+    }
+  }, [doSend]);
+
+  /** 发送消息：如果无活跃会话则自动创建 */
+  const handleSendMessage = useCallback(async (text: string) => {
+    let convId: string | null = activeCidRef.current;
+
+    // 如果还没有活跃会话，先创建一个
+    if (!convId) {
+      const res = await fetch("/api/chat/conversations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) return;
+      const body = await res.json();
+      if (!body.ok) return;
+      convId = body.data.id as string;
+      setConversations(prev => [body.data, ...prev]);
+      setActiveConversationId(convId);
+      activeCidRef.current = convId;
+    }
+
+    await doSend(convId, text);
+  }, [doSend]);
+
+  const handleDeleteConversation = useCallback(async (id: string) => {
+    const res = await fetch(`/api/chat/conversations/${id}`, { method: "DELETE" });
+    if (!res.ok) return;
+    setConversations(prev => prev.filter(c => c.id !== id));
+    if (activeCidRef.current === id) {
+      setActiveConversationId(null);
+      activeCidRef.current = null;
+      setMessages([]);
+    }
+  }, []);
+
+  const handleRenameConversation = useCallback(async (id: string, title: string) => {
+    const res = await fetch(`/api/chat/conversations/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title }),
+    });
+    if (!res.ok) return;
+    const body = await res.json();
+    if (body.ok) {
+      setConversations(prev => prev.map(c => c.id === id ? { ...c, title: body.data.title } : c));
+    }
+  }, []);
 
   return (
     <div className="chat-home-layout">
@@ -239,7 +267,7 @@ export function ChatHomePage({ displayName }: ChatHomePageProps) {
       <ConversationSidebar
         conversations={conversations}
         activeId={activeConversationId}
-        onSelect={id => { setActiveConversationId(id); setSidebarOpen(false); }}
+        onSelect={id => { setActiveConversationId(id); activeCidRef.current = id; setSidebarOpen(false); }}
         onNew={handleNewChat}
         onDelete={handleDeleteConversation}
         onRename={handleRenameConversation}
@@ -280,7 +308,7 @@ export function ChatHomePage({ displayName }: ChatHomePageProps) {
 
         <ChatComposer
           onSend={handleSendMessage}
-          disabled={false}
+          disabled={isStreaming}
           activeConversationId={activeConversationId}
         />
       </main>

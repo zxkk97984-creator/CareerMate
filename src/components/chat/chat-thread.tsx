@@ -9,7 +9,7 @@ import { MessageSquareText, Sparkles } from "lucide-react";
 interface ChatThreadProps {
   messages: MessageItem[];
   activeConversationId: string | null;
-  onNewChat: () => void;
+  onNewChat: (initialMessage?: string) => void;
 }
 
 const SUGGESTED_QUESTIONS = [
@@ -43,7 +43,7 @@ export function ChatThread({ messages, activeConversationId, onNewChat }: ChatTh
             <button
               key={i}
               className="suggested-btn"
-              onClick={onNewChat}
+              onClick={() => onNewChat(q)}
             >
               {q}
             </button>

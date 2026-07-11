@@ -8,12 +8,18 @@ const manualPlanRoles = new Set([
   "aigc_operator",
 ]);
 
-export function createMockChatChunks(question: string) {
-  const trimmed = question.trim() || "我想做职业规划";
+/**
+ * 生成 mock 模式的通用安全回答。
+ * 注意：不能直接回显传入的 question——在 mock/manual 降级路径中，
+ * question 可能是包含画像、计划、记忆和内部规则的增强 Prompt。
+ * 这里只返回不含任何内部上下文的通用建议，避免泄露。
+ */
+export function createMockChatChunks(_question: string) {
+  void _question; // 不直接回显——防止泄露增强 Prompt 中的内部上下文
   return [
-    `我先理解一下：你提到「${trimmed}」。`,
-    "建议先确认目标岗位、每周可投入时间和当前能力短板。",
-    "下一步可以生成 3 年路径，或者先做一次职场模拟训练来校准画像。",
+    "你好！我是 CareerMate，你的 AI 职业成长伙伴。",
+    "为了更好地帮助你，建议先确认目标岗位、每周可投入时间和当前能力短板——你可以在成长档案中查看和补充这些信息。",
+    "下一步可以让我帮你生成职业路径计划，或者做一次模拟训练来校准当前能力画像。",
   ];
 }
 

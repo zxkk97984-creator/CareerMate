@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { titleFromFirstMessage } from "./persistence";
 import {
   createChatRepository,
@@ -152,8 +153,8 @@ export interface ChatService {
     data: UpdateMessageInput,
   ): Promise<MessageItem>;
 
-  // 会话时间
-  touchConversation(id: string): Promise<void>;
+  // 会话时间与远端 ID
+  touchConversation(id: string, remoteConversationId?: string): Promise<void>;
 }
 
 export function createChatService(repo?: ChatRepository): ChatService {
@@ -238,7 +239,10 @@ export function createChatService(repo?: ChatRepository): ChatService {
     },
 
     // ── 创建消息 ──────────────────────────────────────
-    async createMessage(_userId, input) {
+    async createMessage(userId, input) {
+      // 验证会话归属，防止跨用户写入
+      const conv = await r.findConversation(input.conversationId, userId);
+      if (!conv) throw notFound("会话");
       const row = await r.createMessage(input);
       return toMessageItem(row);
     },
@@ -249,9 +253,13 @@ export function createChatService(repo?: ChatRepository): ChatService {
       return toMessageItem(row);
     },
 
-    // ── 更新会话时间 ──────────────────────────────────
-    async touchConversation(id) {
-      await r.updateConversation(id, { lastMessageAt: new Date() });
+    // ── 更新会话时间与远端 ID ──────────────────────────
+    async touchConversation(id, remoteConversationId) {
+      const data: Prisma.ChatConversationUpdateInput = { lastMessageAt: new Date() };
+      if (remoteConversationId) {
+        data.remoteConversationId = remoteConversationId;
+      }
+      await r.updateConversation(id, data);
     },
   };
 }
