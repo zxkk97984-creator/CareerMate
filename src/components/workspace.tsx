@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { PolarAngleAxis, PolarGrid, Radar, RadarChart, ResponsiveContainer } from "recharts";
 import { SimulationView } from "@/features/simulation/simulation-view";
+import { ChatView } from "@/features/chat/chat-view";
 import {
   formatAiRuntimeBadge,
   formatAiRuntimeDescription,
@@ -28,7 +29,6 @@ import {
   createOnboardingInitialState,
   type ActiveOnboardingConversation,
 } from "@/lib/onboarding-resume";
-import { consumeFrontendSseResponse } from "@/lib/tbox/frontend-sse";
 import { groupPlanTimeline } from "@/lib/path";
 import { filterResources } from "@/lib/resources";
 import {
@@ -942,49 +942,6 @@ function MemoryView({
         </div>
       </Panel>
     </div>
-  );
-}
-
-function ChatView({ setNotice }: { setNotice: (value: string) => void }) {
-  const [question, setQuestion] = useState("我想转 AI 产品经理，该怎么开始？");
-  const [messages, setMessages] = useState<string[]>([]);
-  const [streaming, setStreaming] = useState(false);
-
-  async function send() {
-    setStreaming(true);
-    setMessages([]);
-    setNotice("CareerMate 正在思考...");
-    try {
-      const response = await fetch("/api/tbox/chat/stream", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question }),
-      });
-      await consumeFrontendSseResponse(response, (content) => {
-        setMessages((previous) => [...previous, content]);
-      });
-      setNotice("对话完成，必要时会生成画像更新候选。");
-    } catch {
-      setNotice("对话失败，请检查登录状态或稍后重试。你的输入已保留。");
-    } finally {
-      setStreaming(false);
-    }
-  }
-
-  return (
-    <Panel title="独立 AI 聊天">
-      <textarea className="min-h-28 w-full rounded-md border border-slate-200 p-3 text-sm leading-6" value={question} onChange={(event) => setQuestion(event.target.value)} />
-      <div className="mt-4">
-        <Button disabled={streaming} onClick={send}>{streaming ? "生成中..." : "发送"}</Button>
-      </div>
-      <div className="mt-5 space-y-3">
-        {messages.map((message, index) => (
-          <div key={`${message}-${index}`} className="rounded-md bg-slate-50 p-4 text-sm leading-6 text-slate-700">
-            {message}
-          </div>
-        ))}
-      </div>
-    </Panel>
   );
 }
 
