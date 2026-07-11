@@ -1,6 +1,6 @@
 export function onboardingDestination(
   profile: { onboardingCompleted: boolean } | null | undefined,
-  completedDestination = "/dashboard",
+  completedDestination = "/",
 ) {
   return profile?.onboardingCompleted ? completedDestination : "/onboarding";
 }

@@ -5,7 +5,7 @@ async function login(page: import("@playwright/test").Page, username = "student_
   await page.getByLabel("账号").fill(username);
   await page.getByLabel("密码").fill("careermate123");
   await page.getByRole("button", { name: "进入 CareerMate" }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
+  await expect(page).toHaveURL(/\/$/);
 }
 
 test("login recovers when the server returns an empty error response", async ({ page }) => {
@@ -102,7 +102,7 @@ test("new account completes multi-message onboarding", async ({ page }) => {
   await page.getByRole("button", { name: "发送" }).click();
   await expect(page.getByRole("button", { name: "确认并生成成长工作台" })).toBeEnabled();
   await page.getByRole("button", { name: "确认并生成成长工作台" }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
+  await expect(page).toHaveURL(/\/$/);
 });
 
 test("admin generates and approves a validated role draft", async ({ page }) => {

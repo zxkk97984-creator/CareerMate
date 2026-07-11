@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { getPrisma } from "@/lib/prisma";
 
 // Mock Prisma 客户端，让测试不接触真实数据库
@@ -62,7 +62,7 @@ function setupService() {
       update: vi.fn(),
       count: vi.fn().mockResolvedValue(0),
     },
-    $transaction: vi.fn((fn: Function) => fn(mockPrisma)),
+    $transaction: vi.fn((fn: (...args: unknown[]) => unknown) => fn(mockPrisma)),
   };
 
   (getPrisma as any).mockReturnValue(mockPrisma);

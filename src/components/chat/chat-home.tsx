@@ -1,0 +1,296 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { ConversationSidebar } from "./conversation-sidebar";
+import { ChatThread } from "./chat-thread";
+import { ChatComposer } from "./chat-composer";
+import { GrowthProfileDrawer } from "./growth-profile-drawer";
+import type { ConversationItem, MessageItem } from "@/lib/chat/schemas";
+import { Menu, PanelRightClose, PanelRightOpen } from "lucide-react";
+
+interface ChatHomePageProps {
+  userId: string;
+  displayName: string;
+}
+
+export function ChatHomePage({ displayName }: ChatHomePageProps) {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [conversations, setConversations] = useState<ConversationItem[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<MessageItem[]>([]);
+  const [pendingCandidateCount, setPendingCandidateCount] = useState(0);
+  // 加载会话列表
+  const loadConversations = useCallback(async () => {
+    const res = await fetch("/api/chat/conversations?limit=30");
+    if (!res.ok) return;
+    const body = await res.json();
+    if (body.ok) setConversations(body.data.items);
+  }, []);
+
+  useEffect(() => { loadConversations(); }, [loadConversations]);
+
+  // 加载待确认候选数量
+  useEffect(() => {
+    fetch("/api/profile/candidates")
+      .then(r => r.json())
+      .then(b => {
+        if (b.ok) {
+          const pending = b.data.filter((c: { status: string }) => c.status === "pending");
+          setPendingCandidateCount(pending.length);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // 切换会话时加载消息
+  useEffect(() => {
+    if (!activeConversationId) {
+      setMessages([]);
+      return;
+    }
+    fetch(`/api/chat/conversations/${activeConversationId}/messages?limit=50`)
+      .then(r => r.json())
+      .then(b => { if (b.ok) setMessages(b.data); })
+      .catch(() => {});
+  }, [activeConversationId]);
+
+  const handleNewChat = useCallback(async () => {
+    const res = await fetch("/api/chat/conversations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    if (!res.ok) return;
+    const body = await res.json();
+    if (body.ok) {
+      setConversations(prev => [body.data, ...prev]);
+      setActiveConversationId(body.data.id);
+      setMessages([]);
+    }
+  }, []);
+
+  const handleDeleteConversation = useCallback(async (id: string) => {
+    const res = await fetch(`/api/chat/conversations/${id}`, { method: "DELETE" });
+    if (!res.ok) return;
+    setConversations(prev => prev.filter(c => c.id !== id));
+    if (activeConversationId === id) {
+      setActiveConversationId(null);
+      setMessages([]);
+    }
+  }, [activeConversationId]);
+
+  const handleRenameConversation = useCallback(async (id: string, title: string) => {
+    const res = await fetch(`/api/chat/conversations/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title }),
+    });
+    if (!res.ok) return;
+    const body = await res.json();
+    if (body.ok) {
+      setConversations(prev => prev.map(c => c.id === id ? { ...c, title: body.data.title } : c));
+    }
+  }, []);
+
+  const handleSendMessage = useCallback(async (text: string) => {
+    let convId: string | null = activeConversationId;
+
+    // 如果还没有活跃会话，先创建一个
+    if (!convId) {
+      const res = await fetch("/api/chat/conversations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) return;
+      const body = await res.json();
+      if (!body.ok) return;
+      convId = body.data.id as string;
+      setConversations(prev => [body.data, ...prev]);
+      setActiveConversationId(convId);
+    }
+
+    // 此时 convId 必定不为 null（上面已守卫）
+    const cid: string = convId;
+
+    // 添加用户消息到本地
+    const userMsg: MessageItem = {
+      id: "temp-user-" + Date.now(),
+      conversationId: cid,
+      role: "user",
+      content: text,
+      parts: [],
+      status: "completed",
+      executionMeta: {},
+      contextMeta: {},
+      createdAt: new Date().toISOString(),
+    };
+    setMessages(prev => [...prev, userMsg]);
+
+    // 创建助手占位消息
+    const assistantMsg: MessageItem = {
+      id: "temp-asst-" + Date.now(),
+      conversationId: cid,
+      role: "assistant",
+      content: "",
+      parts: [],
+      status: "streaming",
+      executionMeta: {},
+      contextMeta: {},
+      createdAt: new Date().toISOString(),
+    };
+    setMessages(prev => [...prev, assistantMsg]);
+
+    // 发起SSE流式请求
+    const response = await fetch(`/api/chat/conversations/${cid}/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: text }),
+    });
+
+    if (!response.ok || !response.body) {
+      setMessages(prev =>
+        prev.map(m => m.id === assistantMsg.id
+          ? { ...m, status: "failed", parts: [{ type: "error", code: "HTTP_ERROR", message: "发送失败" }] }
+          : m,
+        ),
+      );
+      return;
+    }
+
+    // 消费SSE流
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let assistantContent = "";
+
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        // 解析 SSE 事件
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || ""; // 保留不完整的行
+
+        let currentEvent = "";
+        for (const line of lines) {
+          if (line.startsWith("event: ")) {
+            currentEvent = line.slice(7).trim();
+          } else if (line.startsWith("data: ") && currentEvent === "delta") {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.text) {
+                assistantContent += data.text;
+                setMessages(prev =>
+                  prev.map(m => m.id === assistantMsg.id
+                    ? { ...m, content: assistantContent }
+                    : m,
+                  ),
+                );
+              }
+            } catch { /* 忽略解析错误 */ }
+          } else if (line.startsWith("data: ") && currentEvent === "done") {
+            setMessages(prev =>
+              prev.map(m => m.id === assistantMsg.id
+                ? { ...m, content: assistantContent, status: "completed" }
+                : m,
+              ),
+            );
+          } else if (line.startsWith("data: ") && currentEvent === "error") {
+            setMessages(prev =>
+              prev.map(m => m.id === assistantMsg.id
+                ? { ...m, status: "failed", content: assistantContent }
+                : m,
+              ),
+            );
+          }
+        }
+      }
+    } catch {
+      setMessages(prev =>
+        prev.map(m => m.id === assistantMsg.id
+          ? { ...m, status: "failed", content: assistantContent }
+          : m,
+        ),
+      );
+    } finally {
+      reader.releaseLock();
+    }
+
+    // 刷新会话列表以获取更新的标题
+    loadConversations();
+  }, [activeConversationId, loadConversations]);
+
+  return (
+    <div className="chat-home-layout">
+      {/* 移动端遮罩 */}
+      {sidebarOpen && (
+        <div
+          className="sidebar-overlay"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* 左侧会话栏 */}
+      <ConversationSidebar
+        conversations={conversations}
+        activeId={activeConversationId}
+        onSelect={id => { setActiveConversationId(id); setSidebarOpen(false); }}
+        onNew={handleNewChat}
+        onDelete={handleDeleteConversation}
+        onRename={handleRenameConversation}
+        pendingCandidateCount={pendingCandidateCount}
+        displayName={displayName}
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+      />
+
+      {/* 中间聊天区 */}
+      <main className="chat-main">
+        {/* 移动端菜单按钮 */}
+        <button
+          className="mobile-menu-btn"
+          onClick={() => setSidebarOpen(true)}
+          aria-label="打开会话列表"
+        >
+          <Menu size={20} />
+        </button>
+
+        {/* 成长档案切换按钮 */}
+        <button
+          className="profile-toggle-btn"
+          onClick={() => setDrawerOpen(!drawerOpen)}
+          aria-label={drawerOpen ? "收起成长档案" : "展开成长档案"}
+        >
+          {drawerOpen ? <PanelRightClose size={20} /> : <PanelRightOpen size={20} />}
+          {pendingCandidateCount > 0 && (
+            <span className="candidate-badge">{pendingCandidateCount}</span>
+          )}
+        </button>
+
+        <ChatThread
+          messages={messages}
+          activeConversationId={activeConversationId}
+          onNewChat={handleNewChat}
+        />
+
+        <ChatComposer
+          onSend={handleSendMessage}
+          disabled={false}
+          activeConversationId={activeConversationId}
+        />
+      </main>
+
+      {/* 右侧成长档案 */}
+      <GrowthProfileDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        pendingCandidateCount={pendingCandidateCount}
+      />
+    </div>
+  );
+}

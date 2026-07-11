@@ -65,7 +65,7 @@ describe("onboarding routing", () => {
 
   it.each([
     [false, "/onboarding"],
-    [true, "/dashboard"],
+    [true, "/"],
   ])("returns a profile-aware next path after login", async (onboardingCompleted, nextPath) => {
     mocks.userFindUnique.mockResolvedValue({
       id: "user-1",

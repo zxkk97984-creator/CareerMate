@@ -27,10 +27,6 @@ function notFound(entity: string) {
   return new ServiceError(`${entity}不存在`, "NOT_FOUND", 404);
 }
 
-function forbidden() {
-  return new ServiceError("无权访问该资源", "FORBIDDEN", 403);
-}
-
 function badRequest(message: string) {
   return new ServiceError(message, "BAD_REQUEST", 400);
 }
