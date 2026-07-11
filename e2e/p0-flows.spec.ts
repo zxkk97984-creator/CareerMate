@@ -117,3 +117,42 @@ test("admin generates and approves a validated role draft", async ({ page }) => 
   await draft.getByRole("button", { name: "通过" }).click();
   await expect(draft.getByText(/approved/)).toBeVisible();
 });
+
+// ── 聊天首页完整流程 ────────────────────────────────────
+
+test("chat-first complete flow: persistent chat, plan generation, conversation switching", async ({ page }) => {
+  await login(page);
+
+  // 1. 验证聊天首页
+  await expect(page.getByText("你好，我是 CareerMate")).toBeVisible();
+  await expect(page.getByRole("button", { name: "新对话" })).toBeVisible();
+
+  // 2. 连续多轮对话
+  await page.getByPlaceholder(/Enter 发送/).fill("我想了解数据分析师需要哪些能力？");
+  await page.getByLabel("发送消息").click();
+  await expect(page.locator(".message-assistant")).toBeVisible({ timeout: 15000 });
+
+  await page.getByPlaceholder(/Enter 发送/).fill("那数学基础要达到什么程度？");
+  await page.getByLabel("发送消息").click();
+  await expect(page.locator(".message-assistant")).toHaveCount(2, { timeout: 15000 });
+
+  // 3. 刷新后历史保留
+  await page.reload();
+  await expect(page).toHaveURL(/\/$/);
+  const firstConv = page.locator(".conversation-title-btn").first();
+  await expect(firstConv).toBeVisible({ timeout: 5000 });
+  await firstConv.click();
+  await expect(page.locator(".message-wrapper")).toHaveCount(4, { timeout: 10000 });
+
+  // 4. 访问计划页
+  await page.goto("/path");
+  await expect(page.locator("text=职业路径")).toBeVisible();
+
+  // 5. 返回聊天首页
+  await page.goto("/");
+  await expect(page.getByText("你好，我是 CareerMate")).toBeVisible();
+
+  // 6. 新对话不串消息
+  await page.getByRole("button", { name: "新对话" }).click();
+  await expect(page.locator(".message-wrapper")).toHaveCount(0);
+});
