@@ -1,25 +1,28 @@
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, unlinkSync } from "node:fs";
 
 const env = { ...process.env, DATABASE_URL: "file:./e2e.db", TBOX_MODE: "mock", NODE_ENV: "production" };
 const windows = process.platform === "win32";
 const dbPath = "prisma/e2e.db";
-const isFresh = !existsSync(dbPath);
 
-// 使用 prisma db push 而非 migrate reset，避免 Prisma AI 安全拦截
+// 删除旧 E2E 数据库以确保每次测试有干净环境
+if (existsSync(dbPath)) {
+  try { unlinkSync(dbPath); } catch { /* ignore */ }
+  try { unlinkSync(dbPath + "-journal"); } catch { /* ignore */ }
+}
+
+// 创建全新数据库
 const pushArgs = ["prisma", "db", "push", "--skip-generate"];
 const pushResult = windows
   ? spawnSync("cmd.exe", ["/d", "/c", `npx.cmd ${pushArgs.join(" ")}`], { env, stdio: "inherit" })
   : spawnSync("npx", pushArgs, { env, stdio: "inherit" });
 if (pushResult.status !== 0) process.exit(pushResult.status ?? 1);
 
-// 全新数据库需要种子数据
-if (isFresh) {
-  const seedResult = windows
-    ? spawnSync("cmd.exe", ["/d", "/c", "npx.cmd tsx prisma/seed.ts"], { env, stdio: "inherit" })
-    : spawnSync("npx", ["tsx", "prisma/seed.ts"], { env, stdio: "inherit" });
-  if (seedResult.status !== 0) process.exit(seedResult.status ?? 1);
-}
+// 种子数据
+const seedResult = windows
+  ? spawnSync("cmd.exe", ["/d", "/c", "npx.cmd tsx prisma/seed.ts"], { env, stdio: "inherit" })
+  : spawnSync("npx", ["tsx", "prisma/seed.ts"], { env, stdio: "inherit" });
+if (seedResult.status !== 0) process.exit(seedResult.status ?? 1);
 
 const buildArgs = ["run", "build"];
 const build = windows

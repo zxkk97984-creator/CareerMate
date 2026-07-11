@@ -14,8 +14,8 @@ test("chat home renders after onboarding user logs in", async ({ page }) => {
   await expect(page).toHaveURL(/\/$/);
   // 欢迎界面
   await expect(page.getByText("你好，我是 CareerMate")).toBeVisible();
-  // 新对话按钮
-  await expect(page.getByRole("button", { name: "新对话" })).toBeVisible();
+  // 新对话按钮（在侧栏中，使用类名避免与标题为"新对话"的会话条目冲突）
+  await expect(page.locator(".new-chat-btn")).toBeVisible();
   // 输入区域
   await expect(page.getByPlaceholder(/Enter 发送/)).toBeVisible();
   // 成长档案入口
