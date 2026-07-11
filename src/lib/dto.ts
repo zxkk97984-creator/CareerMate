@@ -90,6 +90,10 @@ export function candidateDto(candidate: {
   reason: string;
   status: string;
   createdAt: Date;
+  sourceConversationId?: string | null;
+  evidenceExcerpt?: string;
+  impactSummary?: string;
+  abilityEvidenceId?: string | null;
 }): CandidateDto {
   return {
     id: candidate.id,
@@ -101,5 +105,9 @@ export function candidateDto(candidate: {
     reason: candidate.reason,
     status: candidate.status,
     createdAt: candidate.createdAt.toISOString(),
+    sourceConversationId: candidate.sourceConversationId ?? null,
+    evidenceExcerpt: candidate.evidenceExcerpt ?? "",
+    impactSummary: candidate.impactSummary ?? "",
+    abilityEvidenceId: candidate.abilityEvidenceId ?? null,
   };
 }

@@ -119,4 +119,21 @@ export interface CandidateDto {
   reason: string;
   status: string;
   createdAt: string;
+  sourceConversationId: string | null;
+  evidenceExcerpt: string;
+  impactSummary: string;
+  abilityEvidenceId: string | null;
+}
+
+export interface AbilityEvidenceDto {
+  id: string;
+  userId: string;
+  abilityKey: string;
+  summary: string;
+  sourceType: string;
+  sourceRef: string | null;
+  confidence: number;
+  status: string;
+  observedAt: string;
+  createdAt: string;
 }
