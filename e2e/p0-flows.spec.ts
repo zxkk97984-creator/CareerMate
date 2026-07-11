@@ -18,59 +18,32 @@ test("login recovers when the server returns an empty error response", async ({ 
   await expect(page.getByRole("button", { name: "进入 CareerMate" })).toBeEnabled();
 });
 
-test("smart chat keeps a page-scoped conversation", async ({ page }) => {
-  const requests: Array<{ question: string; conversationId?: string }> = [];
-  await page.route("**/api/tbox/chat/stream", async (route) => {
-    const request = route.request().postDataJSON() as {
-      question: string;
-      conversationId?: string;
-    };
-    requests.push(request);
-    const answer = requests.length === 1 ? "第一轮完整回答" : "第二轮延续回答";
-    const meta = {
-      requestedMode: "api",
-      actualMode: "api",
-      degraded: false,
-      fallbackReason: null,
-      source: "tbox-api",
-    };
-    const context = {
-      intent: "roleCompetency",
-      usedProfile: true,
-      usedPlan: true,
-      usedMemoryCount: 1,
-      knowledgeSources: ["role-ai-product-manager"],
-      retrievalMeta: meta,
-    };
-    await route.fulfill({
-      status: 200,
-      contentType: "text/event-stream",
-      body:
-        `event: context\ndata: ${JSON.stringify(context)}\n\n` +
-        `event: message\ndata: ${JSON.stringify({ type: "delta", content: answer.slice(0, 4), meta })}\n\n` +
-        `event: message\ndata: ${JSON.stringify({ type: "delta", content: answer.slice(4), meta })}\n\n` +
-        `event: done\ndata: ${JSON.stringify({ conversationId: "remote-1", meta })}\n\n`,
-    });
-  });
-
+test("chat-first persistent conversation continues across page visits", async ({ page }) => {
   await login(page);
-  await page.getByRole("link", { name: "AI 聊天" }).click();
-  await page.getByLabel("聊天问题").fill("我想做 AI 产品经理");
-  await page.getByRole("button", { name: "发送" }).click();
-  await expect(page.getByText("第一轮完整回答", { exact: true })).toBeVisible();
-  await expect(page.getByText("role-ai-product-manager", { exact: true })).toBeVisible();
 
-  await page.getByLabel("聊天问题").fill("那我本月先做什么？");
-  await page.getByRole("button", { name: "发送" }).click();
-  await expect(page.getByText("第二轮延续回答", { exact: true })).toBeVisible();
-  expect(requests).toEqual([
-    { question: "我想做 AI 产品经理" },
-    { question: "那我本月先做什么？", conversationId: "remote-1" },
-  ]);
+  // 在聊天首页发送消息
+  await expect(page.getByText("你好，我是 CareerMate")).toBeVisible();
+  await page.getByPlaceholder(/Enter 发送/).fill("我想做 AI 产品经理");
+  await page.getByLabel("发送消息").click();
+  await expect(page.locator(".message-assistant")).toBeVisible({ timeout: 15000 });
 
-  await page.getByRole("button", { name: "开始新对话" }).click();
-  await expect(page.getByText("第一轮完整回答", { exact: true })).toHaveCount(0);
-  await expect(page.getByText("第二轮延续回答", { exact: true })).toHaveCount(0);
+  // 导航到职业路径页
+  await page.goto("/path");
+  await expect(page.locator("text=职业路径")).toBeVisible();
+
+  // 返回聊天首页，验证对话仍在
+  await page.goto("/");
+  await expect(page.locator(".conversation-title-btn").first()).toBeVisible({ timeout: 5000 });
+
+  // 在已有会话中继续对话
+  await page.locator(".conversation-title-btn").first().click();
+  await page.getByPlaceholder(/Enter 发送/).fill("那我本月先做什么？");
+  await page.getByLabel("发送消息").click();
+  await expect(page.locator(".message-assistant")).toHaveCount(2, { timeout: 15000 });
+
+  // 新对话不串消息
+  await page.getByRole("button", { name: "新对话" }).click();
+  await expect(page.locator(".message-wrapper")).toHaveCount(0);
 });
 
 test("user completes a three-round simulation and receives one candidate", async ({ page }) => {
@@ -107,6 +80,8 @@ test("new account completes multi-message onboarding", async ({ page }) => {
 
 test("admin generates and approves a validated role draft", async ({ page }) => {
   await login(page, "admin");
+  // Admin 入口在 workspace 导航中，需要先访问一个 workspace 页面
+  await page.goto("/path");
   await page.getByRole("link", { name: "Admin" }).click();
   await page.getByLabel("岗位名称").fill("AI 客户成功");
   await page.getByLabel("岗位分类").fill("客户服务");

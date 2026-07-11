@@ -35,13 +35,16 @@ test("create conversation, send messages, and reload preserves history", async (
   await page.getByPlaceholder(/Enter 发送/).fill("我想了解数据分析师需要哪些能力？");
   await page.getByLabel("发送消息").click();
 
-  // 等待回复出现（SSE 流式接收）
+  // 等待回复出现且完成（SSE 流式接收）
   await expect(page.locator(".message-assistant")).toBeVisible({ timeout: 15000 });
+  // 等待流式完成——消息状态变为 completed
+  await expect(page.locator(".streaming-cursor")).toHaveCount(0, { timeout: 15000 });
 
   // 发送第二轮
   await page.getByPlaceholder(/Enter 发送/).fill("那数学基础要达到什么程度？");
   await page.getByLabel("发送消息").click();
   await expect(page.locator(".message-assistant")).toHaveCount(2, { timeout: 15000 });
+  await expect(page.locator(".streaming-cursor")).toHaveCount(0, { timeout: 15000 });
 
   // 刷新页面
   await page.reload();
@@ -56,7 +59,7 @@ test("create conversation, send messages, and reload preserves history", async (
   await expect(firstConv).toBeVisible();
   await firstConv.click();
 
-  // 应该能看到之前的消息
+  // 应该能看到之前的消息（2 user + 2 assistant = 4）
   await expect(page.locator(".message-wrapper")).toHaveCount(4, { timeout: 10000 });
 });
 
@@ -67,21 +70,22 @@ test("switching conversations shows different messages", async ({ page }) => {
   await page.getByPlaceholder(/Enter 发送/).fill("会话一的测试消息");
   await page.getByLabel("发送消息").click();
   await expect(page.locator(".message-assistant")).toBeVisible({ timeout: 15000 });
+  await expect(page.locator(".streaming-cursor")).toHaveCount(0, { timeout: 15000 });
 
-  // 新对话
-  await page.getByRole("button", { name: "新对话" }).click();
+  // 新对话——按钮在侧栏中
+  await page.locator(".new-chat-btn").click();
   await expect(page.locator(".message-wrapper")).toHaveCount(0);
 
   await page.getByPlaceholder(/Enter 发送/).fill("会话二的测试消息");
   await page.getByLabel("发送消息").click();
   await expect(page.locator(".message-assistant")).toBeVisible({ timeout: 15000 });
+  await expect(page.locator(".streaming-cursor")).toHaveCount(0, { timeout: 15000 });
 
-  // 切换到第一个会话
-  const firstConv = page.locator(".conversation-title-btn").nth(1); // 第二个列表项（最新的在上面）
-  if (await firstConv.isVisible()) {
-    await firstConv.click();
-    await expect(page.getByText("会话一的测试消息")).toBeVisible();
-  }
+  // 切换到第一个会话（最新的在上面，所以第一个会话在第二位）
+  const firstConv = page.locator(".conversation-title-btn").nth(1);
+  await expect(firstConv).toBeVisible();
+  await firstConv.click();
+  await expect(page.getByText("会话一的测试消息")).toBeVisible();
 });
 
 test("can rename and delete conversations", async ({ page }) => {
@@ -91,9 +95,15 @@ test("can rename and delete conversations", async ({ page }) => {
   await page.getByPlaceholder(/Enter 发送/).fill("重命名测试消息");
   await page.getByLabel("发送消息").click();
   await expect(page.locator(".message-assistant")).toBeVisible({ timeout: 15000 });
+  await expect(page.locator(".streaming-cursor")).toHaveCount(0, { timeout: 15000 });
 
-  // 点击重命名按钮
+  // 悬停在第一个会话项上以显示操作按钮
+  const conversationItem = page.locator(".conversation-item").first();
+  await conversationItem.hover();
+
+  // 点击重命名按钮（hover 后才可见）
   const renameBtn = page.locator(".action-btn").first();
+  await expect(renameBtn).toBeVisible();
   await renameBtn.click();
 
   // 输入新名称
@@ -104,8 +114,10 @@ test("can rename and delete conversations", async ({ page }) => {
   // 确认标题已更新
   await expect(page.getByText("我的数据分析学习计划")).toBeVisible();
 
-  // 删除会话
+  // 再次悬停以显示删除按钮
+  await conversationItem.hover();
   const deleteBtn = page.locator(".action-delete").first();
+  await expect(deleteBtn).toBeVisible();
   await deleteBtn.click();
 
   // 应该回到欢迎页面
