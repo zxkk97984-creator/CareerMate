@@ -624,6 +624,13 @@ function PathView({
   refresh: () => Promise<void>;
   setNotice: (value: string) => void;
 }) {
+  // 计划来源标记
+  const triggerLabel =
+    plan?.generationMeta?.triggeredBy === "chat"
+      ? "对话生成"
+      : plan?.generationMeta?.triggeredBy === "auto"
+        ? "自动生成"
+        : "手动生成";
   const [busyTaskId, setBusyTaskId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
@@ -685,7 +692,7 @@ function PathView({
         <div className="space-y-5">
           {executionMeta ? (
             <div className={`rounded-md px-4 py-3 text-sm ${executionMeta.degraded ? "bg-amber-50 text-amber-800" : "bg-emerald-50 text-emerald-800"}`}>
-              AI 执行：{formatAiRuntimeDescription(executionMeta)}{executionMeta.fallbackReason ? ` · 原因：${executionMeta.fallbackReason}` : ""}
+              AI 执行：{formatAiRuntimeDescription(executionMeta)} · 来源：{triggerLabel}{executionMeta.fallbackReason ? ` · 原因：${executionMeta.fallbackReason}` : ""}
             </div>
           ) : null}
 

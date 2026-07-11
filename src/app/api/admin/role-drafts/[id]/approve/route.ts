@@ -22,5 +22,14 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
   } });
   const alreadyApproved = draft.status === "approved";
   const updated = alreadyApproved ? draft : await getPrisma().roleDraft.update({ where: { id }, data: { status: "approved", reviewerId: admin.id, reviewNote: "结构校验通过并入库" } });
+
+  // 如果草稿关联了探索报告，同步更新报告状态
+  if (draft.sourceReportId && !alreadyApproved) {
+    await getPrisma().careerExplorationReport.update({
+      where: { id: draft.sourceReportId },
+      data: { status: "approved" },
+    });
+  }
+
   return ok({ draft: updated, template, validation, alreadyApproved });
 }

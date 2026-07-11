@@ -49,29 +49,23 @@ export async function POST(request?: Request) {
 
   try {
     const plan = await getPrisma().$transaction(async (transaction) => {
-      // A no-op write obtains SQLite's single-writer lock before version calculation.
-      await transaction.$executeRawUnsafe("UPDATE User SET id = id WHERE id = ?", user.id);
-
-      const active = await transaction.careerPlan.findFirst({
-        where: { userId: user.id, status: "active" },
-        orderBy: { createdAt: "desc" },
-      });
       const latest = await transaction.careerPlan.findFirst({
         where: { userId: user.id },
         orderBy: { version: "desc" },
       });
-      const archived = await transaction.careerPlan.updateMany({
-        where: { userId: user.id, status: "active" },
-        data: { status: "archived" },
-      });
-      if (archived.count !== (active ? 1 : 0)) throw new PlanConflictError("active plan changed");
 
+      // 创建 pending 候选计划（不直接激活，待用户确认）
       const created = await transaction.careerPlan.create({
         data: {
           userId: user.id,
           targetRole: profile.targetRole,
           version: (latest?.version ?? 0) + 1,
+          status: "pending",
           ...serializePlan(generated.data),
+          generationMeta: JSON.stringify({
+            ...generated.meta,
+            triggeredBy: "manual",
+          }),
         },
       });
 
@@ -88,7 +82,7 @@ export async function POST(request?: Request) {
       return created;
     });
 
-    return ok({ plan: planDto(plan), note }, generated.meta as unknown as Record<string, unknown>);
+    return ok({ plan: planDto(plan), note, pendingConfirmation: true }, generated.meta as unknown as Record<string, unknown>);
   } catch (error) {
     if (isDatabaseConflict(error)) return fail("PLAN_CONFLICT", "职业路径正在更新，请刷新后重试", 409);
     return fail("PLAN_GENERATION_FAILED", "职业路径保存失败，原计划保持不变", 500);

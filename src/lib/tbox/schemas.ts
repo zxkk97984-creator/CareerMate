@@ -72,3 +72,35 @@ export const chatInputSchema = z.object({
   conversationId: z.string().trim().min(1).max(256).optional(),
   context: z.record(z.unknown()).optional(),
 });
+
+// ── 工作流与知识库配置 schema ──────────────────────────
+
+export const workflowTypeSchema = z.enum([
+  "career_exploration",
+  "profile_candidate",
+  "role_research",
+  "plan_generation",
+  "simulation_training",
+]);
+
+export const workflowConfigSchema = z.object({
+  type: workflowTypeSchema,
+  name: z.string().min(1).max(120),
+  description: z.string().min(1).max(500),
+  knowledgeBases: z.array(z.enum([
+    "roleCompetency",
+    "learningResources",
+    "simulationScenes",
+    "ethicsRules",
+  ])),
+  allowDegradation: z.boolean(),
+  outputSchema: z.string().min(1).max(120),
+});
+
+export const knowledgeBaseConfigSchema = z.object({
+  key: z.enum(["roleCompetency", "learningResources", "simulationScenes", "ethicsRules"]),
+  name: z.string().min(1).max(120),
+  description: z.string().min(1).max(500),
+  sourceDescription: z.string().min(1).max(500),
+  lastUpdated: z.string(),
+});

@@ -42,7 +42,8 @@ describe("plugin authorization", () => {
     vi.stubEnv("ALLOW_UNAUTHENTICATED_PLUGIN", "true");
 
     expect(isPluginAuthorized(pluginRequest("Bearer local-plugin-secret"))).toBe(true);
-    expect(isPluginAuthorized(pluginRequest("bearer local-plugin-secret"))).toBe(false);
+    // Bearer 前缀大小写不敏感（RFC 7235），但 Token 必须精确匹配
+    expect(isPluginAuthorized(pluginRequest("bearer local-plugin-secret"))).toBe(true);
     expect(isPluginAuthorized(pluginRequest("Bearer local-plugin-secret extra"))).toBe(false);
     expect(isPluginAuthorized(pluginRequest("Bearer wrong"))).toBe(false);
     expect(isPluginAuthorized(pluginRequest())).toBe(false);

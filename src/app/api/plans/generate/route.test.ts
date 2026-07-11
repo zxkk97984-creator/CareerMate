@@ -1,10 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  acquireWriteLock: vi.fn(),
-  archive: vi.fn(),
   createPlan: vi.fn(),
-  findActive: vi.fn(),
   findLatest: vi.fn(),
   generatePlan: vi.fn(),
   logCreate: vi.fn(),
@@ -53,15 +50,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.requireCurrentUser.mockResolvedValue({ id: "user-1", profile });
   mocks.generatePlan.mockResolvedValue({ data: { months: [] }, meta });
-  mocks.findActive.mockResolvedValue({ id: "active-1" });
   mocks.findLatest.mockResolvedValue({ version: 2 });
-  mocks.archive.mockResolvedValue({ count: 1 });
   mocks.createPlan.mockResolvedValue({ id: "plan-1", targetRole: "data_analyst", version: 3 });
-  mocks.transaction.mockImplementation(async (callback) => callback({
-    $executeRawUnsafe: mocks.acquireWriteLock,
+  mocks.transaction.mockImplementation(async (callback: (tx: unknown) => unknown) => callback({
     careerPlan: {
-      findFirst: vi.fn((args) => args.where.status === "active" ? mocks.findActive(args) : mocks.findLatest(args)),
-      updateMany: mocks.archive,
+      findFirst: mocks.findLatest,
       create: mocks.createPlan,
     },
     progressLog: { create: mocks.logCreate },
@@ -78,44 +71,45 @@ describe("POST /api/plans/generate", () => {
     expect(mocks.generatePlan).not.toHaveBeenCalled();
   });
 
-  it("archives, versions, creates, and logs atomically after a SQLite write lock", async () => {
+  it("creates a pending plan candidate with version increment and progress log", async () => {
     const response = await POST(request({ targetRole: "data_analyst", regenerate: true }));
 
     expect(response.status).toBe(200);
     expect(mocks.transaction).toHaveBeenCalledTimes(1);
-    expect(mocks.acquireWriteLock).toHaveBeenCalledWith("UPDATE User SET id = id WHERE id = ?", "user-1");
-    expect(mocks.archive).toHaveBeenCalledWith({
-      where: { userId: "user-1", status: "active" },
-      data: { status: "archived" },
-    });
-    expect(mocks.createPlan.mock.calls[0][0].data.version).toBe(3);
+
+    // 创建 pending 候选计划（非直接 active）
+    const createCall = mocks.createPlan.mock.calls[0][0].data;
+    expect(createCall.status).toBe("pending");
+    expect(createCall.version).toBe(3);
+
+    // 依然生成进度日志
     expect(mocks.logCreate).toHaveBeenCalledTimes(1);
-    expect(await response.json()).toEqual({
-      ok: true,
-      data: { plan: { id: "plan-1", targetRole: "data_analyst", version: 3 }, note: "fallback note" },
-      meta,
-    });
+
+    const json = await response.json();
+    expect(json.ok).toBe(true);
+    expect(json.data.pendingConfirmation).toBe(true);
+    expect(json.data.plan.version).toBe(3);
   });
 
-  it("returns a stable conflict when the active-plan compare/archive count is inconsistent", async () => {
-    mocks.archive.mockResolvedValue({ count: 2 });
-
-    const response = await POST(request({ regenerate: true }));
-    const payload = await response.json();
-
-    expect(response.status).toBe(409);
-    expect(payload.error.code).toBe("PLAN_CONFLICT");
-    expect(mocks.createPlan).not.toHaveBeenCalled();
-    expect(mocks.logCreate).not.toHaveBeenCalled();
-  });
-
-  it("does not perform non-transactional archive operations when an atomic write fails", async () => {
+  it("preserves existing plan when transaction fails", async () => {
     mocks.logCreate.mockRejectedValue(new Error("disk full"));
 
     const response = await POST(request({}));
 
     expect(response.status).toBe(500);
     expect(mocks.transaction).toHaveBeenCalledTimes(1);
-    expect(mocks.archive).toHaveBeenCalledTimes(1);
+  });
+
+  it("handles database conflict during creation", async () => {
+    // Simulate Prisma P1008 conflict
+    const conflictError = new Error("P1008");
+    (conflictError as any).code = "P1008";
+    mocks.transaction.mockRejectedValue(conflictError);
+
+    const response = await POST(request({}));
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload.error.code).toBe("PLAN_CONFLICT");
   });
 });
