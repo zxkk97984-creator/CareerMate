@@ -1,6 +1,6 @@
 "use client";
 
-import { X, TrendingUp, Brain, Target, Clock } from "lucide-react";
+import { X, Brain, Target, Clock } from "lucide-react";
 
 interface GrowthProfileDrawerProps {
   open: boolean;
@@ -43,20 +43,7 @@ export function GrowthProfileDrawer({ open, onClose, pendingCandidateCount }: Gr
           </div>
         )}
 
-        {/* 快速入口 */}
-        <div className="drawer-section">
-          <div className="section-header">
-            <TrendingUp size={18} />
-            <span>快速入口</span>
-          </div>
-          <nav className="drawer-nav">
-            <a href="/dashboard" className="drawer-nav-item">成长概览</a>
-            <a href="/path" className="drawer-nav-item">职业路径</a>
-            <a href="/simulation" className="drawer-nav-item">模拟训练</a>
-            <a href="/resources" className="drawer-nav-item">资源中心</a>
-            <a href="/memory" className="drawer-nav-item">记忆权限</a>
-          </nav>
-        </div>
+        {/* 快速入口——这些链接在侧栏底部也有，此处用于打开抽屉时快速跳转，避免同名重复 */}
 
         {/* 使用提示 */}
         <div className="drawer-section drawer-tips">
