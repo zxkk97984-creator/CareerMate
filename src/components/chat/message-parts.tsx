@@ -1,7 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import type { ChatMessagePart } from "@/lib/chat/persistence";
 import { AlertCircle, UserCheck, Map, Compass, Link2 } from "lucide-react";
+import { ProfileCandidateCard } from "./profile-candidate-card";
 
 interface MessagePartsProps {
   parts: ChatMessagePart[];
@@ -37,12 +39,51 @@ function CitationList({ items }: { items: ChatMessagePart & { type: "citations" 
 }
 
 function ProfileCandidateRef({ candidateId }: { candidateId: string }) {
+  const [candidate, setCandidate] = useState<Record<string, unknown> | null>(null);
+
+  useEffect(() => {
+    fetch("/api/profile/candidates")
+      .then((r) => r.json())
+      .then((body) => {
+        if (body.ok) {
+          const found = (body.data as Array<{ id: string }>).find((c) => c.id === candidateId);
+          if (found) setCandidate(found as Record<string, unknown>);
+        }
+      })
+      .catch(() => {});
+  }, [candidateId]);
+
+  if (!candidate) {
+    return (
+      <div className="parts-card parts-card-candidate">
+        <UserCheck size={16} />
+        <span>画像候选：{candidateId}</span>
+        <span className="parts-card-hint">可在成长档案中查看和确认</span>
+      </div>
+    );
+  }
+
   return (
-    <div className="parts-card parts-card-candidate">
-      <UserCheck size={16} />
-      <span>画像候选：{candidateId}</span>
-      <span className="parts-card-hint">可在成长档案中查看和确认</span>
-    </div>
+    <ProfileCandidateCard
+      candidate={{
+        id: candidate.id as string,
+        field: candidate.field as string,
+        oldValue: candidate.oldValue as unknown,
+        newValue: candidate.newValue as unknown,
+        confidence: candidate.confidence as number,
+        reason: candidate.reason as string,
+        status: candidate.status as string,
+        evidenceExcerpt: candidate.evidenceExcerpt as string,
+        impactSummary: candidate.impactSummary as string,
+      }}
+      onAction={async (id, action, newValue) => {
+        await fetch("/api/profile/candidates", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ candidateId: id, action, ...(newValue ? { newValue } : {}) }),
+        });
+      }}
+    />
   );
 }
 

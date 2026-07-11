@@ -1,6 +1,7 @@
 import { getPrisma } from "@/lib/prisma";
 import { toJson } from "@/lib/json";
 import { explorationReportSchema, type ExplorationReport } from "./exploration-schema";
+import { supportedRoleKeys, type SupportedRoleKey } from "@/lib/types";
 
 // ── 错误 ────────────────────────────────────────────────
 
@@ -34,6 +35,15 @@ export interface ExplorationService {
     reportId: string,
     userId: string,
   ): Promise<{ draftId: string }>;
+
+  /** 判断职业来源路由：内置 → 知识库，未知 → 搜索 */
+  resolveCareerSources(
+    roleName: string,
+  ): Promise<{
+    sourceLabel: "精品职业资料" | "实时联网调研";
+    knowledgeSources: Array<{ title: string; organization: string; label: string }>;
+    isKnownRole: boolean;
+  }>;
 }
 
 // ── 辅助 ────────────────────────────────────────────────
@@ -138,6 +148,38 @@ export function createExplorationService(): ExplorationService {
       });
 
       return { draftId: draft.id };
+    },
+
+    async resolveCareerSources(roleName) {
+      // 尝试匹配内置职业
+      const roleKey = roleName.toLowerCase().replace(/\s+/g, "_");
+      const isKnownRole = supportedRoleKeys.includes(roleKey as SupportedRoleKey);
+
+      if (isKnownRole) {
+        // 内置职业：读取 RoleTemplate 的来源
+        const template = await db.roleTemplate.findUnique({
+          where: { roleKey },
+        });
+        if (template) {
+          const sources = JSON.parse(template.sources || "[]") as Array<{
+            title: string; organization: string; label: string;
+          }>;
+          return {
+            sourceLabel: "精品职业资料",
+            knowledgeSources: sources.length > 0 ? sources : [
+              { title: `${roleName}职业标准`, organization: "CareerMate职业库", label: "已核验职业库" },
+            ],
+            isKnownRole: true,
+          };
+        }
+      }
+
+      // 未知职业：标注为需要联网调研
+      return {
+        sourceLabel: "实时联网调研",
+        knowledgeSources: [],
+        isKnownRole: false,
+      };
     },
   };
 }
