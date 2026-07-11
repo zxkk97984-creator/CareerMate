@@ -1,5 +1,6 @@
 import { fail, ok } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
+import { prepareCareerChat } from "@/lib/chat/server";
 import { getTboxConfig } from "@/lib/env";
 import { toJson } from "@/lib/json";
 import { getPrisma } from "@/lib/prisma";
@@ -12,13 +13,16 @@ export async function POST(request: Request) {
 
   const parsed = chatInputSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return fail("INVALID_INPUT", "对话参数不合法", 400);
+  const prepared = await prepareCareerChat({
+    userId: user.id,
+    question: parsed.data.question,
+  });
 
   const result = await chatWithTbox(
     {
-      question: parsed.data.question,
+      question: prepared.enhancedQuestion,
       userId: user.id,
       conversationId: parsed.data.conversationId,
-      context: parsed.data.context,
     },
     { config: getTboxConfig() },
   );

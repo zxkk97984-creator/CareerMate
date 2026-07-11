@@ -3,10 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   chat: vi.fn(),
   logCreate: vi.fn(),
+  prepareChat: vi.fn(),
   requireCurrentUser: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ requireCurrentUser: mocks.requireCurrentUser }));
+vi.mock("@/lib/chat/server", () => ({ prepareCareerChat: mocks.prepareChat }));
 vi.mock("@/lib/env", () => ({ getTboxConfig: () => ({ mode: "mock" }) }));
 vi.mock("@/lib/tbox/adapter", () => ({ chatWithTbox: mocks.chat }));
 vi.mock("@/lib/prisma", () => ({
@@ -18,6 +20,17 @@ import { POST } from "./route";
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.requireCurrentUser.mockResolvedValue({ id: "user-1" });
+  mocks.prepareChat.mockResolvedValue({
+    enhancedQuestion: "enhanced hello",
+    contextMeta: {
+      intent: null,
+      usedProfile: true,
+      usedPlan: false,
+      usedMemoryCount: 0,
+      knowledgeSources: [],
+      retrievalMeta: null,
+    },
+  });
   mocks.chat.mockResolvedValue({
     data: { conversationId: "conversation-1", answer: "hello" },
     meta: {
@@ -58,13 +71,16 @@ describe("POST /api/tbox/chat", () => {
     });
     expect(mocks.chat).toHaveBeenCalledWith(
       {
-        question: "hello",
+        question: "enhanced hello",
         userId: "user-1",
         conversationId: "previous",
-        context: { targetRole: "data_analyst" },
       },
       expect.objectContaining({ config: { mode: "mock" } }),
     );
+    expect(mocks.prepareChat).toHaveBeenCalledWith({ userId: "user-1", question: "hello" });
+    expect(mocks.logCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ summary: "hello" }),
+    });
   });
 
   it("rejects invalid input before invoking the adapter", async () => {
@@ -78,5 +94,6 @@ describe("POST /api/tbox/chat", () => {
 
     expect(response.status).toBe(400);
     expect(mocks.chat).not.toHaveBeenCalled();
+    expect(mocks.prepareChat).not.toHaveBeenCalled();
   });
 });

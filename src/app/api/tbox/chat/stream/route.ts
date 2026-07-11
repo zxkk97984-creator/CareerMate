@@ -1,5 +1,6 @@
 import { fail } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
+import { prepareCareerChat } from "@/lib/chat/server";
 import { getTboxConfig } from "@/lib/env";
 import { toJson } from "@/lib/json";
 import { getPrisma } from "@/lib/prisma";
@@ -33,12 +34,15 @@ async function handle(request: Request, rawInput: unknown) {
 
   const parsed = chatInputSchema.safeParse(rawInput);
   if (!parsed.success) return fail("INVALID_INPUT", "对话参数不合法", 400);
+  const prepared = await prepareCareerChat({
+    userId: user.id,
+    question: parsed.data.question,
+  });
   const result = await streamChatWithTbox(
     {
-      question: parsed.data.question,
+      question: prepared.enhancedQuestion,
       userId: user.id,
       conversationId: parsed.data.conversationId,
-      context: parsed.data.context,
     },
     { config: getTboxConfig(), signal: request.signal },
   );
@@ -56,6 +60,9 @@ async function handle(request: Request, rawInput: unknown) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
+      controller.enqueue(
+        encoder.encode(`event: context\ndata: ${JSON.stringify(prepared.contextMeta)}\n\n`),
+      );
       for (const event of result.data.events) {
         controller.enqueue(
           encoder.encode(
