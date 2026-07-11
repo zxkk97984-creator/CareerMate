@@ -27,9 +27,9 @@ test("chat-first persistent conversation continues across page visits", async ({
   await page.getByLabel("发送消息").click();
   await expect(page.locator(".message-assistant")).toBeVisible({ timeout: 15000 });
 
-  // 导航到职业路径页
+  // 导航到职业路径页（heading "3 年职业路径" 是页面的唯一性标记）
   await page.goto("/path");
-  await expect(page.locator("text=职业路径")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "3 年职业路径" })).toBeVisible();
 
   // 返回聊天首页，验证对话仍在
   await page.goto("/");
@@ -48,7 +48,8 @@ test("chat-first persistent conversation continues across page visits", async ({
 
 test("user completes a three-round simulation and receives one candidate", async ({ page }) => {
   await login(page);
-  await page.getByRole("link", { name: "模拟训练" }).click();
+  // GrowthProfileDrawer 和 sidebar-footer 中都有"模拟训练"链接，取侧栏中的（footer-link 类）
+  await page.locator(".footer-link").filter({ hasText: "模拟训练" }).click();
   await page.getByRole("button", { name: "开始新训练" }).click();
   const answers = ["目标是帮助用户快速发现简历问题并获得改进建议。", "优先完成文件解析和核心评分，验收标准是结果稳定可解释。", "失败时保留输入并提示重试，同时记录错误用于复盘。"];
   for (const [index, answer] of answers.entries()) {
@@ -106,10 +107,12 @@ test("chat-first complete flow: persistent chat, plan generation, conversation s
   await page.getByPlaceholder(/Enter 发送/).fill("我想了解数据分析师需要哪些能力？");
   await page.getByLabel("发送消息").click();
   await expect(page.locator(".message-assistant")).toBeVisible({ timeout: 15000 });
+  await expect(page.locator(".streaming-cursor")).toHaveCount(0, { timeout: 15000 });
 
   await page.getByPlaceholder(/Enter 发送/).fill("那数学基础要达到什么程度？");
   await page.getByLabel("发送消息").click();
   await expect(page.locator(".message-assistant")).toHaveCount(2, { timeout: 15000 });
+  await expect(page.locator(".streaming-cursor")).toHaveCount(0, { timeout: 15000 });
 
   // 3. 刷新后历史保留
   await page.reload();
@@ -121,13 +124,14 @@ test("chat-first complete flow: persistent chat, plan generation, conversation s
 
   // 4. 访问计划页
   await page.goto("/path");
-  await expect(page.locator("text=职业路径")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "3 年职业路径" })).toBeVisible();
 
   // 5. 返回聊天首页
   await page.goto("/");
   await expect(page.getByText("你好，我是 CareerMate")).toBeVisible();
 
-  // 6. 新对话不串消息
-  await page.getByRole("button", { name: "新对话" }).click();
+  // 6. 新对话不串消息——使用侧栏中的新对话按钮
+  await page.locator(".new-chat-btn").click();
+  await page.waitForTimeout(500);
   await expect(page.locator(".message-wrapper")).toHaveCount(0);
 });

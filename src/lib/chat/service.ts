@@ -1,5 +1,5 @@
 import type { Prisma } from "@prisma/client";
-import { titleFromFirstMessage } from "./persistence";
+import { parseChatMessageParts, titleFromFirstMessage } from "./persistence";
 import {
   createChatRepository,
   type ChatRepository,
@@ -53,20 +53,6 @@ function toConversationItem(row: {
   };
 }
 
-/** 安全解析 parts，非法内容回退为空数组 */
-function safeParseParts(parts: string): unknown[] {
-  try {
-    const parsed = JSON.parse(parts);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((p): p is Record<string, unknown> => {
-      if (!p || typeof p !== "object") return false;
-      return "type" in p && typeof p.type === "string";
-    });
-  } catch {
-    return [];
-  }
-}
-
 function toMessageItem(row: {
   id: string;
   conversationId: string;
@@ -81,7 +67,7 @@ function toMessageItem(row: {
   let parsedParts: unknown[];
   let parsedExec: unknown;
   let parsedCtx: unknown;
-  try { parsedParts = safeParseParts(row.parts); } catch { parsedParts = []; }
+  try { parsedParts = parseChatMessageParts(row.parts); } catch { parsedParts = []; }
   try { parsedExec = JSON.parse(row.executionMeta); } catch { parsedExec = {}; }
   try { parsedCtx = JSON.parse(row.contextMeta); } catch { parsedCtx = {}; }
 

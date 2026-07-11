@@ -186,22 +186,26 @@ export function ChatHomePage({ displayName }: ChatHomePageProps) {
 
   /** 创建新会话，可选自动发送初始消息 */
   const handleNewChat = useCallback(async (initialMessage?: string) => {
-    const res = await fetch("/api/chat/conversations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    });
-    if (!res.ok) return;
-    const body = await res.json();
-    if (body.ok) {
-      setConversations(prev => [body.data, ...prev]);
-      setActiveConversationId(body.data.id);
-      activeCidRef.current = body.data.id;
-      setMessages([]);
-      // 如果传入了初始消息，直接发送（使用新会话 ID，避免闭包问题）
-      if (initialMessage) {
-        doSend(body.data.id, initialMessage);
+    try {
+      const res = await fetch("/api/chat/conversations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) return;
+      const body = await res.json();
+      if (body.ok && body.data?.id) {
+        setConversations(prev => [body.data, ...prev]);
+        setActiveConversationId(body.data.id);
+        activeCidRef.current = body.data.id;
+        setMessages([]);
+        // 如果传入了初始消息，直接发送（使用新会话 ID，避免闭包问题）
+        if (initialMessage) {
+          doSend(body.data.id, initialMessage);
+        }
       }
+    } catch {
+      // 网络错误等，静默忽略
     }
   }, [doSend]);
 

@@ -74,6 +74,8 @@ test("switching conversations shows different messages", async ({ page }) => {
 
   // 新对话——按钮在侧栏中
   await page.locator(".new-chat-btn").click();
+  // 等待新会话创建完成并清空消息
+  await page.waitForTimeout(500);
   await expect(page.locator(".message-wrapper")).toHaveCount(0);
 
   await page.getByPlaceholder(/Enter 发送/).fill("会话二的测试消息");
