@@ -52,8 +52,9 @@ function normalizeFitAnalysis(report: ExplorationReport): ExplorationReport {
 
 /** 去除报告中的个人内容（fitAnalysis）用于提交审核 */
 function depersonalizeReport(report: ExplorationReport): Omit<ExplorationReport, "fitAnalysis"> {
-  const { fitAnalysis: _, ...rest } = report;
-  return rest;
+  return Object.fromEntries(
+    Object.entries(report).filter(([key]) => key !== "fitAnalysis"),
+  ) as Omit<ExplorationReport, "fitAnalysis">;
 }
 
 // ── 实现 ────────────────────────────────────────────────

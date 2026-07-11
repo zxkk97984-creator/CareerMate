@@ -124,7 +124,7 @@ export function ProfileCandidateCard({
       {/* 原文依据 */}
       {candidate.evidenceExcerpt && (
         <blockquote className="text-xs text-gray-500 border-l-2 border-purple-200 pl-2 mb-2">
-          "{candidate.evidenceExcerpt}"
+          &ldquo;{candidate.evidenceExcerpt}&rdquo;
         </blockquote>
       )}
 

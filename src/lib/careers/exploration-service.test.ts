@@ -101,7 +101,7 @@ describe("ExplorationService", () => {
       const { svc, mock } = setupService();
       mock.careerExplorationReport.create.mockResolvedValue(reportRow());
 
-      const result = await svc.createReport({
+      await svc.createReport({
         userId: "user-1",
         conversationId: null,
         report: {
