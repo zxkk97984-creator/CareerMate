@@ -133,6 +133,48 @@ export function mergeOnboardingDraft(previous: OnboardingDraft, extracted: Onboa
   return onboardingDraftSchema.parse(merged);
 }
 
+type OnboardingTranscriptTurn = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+function bareMajorAnswer(message: string) {
+  const value = message.trim().replace(/专业$/u, "").trim();
+  if (value.length < 2 || value.length > 40) return undefined;
+  if (/[？?！!。；;\n\r]/u.test(value)) return undefined;
+  if (/(?:不知道|不清楚|没有|暂无|随便|还没想好)/u.test(value)) return undefined;
+  return value;
+}
+
+export function extractOnboardingDraftForTurn(
+  message: string,
+  previous: OnboardingDraft,
+): OnboardingDraft {
+  const explicit = extractOnboardingDraft(message);
+  if (
+    Object.keys(explicit).length > 0 ||
+    missingOnboardingGroups(previous)[0] !== "major"
+  ) {
+    return explicit;
+  }
+  const major = bareMajorAnswer(message);
+  return onboardingDraftSchema.parse(major ? { major } : {});
+}
+
+export function rebuildOnboardingDraft(
+  transcript: OnboardingTranscriptTurn[],
+  storedDraft: OnboardingDraft,
+): OnboardingDraft {
+  const replayed = transcript.reduce((draft, turn) => {
+    if (turn.role !== "user") return draft;
+    return mergeOnboardingDraft(
+      draft,
+      extractOnboardingDraftForTurn(turn.content, draft),
+    );
+  }, {} as OnboardingDraft);
+  return mergeOnboardingDraft(replayed, storedDraft);
+}
+
 const completeGroup = (value: unknown) =>
   typeof value === "string" ? value.trim().length > 0 : Array.isArray(value) ? value.length > 0 : value !== undefined;
 

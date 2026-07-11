@@ -3,10 +3,12 @@ import {
   calculateOnboardingCompleteness,
   canCompleteOnboarding,
   extractOnboardingDraft,
+  extractOnboardingDraftForTurn,
   mergeOnboardingDraft,
   nextOnboardingQuestion,
   onboardingDraftSchema,
   profileUpdateCandidateFromExtraction,
+  rebuildOnboardingDraft,
   type OnboardingDraft,
 } from "./onboarding";
 
@@ -43,6 +45,40 @@ describe("onboarding domain", () => {
       learningPreference: ["video", "project"],
       experienceSummary: "做过校园活动数据看板",
       constraints: ["时间有限"],
+    });
+  });
+
+  it("uses a bare short answer for the currently requested major", () => {
+    const previous: OnboardingDraft = { educationStage: "sophomore" };
+
+    expect(extractOnboardingDraftForTurn("数据科学与大数据技术", previous)).toEqual({
+      major: "数据科学与大数据技术",
+    });
+  });
+
+  it.each(["不知道", "没有", "AI产品经理", "每周 5 小时"])(
+    "does not treat %s as a bare major",
+    (message) => {
+      const previous: OnboardingDraft = { educationStage: "sophomore" };
+
+      expect(extractOnboardingDraftForTurn(message, previous)).not.toHaveProperty("major");
+    },
+  );
+
+  it("replays the reported onboarding sequence into a complete partial draft", () => {
+    const transcript = [
+      { role: "user" as const, content: "我是本科大二的学生" },
+      { role: "assistant" as const, content: "你目前主修什么专业？" },
+      { role: "user" as const, content: "数据科学与大数据技术" },
+      { role: "assistant" as const, content: "你目前有比较明确的目标岗位吗？" },
+      { role: "user" as const, content: "AI产品经理" },
+    ];
+
+    expect(rebuildOnboardingDraft(transcript, {})).toMatchObject({
+      educationStage: "sophomore",
+      major: "数据科学与大数据技术",
+      targetRole: "ai_product_manager",
+      targetRoleLabel: "AI 产品经理",
     });
   });
 
