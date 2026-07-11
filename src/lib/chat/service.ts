@@ -12,7 +12,7 @@ import type {
 
 // ── 错误 ──────────────────────────────────────────────────
 
-class ServiceError extends Error {
+export class ServiceError extends Error {
   constructor(
     message: string,
     public code: string,
