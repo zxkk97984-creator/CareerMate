@@ -172,6 +172,52 @@ describe("POST /api/onboarding/chat", () => {
     expect(adapterInput.question).not.toContain("https://example.test/chat");
   });
 
+  it("self-heals a bare major answer from the stored transcript", async () => {
+    mocks.conversationFindUnique.mockResolvedValue({
+      id: "conversation-1",
+      userId: "user-1",
+      status: "active",
+      transcript: JSON.stringify([
+        { role: "user", content: "我是本科大二的学生" },
+        { role: "assistant", content: "你目前主修的是什么专业呢？" },
+        { role: "user", content: "数据科学与大数据技术" },
+        { role: "assistant", content: "你目前有比较明确的目标岗位吗？" },
+      ]),
+      draft: JSON.stringify({ educationStage: "sophomore" }),
+      updatedAt: new Date("2026-07-10T00:00:00.000Z"),
+    });
+    mocks.chat.mockResolvedValue({
+      data: {
+        conversationId: "remote-1",
+        answer: "接下来请告诉我每周可投入多少小时。",
+      },
+      meta: {
+        requestedMode: "api",
+        actualMode: "api",
+        degraded: false,
+        fallbackReason: null,
+        source: "tbox-api",
+      },
+    });
+
+    const response = await POST(
+      request({ message: "AI产品经理", conversationId: "conversation-1" }),
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.data.draft).toMatchObject({
+      educationStage: "sophomore",
+      major: "数据科学与大数据技术",
+      targetRole: "ai_product_manager",
+      targetRoleLabel: "AI 产品经理",
+    });
+    expect(mocks.chat.mock.calls[0][0].context.draft.major).toBe(
+      "数据科学与大数据技术",
+    );
+    expect(payload.data.assistantMessage).not.toContain("专业");
+  });
+
   it.each([
     ["null", []],
     ["{}", []],

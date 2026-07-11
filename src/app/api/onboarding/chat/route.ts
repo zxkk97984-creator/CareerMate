@@ -5,12 +5,13 @@ import { getTboxConfig } from "@/lib/env";
 import { parseJson, toJson } from "@/lib/json";
 import {
   calculateOnboardingCompleteness,
-  extractOnboardingDraft,
+  extractOnboardingDraftForTurn,
   mergeOnboardingDraft,
   missingOnboardingGroups,
   nextOnboardingQuestion,
   onboardingDraftSchema,
   profileUpdateCandidateFromExtraction,
+  rebuildOnboardingDraft,
   type OnboardingDraft,
 } from "@/lib/onboarding";
 import { getPrisma } from "@/lib/prisma";
@@ -69,8 +70,10 @@ export async function POST(request: Request) {
     });
   }
 
-  const previousDraft = safeStoredDraft(conversation.draft);
-  const extracted = extractOnboardingDraft(parsed.data.message);
+  const transcript = parseOnboardingTranscript(conversation.transcript);
+  const storedDraft = safeStoredDraft(conversation.draft);
+  const previousDraft = rebuildOnboardingDraft(transcript, storedDraft);
+  const extracted = extractOnboardingDraftForTurn(parsed.data.message, previousDraft);
   const draft = mergeOnboardingDraft(previousDraft, extracted);
   const completeness = calculateOnboardingCompleteness(draft);
   const deterministicQuestion = nextOnboardingQuestion(draft);
@@ -89,7 +92,6 @@ export async function POST(request: Request) {
     assistantMessage = result.data.answer.trim();
   }
 
-  const transcript = parseOnboardingTranscript(conversation.transcript);
   transcript.push(
     { role: "user", content: parsed.data.message },
     { role: "assistant", content: assistantMessage, meta: executionMeta },
