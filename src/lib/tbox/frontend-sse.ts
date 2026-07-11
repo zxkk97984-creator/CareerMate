@@ -1,6 +1,73 @@
+import type { CareerChatContextMeta, CareerChatIntent } from "@/lib/chat/types";
+import type { AiExecutionMeta, TboxMode } from "@/lib/types";
+
 export interface FrontendSseBlock {
   event: string;
   data: Record<string, unknown>;
+}
+
+interface FrontendSseHandlers {
+  onDelta: (content: string) => void;
+  onContext?: (context: CareerChatContextMeta) => void;
+}
+
+export interface FrontendSseResult {
+  conversationId: string | null;
+  meta: AiExecutionMeta | null;
+}
+
+const modes: TboxMode[] = ["api", "manual", "mock"];
+const intents: CareerChatIntent[] = [
+  "roleCompetency",
+  "learningResources",
+  "simulationScenes",
+  "ethicsRules",
+];
+
+function executionMeta(value: unknown): AiExecutionMeta | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const item = value as Record<string, unknown>;
+  if (
+    !modes.includes(item.requestedMode as TboxMode) ||
+    !modes.includes(item.actualMode as TboxMode) ||
+    typeof item.degraded !== "boolean" ||
+    !(item.fallbackReason === null || typeof item.fallbackReason === "string") ||
+    typeof item.source !== "string"
+  ) {
+    return null;
+  }
+  return {
+    requestedMode: item.requestedMode as TboxMode,
+    actualMode: item.actualMode as TboxMode,
+    degraded: item.degraded,
+    fallbackReason: item.fallbackReason as string | null,
+    source: item.source,
+  };
+}
+
+function careerContext(value: Record<string, unknown>): CareerChatContextMeta | null {
+  const intent = value.intent;
+  const sources = value.knowledgeSources;
+  if (
+    !(intent === null || intents.includes(intent as CareerChatIntent)) ||
+    typeof value.usedProfile !== "boolean" ||
+    typeof value.usedPlan !== "boolean" ||
+    typeof value.usedMemoryCount !== "number" ||
+    !Array.isArray(sources) ||
+    !sources.every((source) => typeof source === "string")
+  ) {
+    return null;
+  }
+  const retrievalMeta = value.retrievalMeta === null ? null : executionMeta(value.retrievalMeta);
+  if (value.retrievalMeta !== null && !retrievalMeta) return null;
+  return {
+    intent: intent as CareerChatIntent | null,
+    usedProfile: value.usedProfile,
+    usedPlan: value.usedPlan,
+    usedMemoryCount: value.usedMemoryCount,
+    knowledgeSources: sources,
+    retrievalMeta,
+  };
 }
 
 export function parseFrontendSseBlock(block: string): FrontendSseBlock | null {
@@ -23,8 +90,12 @@ export function parseFrontendSseBlock(block: string): FrontendSseBlock | null {
 
 export async function consumeFrontendSseResponse(
   response: Response,
-  onDelta: (content: string) => void,
-) {
+  handlersOrDelta: FrontendSseHandlers | ((content: string) => void),
+): Promise<FrontendSseResult> {
+  const handlers =
+    typeof handlersOrDelta === "function"
+      ? { onDelta: handlersOrDelta }
+      : handlersOrDelta;
   if (!response.ok) throw new Error("对话请求失败");
   if (!response.headers.get("content-type")?.toLowerCase().includes("text/event-stream")) {
     throw new Error("对话服务返回了无效响应");
@@ -35,6 +106,8 @@ export async function consumeFrontendSseResponse(
   let buffer = "";
   let readerDone = false;
   let completed = false;
+  let conversationId: string | null = null;
+  let finalMeta: AiExecutionMeta | null = null;
 
   function boundary() {
     const match = /\r\n\r\n|\n\n|\r\r/.exec(buffer);
@@ -54,9 +127,20 @@ export async function consumeFrontendSseResponse(
       parsed.data.type === "delta" &&
       typeof parsed.data.content === "string"
     ) {
-      onDelta(parsed.data.content);
+      handlers.onDelta(parsed.data.content);
+      finalMeta = executionMeta(parsed.data.meta) ?? finalMeta;
     }
-    if (parsed.event === "done") completed = true;
+    if (parsed.event === "context") {
+      const context = careerContext(parsed.data);
+      if (!context) throw new Error("流式响应格式无效");
+      handlers.onContext?.(context);
+    }
+    if (parsed.event === "done") {
+      conversationId =
+        typeof parsed.data.conversationId === "string" ? parsed.data.conversationId : null;
+      finalMeta = executionMeta(parsed.data.meta) ?? finalMeta;
+      completed = true;
+    }
   }
 
   try {
@@ -87,4 +171,5 @@ export async function consumeFrontendSseResponse(
     }
     reader.releaseLock();
   }
+  return { conversationId, meta: finalMeta };
 }

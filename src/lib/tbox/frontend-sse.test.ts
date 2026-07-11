@@ -31,7 +31,7 @@ describe("frontend SSE response consumption", () => {
           status: 401,
           headers: { "Content-Type": "application/json" },
         }),
-        () => undefined,
+        { onDelta: () => undefined },
       ),
     ).rejects.toThrow("对话请求失败");
   });
@@ -43,22 +43,40 @@ describe("frontend SSE response consumption", () => {
           status: 200,
           headers: { "Content-Type": "text/event-stream" },
         }),
-        () => undefined,
+        { onDelta: () => undefined },
       ),
     ).rejects.toThrow("服务不可用");
   });
 
   it("collects deltas and requires a terminal done event", async () => {
     const deltas: string[] = [];
-    await consumeFrontendSseResponse(
+    const contexts: Array<Record<string, unknown>> = [];
+    const meta = {
+      requestedMode: "api",
+      actualMode: "api",
+      degraded: false,
+      fallbackReason: null,
+      source: "tbox-api",
+    };
+    const result = await consumeFrontendSseResponse(
       new Response(
-        'event: message\ndata: {"type":"delta","content":"hello"}\n\n' +
-          'event: done\ndata: {"conversationId":"c1"}\n\n',
+        'event: context\ndata: {"intent":"roleCompetency","usedProfile":true,"usedPlan":true,"usedMemoryCount":1,"knowledgeSources":["role-ai-product-manager"],"retrievalMeta":null}\n\n' +
+          `event: message\ndata: ${JSON.stringify({ type: "delta", content: "hel", meta })}\n\n` +
+          `event: message\ndata: ${JSON.stringify({ type: "delta", content: "lo", meta })}\n\n` +
+          `event: done\ndata: ${JSON.stringify({ conversationId: "c1", meta })}\n\n`,
         { status: 200, headers: { "Content-Type": "text/event-stream" } },
       ),
-      (content) => deltas.push(content),
+      {
+        onDelta: (content) => deltas.push(content),
+        onContext: (context) => contexts.push(context as unknown as Record<string, unknown>),
+      },
     );
-    expect(deltas).toEqual(["hello"]);
+    expect(deltas.join("")).toBe("hello");
+    expect(contexts[0]).toMatchObject({
+      intent: "roleCompetency",
+      knowledgeSources: ["role-ai-product-manager"],
+    });
+    expect(result).toEqual({ conversationId: "c1", meta });
 
     await expect(
       consumeFrontendSseResponse(
@@ -66,9 +84,19 @@ describe("frontend SSE response consumption", () => {
           status: 200,
           headers: { "Content-Type": "text/event-stream" },
         }),
-        () => undefined,
+        { onDelta: () => undefined },
       ),
     ).rejects.toThrow("流式响应格式无效");
+
+    await expect(
+      consumeFrontendSseResponse(
+        new Response('event: message\ndata: {"type":"delta","content":"unfinished"}\n\n', {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        }),
+        { onDelta: () => undefined },
+      ),
+    ).rejects.toThrow("流式响应未正常结束");
   });
 
   it("does not block UI cleanup on an unsettled cancel promise", async () => {
@@ -87,7 +115,9 @@ describe("frontend SSE response consumption", () => {
       { status: 200, headers: { "Content-Type": "text/event-stream" } },
     );
     const outcome = await Promise.race([
-      consumeFrontendSseResponse(response, () => undefined).then(() => "done" as const),
+      consumeFrontendSseResponse(response, { onDelta: () => undefined }).then(
+        () => "done" as const,
+      ),
       new Promise<"hung">((resolve) => setTimeout(() => resolve("hung"), 50)),
     ]);
     expect(outcome).toBe("done");
