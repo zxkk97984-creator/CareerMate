@@ -3,6 +3,7 @@ import type {
   CandidateDto,
   CareerPlanDto,
   CurrentUserDto,
+  PlanGenerationMeta,
   ProfileDto,
 } from "@/lib/types";
 import { parseJson } from "@/lib/json";
@@ -61,6 +62,8 @@ export function planDto(plan: {
   currentMonthIndex: number;
   assumptions: string;
   riskNotes: string;
+  generationMeta: string;
+  sourceReportId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }): CareerPlanDto {
@@ -75,6 +78,15 @@ export function planDto(plan: {
     currentMonthIndex: plan.currentMonthIndex,
     assumptions: parseJson<string[]>(plan.assumptions, []),
     riskNotes: parseJson<string[]>(plan.riskNotes, []),
+    generationMeta: parseJson<PlanGenerationMeta>(plan.generationMeta, {
+      requestedMode: "mock",
+      actualMode: "mock",
+      degraded: false,
+      fallbackReason: null,
+      source: "unknown",
+      triggeredBy: "manual" as const,
+    }),
+    sourceReportId: plan.sourceReportId,
     createdAt: plan.createdAt.toISOString(),
     updatedAt: plan.updatedAt.toISOString(),
   };

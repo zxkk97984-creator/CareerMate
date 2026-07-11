@@ -67,8 +67,20 @@ export interface CareerPlanDto {
   currentMonthIndex: number;
   assumptions: string[];
   riskNotes: string[];
+  generationMeta: PlanGenerationMeta;
+  sourceReportId: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface PlanGenerationMeta {
+  requestedMode: string;
+  actualMode: string;
+  degraded: boolean;
+  fallbackReason: string | null;
+  source: string;
+  triggeredBy: "chat" | "manual" | "auto";
+  conversationId?: string;
 }
 
 export const taskStatuses = ["not_started", "in_progress", "done", "delayed"] as const;
@@ -136,4 +148,56 @@ export interface AbilityEvidenceDto {
   status: string;
   observedAt: string;
   createdAt: string;
+}
+
+// ── 统一计划结构 ──────────────────────────────────────
+
+export interface UnifiedPlan {
+  direction: PlanDirection;
+  milestones: PlanMilestone[];
+  tasks: PlanTask90;
+  thisWeek: PlanWeeklyAction[];
+}
+
+export interface PlanDirection {
+  summary: string;
+  targetRole: string;
+  keyCompetencies: string[];
+}
+
+export interface PlanMilestone {
+  month: number;
+  goal: string;
+  deliverables: string[];
+  evaluationCriteria: string[];
+}
+
+export interface PlanTask90 {
+  goal: string;
+  tasks: Array<{
+    id: string;
+    title: string;
+    type: string;
+    status: string;
+    dueWeek: number;
+    estimatedHours?: number;
+  }>;
+}
+
+export interface PlanWeeklyAction {
+  title: string;
+  description: string;
+  estimatedMinutes: number;
+  type: "learning" | "practice" | "output" | "review";
+}
+
+export interface PlanVersionDiff {
+  directionChange: boolean;
+  directionSummary?: string;
+  addedMilestones: PlanMilestone[];
+  removedMilestones: PlanMilestone[];
+  addedTasks: string[];
+  removedTasks: string[];
+  timeCommitmentChange?: string;
+  riskChange?: string;
 }

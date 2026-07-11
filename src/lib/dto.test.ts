@@ -15,6 +15,8 @@ describe("planDto", () => {
       currentMonthIndex: 1,
       assumptions: "[]",
       riskNotes: "[]",
+      generationMeta: "{}",
+      sourceReportId: null,
       createdAt: new Date("2026-07-10T00:00:00.000Z"),
       updatedAt: new Date("2026-07-11T00:00:00.000Z"),
     });
