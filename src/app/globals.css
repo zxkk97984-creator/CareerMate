@@ -950,7 +950,42 @@ button:disabled {
     padding: 8px 12px 12px;
   }
 
-  .message-wrapper {
+  .profile-toggle-btn {
+	    top: 8px;
+	    right: 8px;
+	    width: 36px;
+	    height: 36px;
+	  }
+
+	  .message-wrapper {
     max-width: 100%;
+  }
+}
+
+/* ── 可访问性 ──────────────────────────────────────────── */
+
+/* 键盘焦点可见 */
+.chat-composer textarea:focus-visible,
+.chat-sidebar button:focus-visible,
+.chat-sidebar a:focus-visible,
+button:focus-visible {
+  outline: 2px solid #7568E8;
+  outline-offset: 2px;
+}
+
+/* 流式消息区域的 aria-live 容器 */
+.chat-thread[aria-live] {
+  scroll-behavior: smooth;
+}
+
+/* 触控目标最小尺寸 */
+@media (pointer: coarse) {
+  .chat-sidebar button,
+  .chat-sidebar a,
+  .composer-wrapper button,
+  .profile-toggle-btn,
+  .mobile-menu-btn {
+    min-height: 44px;
+    min-width: 44px;
   }
 }
