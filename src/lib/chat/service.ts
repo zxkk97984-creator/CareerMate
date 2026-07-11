@@ -42,6 +42,7 @@ function toConversationItem(row: {
   id: string;
   title: string;
   status: string;
+  remoteConversationId?: string | null;
   lastMessageAt: Date;
   createdAt: Date;
 }): ConversationItem {
@@ -49,6 +50,7 @@ function toConversationItem(row: {
     id: row.id,
     title: row.title,
     status: row.status,
+    remoteConversationId: row.remoteConversationId ?? null,
     lastMessageAt: row.lastMessageAt.toISOString(),
     createdAt: row.createdAt.toISOString(),
   };
@@ -186,6 +188,7 @@ export function createChatService(repo?: ChatRepository): ChatService {
       if (!row) return null;
       return {
         ...toConversationItem(row),
+        remoteConversationId: row.remoteConversationId ?? null,
         updatedAt: row.updatedAt.toISOString(),
       };
     },

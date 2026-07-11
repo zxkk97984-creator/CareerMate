@@ -49,6 +49,7 @@ export const conversationItemSchema = z.object({
   id: z.string(),
   title: z.string(),
   status: z.string(),
+  remoteConversationId: z.string().nullable().optional(),
   lastMessageAt: z.string(),
   createdAt: z.string(),
 });
@@ -66,9 +67,10 @@ export const messageItemSchema = z.object({
   createdAt: z.string(),
 });
 
-/** 会话详情（含首条消息预览） */
+/** 会话详情（含更新时间） */
 export const conversationDetailSchema = conversationItemSchema.extend({
   updatedAt: z.string(),
+  remoteConversationId: z.string().nullable(),
 });
 
 // ── SSE 事件 ──────────────────────────────────────────────
