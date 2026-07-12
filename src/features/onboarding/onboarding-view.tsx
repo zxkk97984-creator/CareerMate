@@ -8,17 +8,9 @@ import { createOnboardingInitialState, type ActiveOnboardingConversation } from 
 import type { AiRuntimeSnapshot } from "@/lib/ai-runtime";
 import type { OnboardingMessage } from "@/lib/workspace-types";
 import { fetchApi } from "@/lib/client-api";
-
-/* ── 局部工具 ── */
-
-function Panel({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {
-  return <section className="rounded-lg border border-slate-200 bg-white shadow-sm"><div className="flex items-center justify-between border-b border-slate-100 px-5 py-4"><h2 className="text-base font-semibold text-slate-950">{title}</h2>{action}</div><div className="p-5">{children}</div></section>;
-}
-
-function Btn({ children, onClick, disabled, variant = "primary" }: { children: React.ReactNode; onClick?: () => void; disabled?: boolean; variant?: "primary" | "secondary" | "danger" }) {
-  const cls = variant === "danger" ? "bg-rose-600 text-white hover:bg-rose-700" : variant === "secondary" ? "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50" : "bg-slate-950 text-white hover:bg-slate-800";
-  return <button disabled={disabled} onClick={onClick} className={`h-10 rounded-md px-4 text-sm font-semibold ${cls}`}>{children}</button>;
-}
+import { SurfaceCard } from "@/components/ui/surface-card";
+import { Button } from "@/components/ui/button";
+import { InlineAlert } from "@/components/ui/inline-alert";
 
 /* ── 主视图 ── */
 
@@ -70,18 +62,57 @@ export function OnboardingView({ refresh, setNotice, setAiExecution, activeConve
   ];
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.8fr)]">
-      <Panel title="对话式画像引导">
-        <div className="mb-4"><div className="flex items-center justify-between text-sm"><span className="font-medium text-slate-700">画像完整度</span><span className="font-semibold text-slate-950">{Math.round(completeness * 100)}%</span></div><div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-indigo-600 transition-[width]" style={{ width: `${Math.round(completeness * 100)}%` }} /></div></div>
-        <div className="max-h-[430px] space-y-3 overflow-y-auto rounded-lg bg-slate-50 p-4">{messages.map((item, i) => (<div key={`${item.role}-${i}`} className={`max-w-[88%] rounded-lg px-4 py-3 text-sm leading-6 ${item.role === "user" ? "ml-auto bg-slate-950 text-white" : "border border-slate-200 bg-white text-slate-700"}`}>{item.content}</div>))}</div>
-        <textarea className="mt-4 min-h-24 w-full rounded-md border border-slate-200 p-3 text-sm leading-6" placeholder="一次可以告诉我多项信息，例如：我是大三统计学专业，想做数据分析，每周有 8 小时……" value={message} onChange={(e) => setMessage(e.target.value)} />
-        {error ? <p className="mt-3 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
-        <div className="mt-4 flex items-center gap-3"><Btn disabled={loading || !message.trim()} onClick={send}>{loading ? "处理中..." : "发送"}</Btn><span className="text-xs text-slate-500">确认前不会改写正式画像</span></div>
-      </Panel>
-      <Panel title="画像摘要">
-        <dl className="space-y-3">{summary.map(([label, value]) => (<div key={label} className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2"><dt className="text-xs font-medium text-slate-500">{label}</dt><dd className="mt-1 text-sm text-slate-900">{value || "待补充"}</dd></div>))}</dl>
-        <div className="mt-5"><Btn disabled={loading || !conversationId || !canCompleteOnboarding(completeness)} onClick={complete}>确认并生成成长工作台</Btn>{!canCompleteOnboarding(completeness) ? <p className="mt-2 text-xs leading-5 text-slate-500">完整度达到 80% 后可以确认。</p> : null}</div>
-      </Panel>
+    <div style={{ display: "grid", gap: 20, gridTemplateColumns: "minmax(0,1.4fr) minmax(280px,0.8fr)" }} className="max-lg:grid-cols-1">
+      <SurfaceCard title="对话式画像引导">
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 14 }}>
+            <span style={{ fontWeight: 500, color: "var(--cm-text-muted)" }}>画像完整度</span>
+            <span style={{ fontWeight: 600, color: "var(--cm-text-strong)" }}>{Math.round(completeness * 100)}%</span>
+          </div>
+          <div style={{ marginTop: 8, height: 8, borderRadius: 999, background: "var(--cm-canvas)", overflow: "hidden" }}>
+            <div style={{ height: "100%", borderRadius: 999, background: "var(--cm-brand)", width: `${Math.round(completeness * 100)}%`, transition: "width 0.3s" }} />
+          </div>
+        </div>
+        <div style={{ maxHeight: 430, overflowY: "auto", borderRadius: "var(--cm-radius-control)", background: "var(--cm-canvas)", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+          {messages.map((item, i) => (
+            <div key={`${item.role}-${i}`} style={{
+              maxWidth: "88%", borderRadius: "var(--cm-radius-control)", padding: "12px 16px", fontSize: 14, lineHeight: 1.6,
+              ...(item.role === "user"
+                ? { marginLeft: "auto", background: "var(--cm-brand)", color: "#fff" }
+                : { border: "1px solid var(--cm-border)", background: "var(--cm-surface)", color: "var(--cm-text-strong)" }),
+            }}>{item.content}</div>
+          ))}
+        </div>
+        <textarea
+          style={{ marginTop: 16, minHeight: 96, width: "100%", borderRadius: "var(--cm-radius-control)", border: "1px solid var(--cm-border-strong)", padding: 12, fontSize: 14, lineHeight: 1.6, color: "var(--cm-text-strong)", background: "var(--cm-surface)", resize: "vertical" }}
+          placeholder="一次可以告诉我多项信息，例如：我是大三统计学专业，想做数据分析，每周有 8 小时……"
+          value={message} onChange={(e) => setMessage(e.target.value)}
+        />
+        {error ? <div style={{ marginTop: 12 }}><InlineAlert tone="error">{error}</InlineAlert></div> : null}
+        <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 12 }}>
+          <Button disabled={loading || !message.trim()} onClick={send}>{loading ? "处理中..." : "发送"}</Button>
+          <span style={{ fontSize: 12, color: "var(--cm-text-subtle)" }}>确认前不会改写正式画像</span>
+        </div>
+      </SurfaceCard>
+
+      <SurfaceCard title="画像摘要">
+        <dl style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {summary.map(([label, value]) => (
+            <div key={label} style={{ borderRadius: "var(--cm-radius-sm)", border: "1px solid var(--cm-border)", background: "var(--cm-canvas)", padding: "8px 12px" }}>
+              <dt style={{ fontSize: 12, fontWeight: 500, color: "var(--cm-text-subtle)" }}>{label}</dt>
+              <dd style={{ margin: "4px 0 0", fontSize: 14, color: "var(--cm-text-strong)" }}>{value || "待补充"}</dd>
+            </div>
+          ))}
+        </dl>
+        <div style={{ marginTop: 20 }}>
+          <Button disabled={loading || !conversationId || !canCompleteOnboarding(completeness)} onClick={complete}>
+            确认并生成成长工作台
+          </Button>
+          {!canCompleteOnboarding(completeness) ? (
+            <p style={{ marginTop: 8, fontSize: 12, lineHeight: 1.5, color: "var(--cm-text-subtle)" }}>完整度达到 80% 后可以确认。</p>
+          ) : null}
+        </div>
+      </SurfaceCard>
     </div>
   );
 }

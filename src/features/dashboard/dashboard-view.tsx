@@ -5,29 +5,24 @@ import { PolarAngleAxis, PolarGrid, Radar, RadarChart, ResponsiveContainer } fro
 import { abilityKeys, abilityLabels, type PlanMonth } from "@/lib/types";
 import type { WorkspaceData } from "@/lib/workspace-types";
 import { fetchApi } from "@/lib/client-api";
+import { SurfaceCard } from "@/components/ui/surface-card";
+import { Button } from "@/components/ui/button";
 
-/* ── 局部工具（后续 Task 迁移到 UI 组件） ── */
+/* ── 指标卡片 ── */
 
-function Panel({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {
+function Metric({ title, value, tone }: { title: string; value: string; tone: "brand" | "success" | "warning" }) {
+  const m: Record<string, string> = {
+    brand: "var(--cm-surface-soft)", success: "var(--cm-success-bg)", warning: "var(--cm-warning-bg)",
+  };
+  const c: Record<string, string> = {
+    brand: "var(--cm-brand)", success: "var(--cm-success)", warning: "var(--cm-warning)",
+  };
   return (
-    <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
-      <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-        <h2 className="text-base font-semibold text-slate-950">{title}</h2>
-        {action}
-      </div>
-      <div className="p-5">{children}</div>
-    </section>
+    <div style={{ borderRadius: "var(--cm-radius-card)", border: "1px solid var(--cm-border)", background: "var(--cm-surface)", padding: 20, boxShadow: "var(--cm-shadow-card)" }}>
+      <div style={{ fontSize: 14, color: "var(--cm-text-muted)" }}>{title}</div>
+      <div style={{ marginTop: 12, display: "inline-flex", borderRadius: "var(--cm-radius-sm)", padding: "8px 12px", fontSize: 24, fontWeight: 600, background: m[tone], color: c[tone] }}>{value}</div>
+    </div>
   );
-}
-
-function Btn({ children, onClick, disabled, variant = "primary" }: { children: React.ReactNode; onClick?: () => void; disabled?: boolean; variant?: "primary" | "secondary" | "danger" }) {
-  const cls = variant === "danger" ? "bg-rose-600 text-white hover:bg-rose-700" : variant === "secondary" ? "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50" : "bg-slate-950 text-white hover:bg-slate-800";
-  return <button disabled={disabled} onClick={onClick} className={`h-10 rounded-md px-4 text-sm font-semibold ${cls}`}>{children}</button>;
-}
-
-function Metric({ title, value, tone }: { title: string; value: string; tone: "indigo" | "emerald" | "amber" }) {
-  const m = { indigo: "bg-indigo-50 text-indigo-700", emerald: "bg-emerald-50 text-emerald-700", amber: "bg-amber-50 text-amber-700" };
-  return <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm"><div className="text-sm text-slate-500">{title}</div><div className={`mt-3 inline-flex rounded-md px-3 py-2 text-2xl font-semibold ${m[tone]}`}>{value}</div></div>;
 }
 
 /* ── 主视图 ── */
@@ -41,20 +36,54 @@ export function DashboardView({ data, refresh, setNotice }: DashboardViewProps) 
   async function generatePlan() { setNotice("正在生成 3 年路径..."); await fetchApi("/api/plans/generate", { method: "POST" }); setNotice("3 年路径已生成，当前月任务已刷新。"); await refresh(); }
 
   return (<>
-    <div className="grid gap-4 md:grid-cols-3">
-      <Metric title="加权岗位匹配度" value={`${data.match?.score ?? 0}%`} tone="indigo" />
-      <Metric title="本月任务" value={`${currentMonth?.learningTasks?.length ?? 0} 项`} tone="emerald" />
-      <Metric title="待确认画像" value={`${data.candidates.filter((c: any) => c.status === "pending").length} 条`} tone="amber" />
+    <div style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(3, 1fr)" }} className="max-md:grid-cols-1">
+      <Metric title="加权岗位匹配度" value={`${data.match?.score ?? 0}%`} tone="brand" />
+      <Metric title="本月任务" value={`${currentMonth?.learningTasks?.length ?? 0} 项`} tone="success" />
+      <Metric title="待确认画像" value={`${data.candidates.filter((c: any) => c.status === "pending").length} 条`} tone="warning" />
     </div>
-    <div className="grid gap-5 lg:grid-cols-[420px_1fr]">
-      <Panel title="能力雷达图" action={<Btn variant="secondary" onClick={generatePlan}>重生成路径</Btn>}>
-        <div className="h-80"><ResponsiveContainer width="100%" height="100%"><RadarChart data={radar}><PolarGrid /><PolarAngleAxis dataKey="ability" tick={{ fontSize: 12 }} /><Radar dataKey="score" stroke="#2563eb" fill="#2563eb" fillOpacity={0.22} /></RadarChart></ResponsiveContainer></div>
-      </Panel>
-      <Panel title="当前月重点"><div className="space-y-4"><div><div className="text-sm font-medium text-slate-500">目标</div><div className="mt-1 text-lg font-semibold text-slate-950">{currentMonth?.goal ?? "还没有生成职业路径"}</div></div><div className="grid gap-3">{(currentMonth?.learningTasks ?? []).map((t: any) => (<div key={t.id} className="flex items-center justify-between rounded-md border border-slate-200 px-4 py-3"><div><div className="text-sm font-semibold text-slate-900">{t.title}</div><div className="text-xs text-slate-500">第 {t.dueWeek ?? "-"} 周前完成</div></div><span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">{t.status}</span></div>))}</div></div></Panel>
+    <div style={{ display: "grid", gap: 20, gridTemplateColumns: "420px 1fr" }} className="max-lg:grid-cols-1">
+      <SurfaceCard title="能力雷达图" action={<Button variant="secondary" onClick={generatePlan}>重生成路径</Button>}>
+        <div style={{ height: 320 }}><ResponsiveContainer width="100%" height="100%"><RadarChart data={radar}><PolarGrid /><PolarAngleAxis dataKey="ability" tick={{ fontSize: 12 }} /><Radar dataKey="score" stroke="var(--cm-brand)" fill="var(--cm-brand)" fillOpacity={0.22} /></RadarChart></ResponsiveContainer></div>
+      </SurfaceCard>
+      <SurfaceCard title="当前月重点">
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 500, color: "var(--cm-text-muted)" }}>目标</div>
+            <div style={{ marginTop: 4, fontSize: 18, fontWeight: 600, color: "var(--cm-text-strong)" }}>{currentMonth?.goal ?? "还没有生成职业路径"}</div>
+          </div>
+          <div style={{ display: "grid", gap: 12 }}>
+            {(currentMonth?.learningTasks ?? []).map((t: any) => (
+              <div key={t.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderRadius: "var(--cm-radius-sm)", border: "1px solid var(--cm-border)", padding: "12px 16px" }}>
+                <div><div style={{ fontSize: 14, fontWeight: 600, color: "var(--cm-text-strong)" }}>{t.title}</div><div style={{ fontSize: 12, color: "var(--cm-text-subtle)" }}>第 {t.dueWeek ?? "-"} 周前完成</div></div>
+                <span style={{ borderRadius: 999, background: "var(--cm-canvas)", padding: "4px 12px", fontSize: 12, color: "var(--cm-text-muted)" }}>{t.status}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </SurfaceCard>
     </div>
-    <div className="grid gap-5 lg:grid-cols-2">
-      <Panel title="匹配度说明"><p className="text-sm leading-6 text-slate-600">{data.match?.explanation ?? "完成画像后将生成岗位匹配度说明。"}</p><div className="mt-4 flex flex-wrap gap-2">{(data.match?.weakAbilities ?? []).map((a: any) => (<span key={a} className="rounded-full bg-amber-50 px-3 py-1 text-xs text-amber-700">优先提升：{abilityLabels[a as keyof typeof abilityLabels]}</span>))}</div></Panel>
-      <Panel title="近期成长记录"><div className="space-y-3">{data.recentProgressLogs.length === 0 ? <p className="text-sm text-slate-500">还没有成长记录。</p> : data.recentProgressLogs.map((log: any) => (<div key={log.id} className="rounded-md border border-slate-200 px-4 py-3"><div className="flex items-center justify-between gap-3"><div className="text-sm font-semibold text-slate-900">{log.title}</div><time className="text-xs text-slate-400" dateTime={log.createdAt}>{new Date(log.createdAt).toLocaleDateString("zh-CN")}</time></div>{log.summary ? <p className="mt-1 text-xs leading-5 text-slate-500">{log.summary}</p> : null}</div>))}</div></Panel>
+    <div style={{ display: "grid", gap: 20, gridTemplateColumns: "1fr 1fr" }} className="max-lg:grid-cols-1">
+      <SurfaceCard title="匹配度说明">
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: "var(--cm-text-muted)" }}>{data.match?.explanation ?? "完成画像后将生成岗位匹配度说明。"}</p>
+        <div style={{ marginTop: 16, display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {(data.match?.weakAbilities ?? []).map((a: any) => (
+            <span key={a} style={{ borderRadius: 999, background: "var(--cm-warning-bg)", padding: "4px 12px", fontSize: 12, color: "var(--cm-warning)" }}>优先提升：{abilityLabels[a as keyof typeof abilityLabels]}</span>
+          ))}
+        </div>
+      </SurfaceCard>
+      <SurfaceCard title="近期成长记录">
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {data.recentProgressLogs.length === 0 ? <p style={{ fontSize: 14, color: "var(--cm-text-muted)" }}>还没有成长记录。</p> : data.recentProgressLogs.map((log: any) => (
+            <div key={log.id} style={{ borderRadius: "var(--cm-radius-sm)", border: "1px solid var(--cm-border)", padding: "12px 16px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: "var(--cm-text-strong)" }}>{log.title}</div>
+                <time style={{ fontSize: 12, color: "var(--cm-text-subtle)" }} dateTime={log.createdAt}>{new Date(log.createdAt).toLocaleDateString("zh-CN")}</time>
+              </div>
+              {log.summary ? <p style={{ marginTop: 4, fontSize: 12, lineHeight: 1.5, color: "var(--cm-text-muted)" }}>{log.summary}</p> : null}
+            </div>
+          ))}
+        </div>
+      </SurfaceCard>
     </div>
   </>);
 }
