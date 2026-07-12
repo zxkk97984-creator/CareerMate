@@ -97,6 +97,19 @@ function ProfileCandidateRef({ candidateId }: { candidateId: string }) {
 }
 
 function PlanRef({ planId, version }: { planId: string; version: number }) {
+  // 后台异步生成的占位符——显示加载中状态而非请求API
+  if (planId === "__generating__") {
+    return (
+      <div className="parts-card parts-card-plan parts-card-generating">
+        <Map size={16} />
+        <span>学习计划正在生成中…</span>
+        <span className="parts-card-hint">
+          预计30秒内完成，届时可在「<a href="/path" className="inline-link">职业路径</a>」页面查看。
+        </span>
+      </div>
+    );
+  }
+
   const [plan, setPlan] = useState<CareerPlanDto | null>(null);
 
   useEffect(() => {

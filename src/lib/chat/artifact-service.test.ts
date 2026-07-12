@@ -58,7 +58,7 @@ describe("createArtifactsForChat", () => {
     });
   });
 
-  it("计划请求创建待确认计划引用", async () => {
+  it("计划请求触发后台生成并返回即时反馈", async () => {
     const deps = dependencies();
     const parts = await createArtifactsForChat({
       userId: "user-1",
@@ -66,8 +66,10 @@ describe("createArtifactsForChat", () => {
       message: "请帮我制定一个三个月学习计划",
     }, deps);
 
+    // 后台异步触发——不阻塞 SSE 流
     expect(deps.createPendingPlan).toHaveBeenCalledWith("user-1");
-    expect(parts).toContainEqual({ type: "plan_ref", planId: "plan-1", version: 3 });
+    // 立即返回生成中占位卡片——用户看到即时反馈而非等待30秒
+    expect(parts).toContainEqual({ type: "plan_ref", planId: "__generating__", version: 0 });
   });
 
   it("未知职业生成个人探索报告和来源引用", async () => {

@@ -236,8 +236,15 @@ export async function createArtifactsForChat(
   }
 
   if (requestsPlan(input.message)) {
-    const plan = await dependencies.createPendingPlan(input.userId);
-    parts.push(planRefPart(plan.id, plan.version));
+    // 计划生成可能耗时较长（百宝箱 API 调用），不阻塞 SSE 流。
+    // 先给用户即时反馈，后台异步生成，完成后可在职业路径页面查看。
+    dependencies.createPendingPlan(input.userId).then((plan) => {
+      // 计划已后台生成，用户下次查看时可见
+      void plan;
+    }).catch(() => {
+      // 静默失败——不影响已返回的对话内容
+    });
+    parts.push(planRefPart("__generating__", 0));
   }
 
   const roleName = requestedRole(input.message);
