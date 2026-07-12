@@ -1,21 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import {
-  Bot,
-  BrainCircuit,
-  Database,
-  Gauge,
-  GraduationCap,
-  LayoutDashboard,
-  LogOut,
-  MessageSquareText,
-  Route,
-  ShieldCheck,
-  UserCog,
-} from "lucide-react";
+import { Gauge, Menu } from "lucide-react";
 import { SimulationView } from "@/features/simulation/simulation-view";
 import { ChatView } from "@/features/chat/chat-view";
 import { DashboardView } from "@/features/dashboard/dashboard-view";
@@ -24,26 +11,30 @@ import { PathView } from "@/features/path/path-view";
 import { ResourceView } from "@/features/resources/resource-view";
 import { MemoryView } from "@/features/memory/memory-view";
 import { AdminView } from "@/features/admin/admin-view";
+import { ProductSidebar } from "@/components/shell/product-sidebar";
+import { PageHeader } from "@/components/shell/page-header";
 import { formatAiRuntimeBadge, type AiRuntimeSnapshot } from "@/lib/ai-runtime";
 import type { ActiveOnboardingConversation } from "@/lib/onboarding-resume";
 import type { AiExecutionMeta, CareerPlanDto, ProfileDto, ResourceItemDto } from "@/lib/types";
 import { fetchApi } from "@/lib/client-api";
 import type { View, MatchData, ProgressLogData, WorkspaceData } from "@/lib/workspace-types";
 
-const navItems: Array<{ href: string; view: View; label: string; icon: React.ElementType }> = [
-  { href: "/dashboard", view: "dashboard", label: "成长仪表盘", icon: LayoutDashboard },
-  { href: "/onboarding", view: "onboarding", label: "画像引导", icon: GraduationCap },
-  { href: "/path", view: "path", label: "职业路径", icon: Route },
-  { href: "/simulation", view: "simulation", label: "模拟训练", icon: BrainCircuit },
-  { href: "/resources", view: "resources", label: "资源中心", icon: Database },
-  { href: "/memory", view: "memory", label: "记忆权限", icon: ShieldCheck },
-  { href: "/", view: "chat", label: "AI 聊天", icon: MessageSquareText },
-  { href: "/admin", view: "admin", label: "Admin", icon: UserCog },
-];
+/** URL 路径 → 视图标识映射（用于根据当前路由决定渲染哪个视图组件） */
+const VIEW_BY_PATH: Record<string, View> = {
+  "/dashboard": "dashboard",
+  "/onboarding": "onboarding",
+  "/path": "path",
+  "/simulation": "simulation",
+  "/resources": "resources",
+  "/memory": "memory",
+  "/admin": "admin",
+  "/": "chat",
+};
 
 export function Workspace({ initialView, isAdmin = false }: { initialView: View; isAdmin?: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [view] = useState<View>(initialView);
   const [data, setData] = useState<WorkspaceData>({
     user: null,
@@ -79,8 +70,7 @@ export function Workspace({ initialView, isAdmin = false }: { initialView: View;
   });
 
   const activeView = useMemo(() => {
-    const active = navItems.find((item) => item.href === pathname);
-    return active?.view ?? view;
+    return VIEW_BY_PATH[pathname] ?? view;
   }, [pathname, view]);
 
   async function loadAll() {
@@ -132,94 +122,84 @@ export function Workspace({ initialView, isAdmin = false }: { initialView: View;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function logout() {
-    await fetchApi("/api/auth/logout", { method: "POST" });
-    router.push("/login");
-    router.refresh();
-  }
-
   if (loading || !data.user || !data.profile) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#f7f8fb]">
-        <div className="rounded-lg border border-slate-200 bg-white px-6 py-5 text-sm text-slate-600 shadow-sm">正在加载 CareerMate 工作台...</div>
+      <main style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--cm-canvas)" }}>
+        <div style={{ borderRadius: "var(--cm-radius-card)", border: "1px solid var(--cm-border)", background: "var(--cm-surface)", padding: "20px 24px", fontSize: 14, color: "var(--cm-text-muted)", boxShadow: "var(--cm-shadow-card)" }}>正在加载 CareerMate 工作台...</div>
       </main>
     );
   }
 
-  return (
-    <main className="min-h-screen bg-[#f7f8fb] text-slate-900">
-      <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[248px_1fr]">
-        <nav className="border-r border-slate-200 bg-white px-4 py-5">
-          <div className="mb-7 flex items-center gap-3 px-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-950 text-white">
-              <Bot size={22} />
-            </div>
-            <div>
-              <div className="text-sm font-semibold text-slate-950">CareerMate</div>
-              <div className="text-xs text-slate-500">职业导航系统</div>
-            </div>
-          </div>
-          <div className="space-y-1">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const active = activeView === item.view;
-              if (item.view === "admin" && !isAdmin) return null;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`flex h-10 items-center gap-3 rounded-md px-3 text-sm font-medium ${
-                    active ? "bg-slate-950 text-white" : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
-                  }`}
-                >
-                  <Icon size={18} />
-                  {item.label}
-                </Link>
-              );
-            })}
-          </div>
-          <button onClick={logout} className="mt-8 flex h-10 w-full items-center gap-3 rounded-md px-3 text-sm font-medium text-slate-500 hover:bg-slate-100">
-            <LogOut size={18} />
-            退出登录
-          </button>
-        </nav>
+  const pendingCandidateCount = data.candidates.filter((c: any) => c.status === "pending").length;
 
-        <div className="px-5 py-5 lg:px-8">
-          <header className="mb-5 flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-semibold text-slate-950">{data.profile.targetRoleLabel} 成长工作台</h1>
-              <p className="mt-1 text-sm text-slate-500">
-                {data.user.displayName} · {data.profile.major || "未填写专业"} · 每周 {data.profile.weeklyAvailableHours} 小时
-              </p>
-            </div>
-            <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600 shadow-sm">
-              <Gauge size={18} />
+  return (
+    <div className="chat-home-layout" data-testid="app-shell">
+      {/* 移动端遮罩 */}
+      {sidebarOpen && (
+        <div
+          className="sidebar-overlay"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* 统一侧栏 */}
+      <ProductSidebar
+        variant="workspace"
+        displayName={data.user.displayName}
+        isAdmin={isAdmin}
+        pendingCandidateCount={pendingCandidateCount}
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+      />
+
+      {/* 主内容区 */}
+      <main className="chat-main" data-testid="page-content">
+        {/* 移动端菜单按钮 */}
+        <button
+          className="mobile-menu-btn"
+          onClick={() => setSidebarOpen(true)}
+          aria-expanded={sidebarOpen}
+          aria-controls="primary-sidebar"
+          aria-label="打开菜单"
+        >
+          <Menu size={20} />
+        </button>
+
+        {/* 页面标题 */}
+        <PageHeader
+          title={`${data.profile.targetRoleLabel} 成长工作台`}
+          description={`${data.user.displayName} · ${data.profile.major || "未填写专业"} · 每周 ${data.profile.weeklyAvailableHours} 小时`}
+          aiStatus={
+            <div style={{ display: "flex", alignItems: "center", gap: 8, borderRadius: "var(--cm-radius-sm)", border: "1px solid var(--cm-border)", padding: "6px 12px", fontSize: 13, color: "var(--cm-text-muted)" }}>
+              <Gauge size={16} />
               {formatAiRuntimeBadge(aiExecution)}
             </div>
-          </header>
+          }
+        />
 
-          {/* 状态提示（辅助技术可见） */}
-          <div className="sr-only" aria-live="polite" aria-atomic="true">{notice}</div>
+        {/* 状态提示（辅助技术可见） */}
+        <div className="sr-only" aria-live="polite" aria-atomic="true">{notice}</div>
 
-          <div className="space-y-5">
-            {activeView === "dashboard" && <DashboardView data={data} refresh={loadAll} setNotice={setNotice} />}
-            {activeView === "onboarding" && (
-              <OnboardingView
-                refresh={loadAll}
-                setNotice={setNotice}
-                setAiExecution={setAiExecution}
-                activeConversation={data.activeOnboardingConversation}
-              />
-            )}
-            {activeView === "path" && <PathView plan={data.plan} pendingPlan={data.pendingPlan} executionMeta={data.planExecutionMeta} refresh={loadAll} setNotice={setNotice} />}
-            {activeView === "simulation" && <SimulationView simulations={data.simulations} refresh={loadAll} setNotice={setNotice} />}
-            {activeView === "resources" && <ResourceView resources={data.resources} profile={data.profile} weakAbilities={data.match?.weakAbilities ?? []} />}
-            {activeView === "memory" && <MemoryView memories={data.memories} candidates={data.candidates} memoryEnabled={data.profile.memoryEnabled} refresh={loadAll} setNotice={setNotice} />}
-            {activeView === "chat" && <ChatView setNotice={setNotice} />}
-            {activeView === "admin" && <AdminView drafts={data.drafts} templates={data.templates} refresh={loadAll} setNotice={setNotice} />}
-          </div>
+        {/* 视图内容 */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: "var(--cm-content-max)", margin: "0 auto" }}>
+          {activeView === "dashboard" && <DashboardView data={data} refresh={loadAll} setNotice={setNotice} />}
+          {activeView === "onboarding" && (
+            <OnboardingView
+              refresh={loadAll}
+              setNotice={setNotice}
+              setAiExecution={setAiExecution}
+              activeConversation={data.activeOnboardingConversation}
+            />
+          )}
+          {activeView === "path" && <PathView plan={data.plan} pendingPlan={data.pendingPlan} executionMeta={data.planExecutionMeta} refresh={loadAll} setNotice={setNotice} />}
+          {activeView === "simulation" && <SimulationView simulations={data.simulations} refresh={loadAll} setNotice={setNotice} />}
+          {activeView === "resources" && <ResourceView resources={data.resources} profile={data.profile} weakAbilities={data.match?.weakAbilities ?? []} />}
+          {activeView === "memory" && <MemoryView memories={data.memories} candidates={data.candidates} memoryEnabled={data.profile.memoryEnabled} refresh={loadAll} setNotice={setNotice} />}
+          {activeView === "chat" && <ChatView setNotice={setNotice} />}
+          {activeView === "admin" && <AdminView drafts={data.drafts} templates={data.templates} refresh={loadAll} setNotice={setNotice} />}
         </div>
-      </div>
-    </main>
+      </main>
+    </div>
   );
 }
