@@ -37,7 +37,7 @@ function reportRow(overrides: Record<string, unknown> = {}) {
 }
 
 function setupService() {
-  const mockPrisma = {
+  const mockPrisma: any = {
     careerExplorationReport: {
       findFirst: vi.fn(),
       findMany: vi.fn(),
@@ -52,6 +52,7 @@ function setupService() {
       findUnique: vi.fn(),
     },
   };
+  mockPrisma.$transaction = vi.fn(async (callback: (transaction: typeof mockPrisma) => unknown) => callback(mockPrisma));
   (getPrisma as any).mockReturnValue(mockPrisma);
   const svc = createExplorationService();
   return { svc, mock: mockPrisma };
@@ -137,6 +138,8 @@ describe("ExplorationService", () => {
 
       await svc.submitForReview("rpt-1", "user-1");
 
+      expect(mock.$transaction).toHaveBeenCalledTimes(1);
+
       // 验证 RoleDraft 不含 fitAnalysis（个人内容）
       const draftData = mock.roleDraft.create.mock.calls[0][0].data;
       const draftContent = JSON.parse(draftData.content);
@@ -162,6 +165,17 @@ describe("ExplorationService", () => {
       await expect(
         svc.submitForReview("rpt-1", "user-1")
       ).rejects.toThrow("已提交");
+    });
+
+    it("并发提交命中唯一约束时返回已提交冲突", async () => {
+      const { svc, mock } = setupService();
+      mock.careerExplorationReport.findFirst.mockResolvedValue(reportRow());
+      mock.roleDraft.create.mockRejectedValue({ code: "P2002" });
+
+      await expect(svc.submitForReview("rpt-1", "user-1")).rejects.toMatchObject({
+        code: "ALREADY_SUBMITTED",
+        status: 409,
+      });
     });
   });
 });

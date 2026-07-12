@@ -109,45 +109,48 @@ export function createExplorationService(): ExplorationService {
     },
 
     async submitForReview(reportId, userId) {
-      const report = await db.careerExplorationReport.findFirst({
-        where: { id: reportId, userId },
-      });
-      if (!report) {
-        throw new ExplorationServiceError("报告不存在", "NOT_FOUND", 404);
-      }
-      if (report.status === "submitted") {
-        throw new ExplorationServiceError("该报告已提交审核", "ALREADY_SUBMITTED", 409);
-      }
-
-      // 解析报告内容，去个人化
-      let parsed: ExplorationReport;
       try {
-        parsed = JSON.parse(report.content) as ExplorationReport;
-      } catch {
-        throw new ExplorationServiceError("报告内容损坏", "INVALID_REPORT", 400);
+        return await db.$transaction(async (transaction) => {
+          const report = await transaction.careerExplorationReport.findFirst({
+            where: { id: reportId, userId },
+          });
+          if (!report) {
+            throw new ExplorationServiceError("报告不存在", "NOT_FOUND", 404);
+          }
+          if (report.status === "submitted") {
+            throw new ExplorationServiceError("该报告已提交审核", "ALREADY_SUBMITTED", 409);
+          }
+
+          let parsed: ExplorationReport;
+          try {
+            parsed = explorationReportSchema.parse(JSON.parse(report.content));
+          } catch {
+            throw new ExplorationServiceError("报告内容损坏", "INVALID_REPORT", 400);
+          }
+          const depersonalized = depersonalizeReport(parsed);
+          const draft = await transaction.roleDraft.create({
+            data: {
+              roleKey: report.roleKey ?? report.roleName.toLowerCase().replace(/\s+/g, "_"),
+              roleName: report.roleName,
+              category: "用户提交",
+              content: toJson(depersonalized),
+              status: "pending",
+              sourceReportId: report.id,
+            },
+          });
+          await transaction.careerExplorationReport.update({
+            where: { id: reportId },
+            data: { status: "submitted" },
+          });
+          return { draftId: draft.id };
+        });
+      } catch (error) {
+        if (error instanceof ExplorationServiceError) throw error;
+        if (typeof error === "object" && error !== null && "code" in error && error.code === "P2002") {
+          throw new ExplorationServiceError("该报告已提交审核", "ALREADY_SUBMITTED", 409);
+        }
+        throw error;
       }
-
-      const depersonalized = depersonalizeReport(parsed);
-
-      // 创建 RoleDraft
-      const draft = await db.roleDraft.create({
-        data: {
-          roleKey: report.roleKey ?? report.roleName.toLowerCase().replace(/\s+/g, "_"),
-          roleName: report.roleName,
-          category: "用户提交",
-          content: toJson(depersonalized),
-          status: "pending",
-          sourceReportId: report.id,
-        },
-      });
-
-      // 更新报告状态
-      await db.careerExplorationReport.update({
-        where: { id: reportId },
-        data: { status: "submitted" },
-      });
-
-      return { draftId: draft.id };
     },
 
     async resolveCareerSources(roleName) {
