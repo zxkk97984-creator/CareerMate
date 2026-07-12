@@ -42,6 +42,10 @@ export interface ChatArtifactDependencies {
     report: ExplorationReport;
     meta: AiExecutionMeta;
   }): Promise<string>;
+  listPendingCandidateIds(input: {
+    userId: string;
+    conversationId: string;
+  }): Promise<string[]>;
 }
 
 interface ChatArtifactInput {
@@ -195,6 +199,19 @@ const productionDependencies: ChatArtifactDependencies = {
     });
     return created.id;
   },
+
+  async listPendingCandidateIds(input) {
+    const rows = await getPrisma().profileUpdateCandidate.findMany({
+      where: {
+        userId: input.userId,
+        sourceConversationId: input.conversationId,
+        status: "pending",
+      },
+      orderBy: { createdAt: "asc" },
+      select: { id: true },
+    });
+    return rows.map((row) => row.id);
+  },
 };
 
 export async function createArtifactsForChat(
@@ -241,6 +258,21 @@ export async function createArtifactsForChat(
         label: source.label,
       }))));
     }
+  }
+
+  const referencedCandidateIds = new Set(
+    parts
+      .filter((part): part is Extract<ChatMessagePart, { type: "profile_candidate_ref" }> => part.type === "profile_candidate_ref")
+      .map((part) => part.candidateId),
+  );
+  const conversationCandidateIds = await dependencies.listPendingCandidateIds({
+    userId: input.userId,
+    conversationId: input.conversationId,
+  });
+  for (const candidateId of conversationCandidateIds) {
+    if (referencedCandidateIds.has(candidateId)) continue;
+    parts.push(profileCandidateRefPart(candidateId));
+    referencedCandidateIds.add(candidateId);
   }
   return parts;
 }

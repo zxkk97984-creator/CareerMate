@@ -111,6 +111,18 @@ export function createCareerMateToolRegistry() {
           where: { userId: context.userId },
         });
         if (!profile) throw new McpError("NOT_FOUND", "用户画像不存在");
+        if (input.sourceConversationId) {
+          const conversation = await transaction.chatConversation.findFirst({
+            where: {
+              id: input.sourceConversationId,
+              userId: context.userId,
+            },
+            select: { id: true },
+          });
+          if (!conversation) {
+            throw new McpError("INVALID_PARAMS", "来源会话不属于当前绑定用户");
+          }
+        }
 
         let abilityEvidenceId: string | undefined;
         if (input.field.startsWith("abilityScores.")) {

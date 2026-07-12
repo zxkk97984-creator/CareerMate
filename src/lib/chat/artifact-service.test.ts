@@ -33,6 +33,7 @@ function dependencies(): ChatArtifactDependencies {
       },
     })),
     createExplorationReport: vi.fn(async () => "report-1"),
+    listPendingCandidateIds: vi.fn(async () => []),
   };
 }
 
@@ -86,5 +87,27 @@ describe("createArtifactsForChat", () => {
       type: "citations",
       items: [expect.objectContaining({ label: "实时联网调研" })],
     }));
+  });
+
+  it("合并百宝箱插件在当前会话创建的候选并按ID去重", async () => {
+    const deps = dependencies() as ChatArtifactDependencies & {
+      listPendingCandidateIds: ReturnType<typeof vi.fn>;
+    };
+    deps.listPendingCandidateIds.mockResolvedValue(["candidate-1", "candidate-plugin"]);
+
+    const parts = await createArtifactsForChat({
+      userId: "user-1",
+      conversationId: "conversation-1",
+      message: "我每周可以投入 8 小时学习",
+    }, deps);
+
+    expect(deps.listPendingCandidateIds).toHaveBeenCalledWith({
+      userId: "user-1",
+      conversationId: "conversation-1",
+    });
+    expect(parts.filter((part) => part.type === "profile_candidate_ref")).toEqual([
+      { type: "profile_candidate_ref", candidateId: "candidate-1" },
+      { type: "profile_candidate_ref", candidateId: "candidate-plugin" },
+    ]);
   });
 });

@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { fail, ok } from "@/lib/api";
-import { toJson } from "@/lib/json";
 import { requirePluginScope } from "@/lib/plugin-auth";
-import { getPrisma } from "@/lib/prisma";
+import { createCareerMateToolRegistry } from "@/lib/tools/careermate-registry";
+import { McpError } from "@/lib/tools/registry";
 
 const schema = z.object({
   userId: z.string(),
@@ -11,6 +11,9 @@ const schema = z.object({
   newValue: z.unknown(),
   confidence: z.number().min(0).max(1),
   reason: z.string(),
+  evidenceExcerpt: z.string().optional(),
+  impactSummary: z.string().optional(),
+  sourceConversationId: z.string().optional(),
 });
 
 export async function POST(request: Request) {
@@ -19,16 +22,37 @@ export async function POST(request: Request) {
   const principal = requirePluginScope(request, "profile:candidates", parsed.data.userId);
   if (!principal) return fail("FORBIDDEN", "插件用户绑定或权限不匹配", 403);
 
-  const candidate = await getPrisma().profileUpdateCandidate.create({
-    data: {
-      userId: principal.userId,
-      source: parsed.data.source,
-      field: parsed.data.field,
-      newValue: toJson(parsed.data.newValue),
-      confidence: parsed.data.confidence,
-      reason: parsed.data.reason,
-    },
-  });
-
-  return ok({ candidateId: candidate.id, status: candidate.status, requiresConfirmation: candidate.requiresConfirmation });
+  try {
+    const result = await createCareerMateToolRegistry().call(
+      "profile.candidate.create",
+      {
+        field: parsed.data.field,
+        newValue: parsed.data.newValue,
+        confidence: parsed.data.confidence,
+        reason: parsed.data.reason,
+        evidenceExcerpt: parsed.data.evidenceExcerpt,
+        impactSummary: parsed.data.impactSummary,
+        sourceConversationId: parsed.data.sourceConversationId,
+      },
+      {
+        userId: principal.userId,
+        sessionId: crypto.randomUUID(),
+        scopes: principal.scopes,
+      },
+    ) as { id: string; status: string };
+    return ok({
+      candidateId: result.id,
+      status: result.status,
+      requiresConfirmation: true,
+    });
+  } catch (error) {
+    if (error instanceof McpError) {
+      const status = error.code === "INVALID_PARAMS" ? 400
+        : error.code === "INSUFFICIENT_SCOPE" ? 403
+        : error.code === "NOT_FOUND" ? 404
+        : 500;
+      return fail(error.code, error.message, status);
+    }
+    throw error;
+  }
 }
