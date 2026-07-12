@@ -1,10 +1,8 @@
 import { getPrisma } from "@/lib/prisma";
 import { getTboxConfig } from "@/lib/env";
-import { profileDto } from "@/lib/dto";
-import { serializePlan } from "@/lib/career";
 import { toJson } from "@/lib/json";
-import { generatePlanWithTbox } from "@/lib/tbox";
 import { generateStructuredWithTbox } from "@/lib/tbox/adapter";
+import { createPlanGenerationService } from "@/lib/plans/generation-service";
 import {
   explorationReportSchema,
   type ExplorationReport,
@@ -36,7 +34,7 @@ interface ResearchResult {
 
 export interface ChatArtifactDependencies {
   createProfileCandidate(input: CandidateInput): Promise<string>;
-  createPendingPlan(userId: string): Promise<{ id: string; version: number }>;
+  createPendingPlan(userId: string, conversationId?: string): Promise<{ id: string; version: number }>;
   researchCareer(roleName: string, userId: string): Promise<ResearchResult>;
   createExplorationReport(input: {
     userId: string;
@@ -158,28 +156,12 @@ const productionDependencies: ChatArtifactDependencies = {
     return candidate.id;
   },
 
-  async createPendingPlan(userId) {
-    const db = getPrisma();
-    const profile = await db.userProfile.findUnique({ where: { userId } });
-    if (!profile) throw new Error("PROFILE_NOT_FOUND");
-    const generated = await generatePlanWithTbox(profileDto(profile));
-    return db.$transaction(async (transaction) => {
-      const latest = await transaction.careerPlan.findFirst({
-        where: { userId },
-        orderBy: { version: "desc" },
-      });
-      const created = await transaction.careerPlan.create({
-        data: {
-          userId,
-          targetRole: profile.targetRole,
-          version: (latest?.version ?? 0) + 1,
-          status: "pending",
-          ...serializePlan(generated.data),
-          generationMeta: toJson({ ...generated.meta, triggeredBy: "chat" }),
-        },
-      });
-      return { id: created.id, version: created.version };
+  async createPendingPlan(userId, conversationId) {
+    const { plan } = await createPlanGenerationService().ensureGenerationPlan({
+      userId,
+      conversationId,
     });
+    return { id: plan.id, version: plan.version };
   },
 
   async researchCareer(roleName, userId) {
@@ -236,15 +218,8 @@ export async function createArtifactsForChat(
   }
 
   if (requestsPlan(input.message)) {
-    // 计划生成可能耗时较长（百宝箱 API 调用），不阻塞 SSE 流。
-    // 先给用户即时反馈，后台异步生成，完成后可在职业路径页面查看。
-    dependencies.createPendingPlan(input.userId).then((plan) => {
-      // 计划已后台生成，用户下次查看时可见
-      void plan;
-    }).catch(() => {
-      // 静默失败——不影响已返回的对话内容
-    });
-    parts.push(planRefPart("__generating__", 0));
+    const plan = await dependencies.createPendingPlan(input.userId, input.conversationId);
+    parts.push(planRefPart(plan.id, plan.version));
   }
 
   const roleName = requestedRole(input.message);

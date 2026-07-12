@@ -24,9 +24,7 @@ const report = {
 
 describe("exploration source validation", () => {
   it("requires a URL for a live research source", () => {
-    const { url: _url, ...withoutUrl } = source;
-
-    expect(explorationSourceSchema.safeParse(withoutUrl).success).toBe(false);
+    expect(explorationSourceSchema.safeParse({ ...source, url: undefined }).success).toBe(false);
   });
 
   it("rejects an invalid access date", () => {

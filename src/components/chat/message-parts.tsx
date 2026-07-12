@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ChatMessagePart } from "@/lib/chat/persistence";
 import { AlertCircle, UserCheck, Map, Compass, Link2 } from "lucide-react";
 import { ProfileCandidateCard } from "./profile-candidate-card";
@@ -100,16 +100,58 @@ function ProfileCandidateRef({ candidateId }: { candidateId: string }) {
 
 function PlanRef({ planId, version }: { planId: string; version: number }) {
   const [plan, setPlan] = useState<CareerPlanDto | null>(null);
+  const [generationError, setGenerationError] = useState("");
+  const generationStarted = useRef(false);
 
   useEffect(() => {
     if (planId === "__generating__") return;
-    fetch(`/api/plans/${encodeURIComponent(planId)}`)
-      .then((response) => response.json())
-      .then((body) => {
-        if (body.ok) setPlan(body.data.plan as CareerPlanDto);
-      })
-      .catch(() => {});
+    let active = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    async function poll() {
+      try {
+        const data = await requireApiOk<{ plan: CareerPlanDto }>(
+          await fetch(`/api/plans/${encodeURIComponent(planId)}`),
+        );
+        if (!active) return;
+        setPlan(data.plan);
+        if (["generating", "processing"].includes(data.plan.status)) {
+          timer = setTimeout(poll, 2_000);
+        }
+      } catch (caught) {
+        if (active) {
+          setGenerationError(caught instanceof Error ? caught.message : "计划状态读取失败");
+        }
+      }
+    }
+    void poll();
+    return () => {
+      active = false;
+      if (timer) clearTimeout(timer);
+    };
   }, [planId]);
+
+  useEffect(() => {
+    if (planId === "__generating__" || plan?.status !== "generating" || generationStarted.current) return;
+    generationStarted.current = true;
+    void fetch(`/api/plans/${encodeURIComponent(planId)}/generate`, { method: "POST" })
+      .then((response) => requireApiOk<{ plan: CareerPlanDto }>(response))
+      .then((data) => {
+        setPlan(data.plan);
+        setGenerationError("");
+      })
+      .catch((caught) => {
+        setGenerationError(caught instanceof Error ? caught.message : "计划生成失败，可以重试");
+      });
+  }, [plan?.status, planId]);
+
+  async function retryGeneration() {
+    setGenerationError("");
+    const data = await requireApiOk<{ plan: CareerPlanDto }>(
+      await fetch(`/api/plans/${encodeURIComponent(planId)}/generate`, { method: "POST" }),
+    );
+    generationStarted.current = true;
+    setPlan(data.plan);
+  }
 
   // 兼容已持久化的旧占位符；新消息不应继续写入该值。
   if (planId === "__generating__") {
@@ -120,6 +162,34 @@ function PlanRef({ planId, version }: { planId: string; version: number }) {
         <span className="parts-card-hint">
           请重新发起计划生成，或前往「<a href="/path" className="inline-link">职业路径</a>」查看已有计划。
         </span>
+      </div>
+    );
+  }
+
+  if (plan && ["generating", "processing"].includes(plan.status)) {
+    return (
+      <div className="parts-card parts-card-plan parts-card-generating" role="status">
+        <Map size={16} />
+        <span>{plan.status === "processing" ? "百宝箱正在生成学习计划…" : "学习计划已进入生成队列…"}</span>
+        <span className="parts-card-hint">任务已保存，刷新页面后仍会继续显示真实状态。</span>
+        {generationError ? <button className="inline-link" onClick={() => void retryGeneration().catch((caught) => {
+          setGenerationError(caught instanceof Error ? caught.message : "计划重试失败");
+        })}>重新连接</button> : null}
+        {generationError ? <span className="parts-card-hint text-red-600">{generationError}</span> : null}
+      </div>
+    );
+  }
+
+  if (plan?.status === "generation_failed") {
+    return (
+      <div className="parts-card parts-card-plan" role="alert">
+        <Map size={16} />
+        <span>学习计划生成失败</span>
+        <span className="parts-card-hint">任务记录已保留，可以安全重试。</span>
+        <button className="inline-link" onClick={() => void retryGeneration().catch((caught) => {
+          setGenerationError(caught instanceof Error ? caught.message : "计划重试失败");
+        })}>重试生成</button>
+        {generationError ? <span className="parts-card-hint text-red-600">{generationError}</span> : null}
       </div>
     );
   }
