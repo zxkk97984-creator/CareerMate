@@ -35,7 +35,7 @@ export function AdminView({ drafts, templates, refresh, setNotice }: AdminViewPr
             const c = typeof draft.content === "string" ? JSON.parse(draft.content) : draft.content;
             const valid = Array.isArray(c.sources) && c.sources.length > 0 && Array.isArray(c.entryRequirements);
             return (
-              <div key={draft.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12, borderRadius: "var(--cm-radius-sm)", border: "1px solid var(--cm-border)", padding: 16 }}>
+              <div key={draft.id} data-testid="draft-card" className="rounded-md border" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12, borderRadius: "var(--cm-radius-sm)", border: "1px solid var(--cm-border)", padding: 16 }}>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 600, color: "var(--cm-text-strong)" }}>{draft.roleName}</div>
                   <div style={{ marginTop: 4, fontSize: 14, color: "var(--cm-text-muted)" }}>{draft.category} · <StatusBadge tone={draft.status === "pending" ? "warning" : draft.status === "approved" ? "success" : "neutral"}>{draft.status}</StatusBadge></div>

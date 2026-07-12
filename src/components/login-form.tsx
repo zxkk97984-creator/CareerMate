@@ -249,7 +249,7 @@ export function LoginForm() {
                     background: "none", border: "none", padding: 4, cursor: "pointer",
                     color: "var(--cm-text-muted)", display: "flex",
                   }}
-                  aria-label={showPassword ? "隐藏密码" : "显示密码"}
+                  aria-label={showPassword ? "隐藏口令" : "显示口令"}
                 >
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
