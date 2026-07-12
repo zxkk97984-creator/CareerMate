@@ -1,44 +1,68 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { BriefcaseBusiness, Lock, UserRound } from "lucide-react";
+import { BriefcaseBusiness, Eye, EyeOff, Lock, UserRound } from "lucide-react";
 
 type Mode = "login" | "register";
 
-type AuthPayload = {
-  ok: boolean;
-  data?: { nextPath?: string };
-  error?: { message?: string };
-};
+const DEMO_ACCOUNTS = [
+  { label: "学生小林", username: "student_lin" },
+  { label: "学生小陈", username: "student_chen" },
+  { label: "学生小吴", username: "student_wu" },
+  { label: "职场赵哥", username: "worker_zhao" },
+  { label: "转行李哥", username: "career_switch_li" },
+  { label: "管理员", username: "admin" },
+] as const;
+
+const DEMO_PASSWORD = "careermate123";
 
 export function LoginForm() {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("login");
-  const [username, setUsername] = useState("student_lin");
-  const [displayName, setDisplayName] = useState("新用户");
-  const [password, setPassword] = useState("careermate123");
+  const [username, setUsername] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  async function submit() {
+  /** 填入演示账号 */
+  function fillDemo(username: string) {
+    setUsername(username);
+    setPassword(DEMO_PASSWORD);
+    if (mode === "register") setDisplayName(username);
+    setError("");
+  }
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (loading) return;
     setLoading(true);
     setError("");
-    const unavailableMessage = mode === "login" ? "登录服务暂时不可用，请稍后重试" : "注册服务暂时不可用，请稍后重试";
+    const unavailableMessage = mode === "login"
+      ? "登录服务暂时不可用，请稍后重试"
+      : "注册服务暂时不可用，请稍后重试";
 
     try {
       const endpoint = mode === "login" ? "/api/auth/login" : "/api/auth/register";
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(mode === "login" ? { username, password } : { username, displayName, password }),
+        body: JSON.stringify(
+          mode === "login"
+            ? { username, password }
+            : { username, displayName, password },
+        ),
       });
+
+      // 保留空响应和非 JSON 响应恢复
       const rawPayload = await response.text();
       if (!rawPayload) throw new Error(unavailableMessage);
 
-      let payload: AuthPayload;
+      let payload: { ok: boolean; data?: { nextPath?: string }; error?: { message?: string } };
       try {
-        payload = JSON.parse(rawPayload) as AuthPayload;
+        payload = JSON.parse(rawPayload);
       } catch {
         throw new Error(unavailableMessage);
       }
@@ -47,7 +71,14 @@ export function LoginForm() {
         setError(payload.error?.message ?? "操作失败");
         return;
       }
-      router.push(payload.data?.nextPath ?? (mode === "register" ? "/onboarding" : "/dashboard"));
+
+      // 登录成功没有 nextPath 时进入 /，不回退 /dashboard
+      const nextPath = payload.data?.nextPath;
+      if (nextPath) {
+        router.push(nextPath);
+      } else {
+        router.push(mode === "register" ? "/onboarding" : "/");
+      }
       router.refresh();
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : unavailableMessage);
@@ -57,92 +88,229 @@ export function LoginForm() {
   }
 
   return (
-    <main className="min-h-screen bg-[#eef3f8] px-6 py-8 text-slate-900">
-      <div className="mx-auto grid min-h-[calc(100vh-4rem)] max-w-6xl items-center gap-8 lg:grid-cols-[1fr_420px]">
-        <section className="space-y-8">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-lg">
+    <main
+      style={{
+        minHeight: "100vh",
+        background: "var(--cm-canvas)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "32px 16px",
+      }}
+    >
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 420px",
+          gap: 48,
+          maxWidth: 960,
+          width: "100%",
+          alignItems: "center",
+        }}
+        className="max-lg:grid-cols-1 max-lg:max-w-md"
+      >
+        {/* ── 左侧品牌说明 ───────────────────────────── */}
+        <section className="max-lg:text-center max-lg:hidden" style={{ display: "flex", flexDirection: "column", gap: 32 }}>
+          <div
+            style={{
+              width: 56, height: 56, borderRadius: "var(--cm-radius-card)",
+              background: "var(--cm-gradient-brand)", color: "#fff",
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}
+          >
             <BriefcaseBusiness size={26} />
           </div>
-          <div className="max-w-2xl">
-            <h1 className="text-5xl font-semibold leading-tight tracking-normal text-slate-950">CareerMate</h1>
-            <p className="mt-5 text-xl leading-8 text-slate-600">
+          <div>
+            <h1 style={{ fontSize: 40, fontWeight: 700, color: "var(--cm-text-strong)", margin: 0 }}>
+              CareerMate
+            </h1>
+            <p style={{ marginTop: 16, fontSize: 16, lineHeight: 1.7, color: "var(--cm-text-muted)", maxWidth: 440 }}>
               面向高校生与职场新人的 AI 职业导航与终身学习伙伴。先建立画像，再生成路径，并通过模拟训练持续校准成长计划。
             </p>
           </div>
-          <div className="grid max-w-3xl gap-4 md:grid-cols-3">
-            {["动态画像", "3 年路径", "模拟训练"].map((item, index) => (
-              <div key={item} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="text-sm font-medium text-slate-500">0{index + 1}</div>
-                <div className="mt-3 text-lg font-semibold text-slate-900">{item}</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, maxWidth: 480 }}>
+            {["动态画像", "3 年路径", "模拟训练"].map((item, i) => (
+              <div
+                key={item}
+                style={{
+                  padding: 16, borderRadius: "var(--cm-radius-card)",
+                  border: "1px solid var(--cm-border)", background: "var(--cm-surface)",
+                }}
+              >
+                <div style={{ fontSize: 12, color: "var(--cm-text-subtle)" }}>0{i + 1}</div>
+                <div style={{ marginTop: 8, fontSize: 15, fontWeight: 600, color: "var(--cm-text-strong)" }}>
+                  {item}
+                </div>
               </div>
             ))}
           </div>
         </section>
 
-        <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-xl">
-          <div className="flex gap-2 rounded-lg bg-slate-100 p-1">
+        {/* ── 右侧认证卡片 ───────────────────────────── */}
+        <section
+          style={{
+            background: "var(--cm-surface)", borderRadius: "var(--cm-radius-container)",
+            border: "1px solid var(--cm-border)", padding: 32,
+            boxShadow: "var(--cm-shadow-float)",
+          }}
+        >
+          {/* 登录/注册切换 */}
+          <div style={{ display: "flex", gap: 4, padding: 4, borderRadius: "var(--cm-radius-control)", background: "var(--cm-canvas)" }}>
             <button
-              className={`h-10 flex-1 rounded-md text-sm font-semibold ${mode === "login" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}
-              onClick={() => setMode("login")}
+              type="button"
+              disabled={loading}
+              onClick={() => { setMode("login"); setError(""); }}
+              style={{
+                flex: 1, height: 44, borderRadius: "var(--cm-radius-sm)", border: "none",
+                fontSize: 14, fontWeight: 600, cursor: loading ? "not-allowed" : "pointer",
+                background: mode === "login" ? "var(--cm-surface)" : "transparent",
+                color: mode === "login" ? "var(--cm-text-strong)" : "var(--cm-text-muted)",
+                boxShadow: mode === "login" ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+              }}
             >
               登录
             </button>
             <button
-              className={`h-10 flex-1 rounded-md text-sm font-semibold ${mode === "register" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}
-              onClick={() => setMode("register")}
+              type="button"
+              disabled={loading}
+              onClick={() => { setMode("register"); setError(""); }}
+              style={{
+                flex: 1, height: 44, borderRadius: "var(--cm-radius-sm)", border: "none",
+                fontSize: 14, fontWeight: 600, cursor: loading ? "not-allowed" : "pointer",
+                background: mode === "register" ? "var(--cm-surface)" : "transparent",
+                color: mode === "register" ? "var(--cm-text-strong)" : "var(--cm-text-muted)",
+                boxShadow: mode === "register" ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+              }}
             >
               注册
             </button>
           </div>
 
-          <div className="mt-6 space-y-4">
-            <label className="block">
-              <span className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-700">
+          {/* 表单 */}
+          <form onSubmit={submit} style={{ marginTop: 24, display: "flex", flexDirection: "column", gap: 16 }}>
+            <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 500, color: "var(--cm-text-strong)" }}>
                 <UserRound size={16} />
                 账号
               </span>
               <input
-                className="focus-ring h-11 w-full rounded-md border border-slate-200 px-3 text-sm"
+                style={{
+                  height: 44, borderRadius: "var(--cm-radius-control)",
+                  border: "1px solid var(--cm-border-strong)", background: "var(--cm-surface)",
+                  padding: "0 12px", fontSize: 14, color: "var(--cm-text-strong)",
+                  outline: "none",
+                }}
                 value={username}
-                onChange={(event) => setUsername(event.target.value)}
+                onChange={(e) => setUsername(e.target.value)}
+                autoComplete="username"
               />
             </label>
+
             {mode === "register" && (
-              <label className="block">
-                <span className="mb-2 block text-sm font-medium text-slate-700">昵称</span>
+              <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <span style={{ fontSize: 14, fontWeight: 500, color: "var(--cm-text-strong)" }}>昵称</span>
                 <input
-                  className="focus-ring h-11 w-full rounded-md border border-slate-200 px-3 text-sm"
+                  style={{
+                    height: 44, borderRadius: "var(--cm-radius-control)",
+                    border: "1px solid var(--cm-border-strong)", background: "var(--cm-surface)",
+                    padding: "0 12px", fontSize: 14, color: "var(--cm-text-strong)",
+                    outline: "none",
+                  }}
                   value={displayName}
-                  onChange={(event) => setDisplayName(event.target.value)}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  autoComplete="name"
                 />
               </label>
             )}
-            <label className="block">
-              <span className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-700">
+
+            <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 500, color: "var(--cm-text-strong)" }}>
                 <Lock size={16} />
                 密码
               </span>
-              <input
-                type="password"
-                className="focus-ring h-11 w-full rounded-md border border-slate-200 px-3 text-sm"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-              />
+              <div style={{ position: "relative" }}>
+                <input
+                  type={showPassword ? "text" : "password"}
+                  style={{
+                    height: 44, width: "100%", borderRadius: "var(--cm-radius-control)",
+                    border: "1px solid var(--cm-border-strong)", background: "var(--cm-surface)",
+                    padding: "0 40px 0 12px", fontSize: 14, color: "var(--cm-text-strong)",
+                    outline: "none",
+                  }}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete={mode === "login" ? "current-password" : "new-password"}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  style={{
+                    position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
+                    background: "none", border: "none", padding: 4, cursor: "pointer",
+                    color: "var(--cm-text-muted)", display: "flex",
+                  }}
+                  aria-label={showPassword ? "隐藏密码" : "显示密码"}
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
             </label>
-            {error && <p className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
+
+            {error && (
+              <div
+                role="alert"
+                style={{
+                  padding: "10px 12px", borderRadius: "var(--cm-radius-control)",
+                  background: "var(--cm-danger-bg)", color: "var(--cm-danger)",
+                  fontSize: 14,
+                }}
+              >
+                {error}
+              </div>
+            )}
+
             <button
+              type="submit"
               disabled={loading}
-              onClick={submit}
-              className="h-11 w-full rounded-md bg-slate-950 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
+              style={{
+                height: 44, width: "100%", borderRadius: "var(--cm-radius-control)",
+                border: "none", background: "var(--cm-brand)", color: "#fff",
+                fontSize: 14, fontWeight: 600, cursor: loading ? "not-allowed" : "pointer",
+                opacity: loading ? 0.7 : 1,
+              }}
             >
               {loading ? "处理中..." : mode === "login" ? "进入 CareerMate" : "创建账号"}
             </button>
-          </div>
+          </form>
 
-          <div className="mt-6 rounded-md bg-slate-50 p-4 text-sm leading-6 text-slate-600">
-            演示账号：`student_lin`、`student_chen`、`student_wu`、`worker_zhao`、`career_switch_li`、`admin`。
-            默认密码均为 `careermate123`。
-          </div>
+          {/* 演示账号 */}
+          <details style={{ marginTop: 20, fontSize: 13, color: "var(--cm-text-muted)" }}>
+            <summary style={{ cursor: "pointer", marginBottom: 8 }}>
+              演示账号（点击展开）
+            </summary>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <p style={{ margin: 0, fontSize: 12, color: "var(--cm-text-subtle)" }}>
+                选择一个账号快速填入，密码统一为 {DEMO_PASSWORD}
+              </p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {DEMO_ACCOUNTS.map((acc) => (
+                  <button
+                    key={acc.username}
+                    type="button"
+                    onClick={() => fillDemo(acc.username)}
+                    style={{
+                      padding: "4px 10px", borderRadius: "var(--cm-radius-sm)",
+                      border: "1px solid var(--cm-border-strong)", background: "var(--cm-surface)",
+                      fontSize: 12, color: "var(--cm-brand)", cursor: "pointer",
+                      fontWeight: 500,
+                    }}
+                  >
+                    {acc.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </details>
         </section>
       </div>
     </main>
