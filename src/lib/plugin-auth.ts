@@ -47,3 +47,14 @@ export function getPluginPrincipal(request: Request): PluginPrincipal | null {
     .filter((scope) => allowedPluginScopes.has(scope));
   return { userId, scopes: [...new Set(scopes)] };
 }
+
+export function requirePluginScope(
+  request: Request,
+  scope: string,
+  requestedUserId?: string,
+): PluginPrincipal | null {
+  const principal = getPluginPrincipal(request);
+  if (!principal || !principal.scopes.includes(scope)) return null;
+  if (requestedUserId && requestedUserId !== principal.userId) return null;
+  return principal;
+}
