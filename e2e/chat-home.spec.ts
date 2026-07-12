@@ -137,6 +137,59 @@ test("chat profile candidate can be edited and confirmed", async ({ page }) => {
   await expect(page.getByText(/每周 10 小时/)).toBeVisible();
 });
 
+test("chat plan generation reaches a confirmable version and survives reload", async ({ page }) => {
+  await login(page);
+  await page.getByPlaceholder(/Enter 发送/).fill("帮我制定一个3个月学习计划");
+  await page.getByLabel("发送消息").click();
+
+  const confirm = page.getByRole("button", { name: "确认新版本" });
+  await expect(confirm).toBeVisible({ timeout: 20000 });
+  await confirm.click();
+  await expect(confirm).toHaveCount(0, { timeout: 10000 });
+
+  await page.goto("/path");
+  await expect(page.getByRole("heading", { name: "3 年职业路径" })).toBeVisible();
+  await page.reload();
+  await expect(page.getByText(/节奏学习：完成一个 AI 产品经理 关键知识点/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "确认新版本" })).toHaveCount(0);
+});
+
+test("candidate card stays pending when confirmation API fails", async ({ page }) => {
+  await login(page);
+  await page.getByPlaceholder(/Enter 发送/).fill("我每周可以投入 11 小时学习");
+  await page.getByLabel("发送消息").click();
+
+  const candidate = page.getByRole("region", { name: "每周可用时间候选更新" });
+  await expect(candidate).toBeVisible({ timeout: 15000 });
+  await page.route("**/api/profile/candidates", async (route) => {
+    if (route.request().method() === "PATCH") {
+      await route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: false, error: { message: "候选已经处理过" } }),
+      });
+      return;
+    }
+    await route.continue();
+  });
+  await candidate.getByRole("button", { name: "确认" }).click();
+
+  await expect(candidate.getByRole("alert")).toHaveText("候选已经处理过");
+  await expect(candidate.getByText("✅ 已确认")).toHaveCount(0);
+  await expect(candidate.getByRole("button", { name: "确认" })).toBeVisible();
+});
+
+test("fallback career research is never labeled as live web research", async ({ page }) => {
+  await login(page);
+  await page.getByPlaceholder(/Enter 发送/).fill("请介绍用户研究员这个岗位");
+  await page.getByLabel("发送消息").click();
+
+  const report = page.getByRole("region", { name: "用户研究员 职业探索报告" });
+  await expect(report).toBeVisible({ timeout: 15000 });
+  await expect(report.getByText("AI分析与推断")).toBeVisible();
+  await expect(report.getByText("实时联网调研")).toHaveCount(0);
+});
+
 // ── 375px 移动端视口 ────────────────────────────────────
 
 test.describe("mobile viewport (375px)", () => {

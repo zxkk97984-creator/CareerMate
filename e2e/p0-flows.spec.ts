@@ -96,7 +96,7 @@ test("admin generates and approves a validated role draft", async ({ page }) => 
 
 // ── 聊天首页完整流程 ────────────────────────────────────
 
-test("chat-first complete flow: persistent chat, plan generation, conversation switching", async ({ page }) => {
+test("chat-first complete flow: persistent chat and conversation switching", async ({ page }) => {
   await login(page);
 
   // 1. 验证聊天首页
