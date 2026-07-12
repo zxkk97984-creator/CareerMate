@@ -101,13 +101,13 @@ export function LoginForm() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "1fr 420px",
           gap: 48,
           maxWidth: 960,
           width: "100%",
           alignItems: "center",
+          overflow: "hidden",
         }}
-        className="max-lg:grid-cols-1 max-lg:max-w-md"
+        className="grid-cols-1 lg:grid-cols-[1fr_420px] max-w-md lg:max-w-[960px]"
       >
         {/* ── 左侧品牌说明 ───────────────────────────── */}
         <section className="max-lg:text-center max-lg:hidden" style={{ display: "flex", flexDirection: "column", gap: 32 }}>
