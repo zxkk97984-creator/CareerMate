@@ -13,7 +13,10 @@ export async function GET() {
     orderBy: { createdAt: "desc" },
   });
   const pendingPlan = await getPrisma().careerPlan.findFirst({
-    where: { userId: user.id, status: "pending" },
+    where: {
+      userId: user.id,
+      status: { in: ["generating", "processing", "pending", "generation_failed"] },
+    },
     orderBy: { createdAt: "desc" },
   });
 

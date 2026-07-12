@@ -35,7 +35,10 @@ describe("GET /api/plans/current", () => {
       },
     });
     expect(mocks.findPlan).toHaveBeenNthCalledWith(2, {
-      where: { userId: "user-1", status: "pending" },
+      where: {
+        userId: "user-1",
+        status: { in: ["generating", "processing", "pending", "generation_failed"] },
+      },
       orderBy: { createdAt: "desc" },
     });
     expect(mocks.findLog).toHaveBeenCalledWith({
