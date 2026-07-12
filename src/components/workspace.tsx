@@ -19,6 +19,7 @@ import {
 import { PolarAngleAxis, PolarGrid, Radar, RadarChart, ResponsiveContainer } from "recharts";
 import { SimulationView } from "@/features/simulation/simulation-view";
 import { ChatView } from "@/features/chat/chat-view";
+import { PlanSummaryCard } from "@/components/chat/plan-summary-card";
 import {
   formatAiRuntimeBadge,
   formatAiRuntimeDescription,
@@ -72,6 +73,7 @@ interface WorkspaceData {
   user: { id: string; displayName: string; username: string; role: string } | null;
   profile: ProfileDto | null;
   plan: CareerPlanDto | null;
+  pendingPlan: CareerPlanDto | null;
   planExecutionMeta: AiExecutionMeta | null;
   resources: ResourceItemDto[];
   memories: any[];
@@ -174,6 +176,7 @@ export function Workspace({ initialView }: { initialView: View }) {
     user: null,
     profile: null,
     plan: null,
+    pendingPlan: null,
     planExecutionMeta: null,
     resources: [],
     memories: [],
@@ -222,7 +225,7 @@ export function Workspace({ initialView }: { initialView: View }) {
       return;
     }
     const [plan, resources, memories, candidates, simulations, admin] = await Promise.all([
-      api<{ plan: CareerPlanDto | null; executionMeta: AiExecutionMeta | null }>("/api/plans/current"),
+      api<{ plan: CareerPlanDto | null; pendingPlan: CareerPlanDto | null; executionMeta: AiExecutionMeta | null }>("/api/plans/current"),
       api<{ items: ResourceItemDto[] }>("/api/resources"),
       api<{ items: any[] }>("/api/memories"),
       api<{ items: any[] }>("/api/profile/candidates"),
@@ -233,6 +236,7 @@ export function Workspace({ initialView }: { initialView: View }) {
       user: me.data.user,
       profile: me.data.profile,
       plan: plan.ok ? plan.data.plan : null,
+      pendingPlan: plan.ok ? plan.data.pendingPlan : null,
       planExecutionMeta: plan.ok ? plan.data.executionMeta : null,
       resources: resources.ok ? resources.data.items : [],
       memories: memories.ok ? memories.data.items : [],
@@ -332,7 +336,7 @@ export function Workspace({ initialView }: { initialView: View }) {
                   activeConversation={data.activeOnboardingConversation}
                 />
               )}
-              {activeView === "path" && <PathView plan={data.plan} executionMeta={data.planExecutionMeta} refresh={loadAll} setNotice={setNotice} />}
+              {activeView === "path" && <PathView plan={data.plan} pendingPlan={data.pendingPlan} executionMeta={data.planExecutionMeta} refresh={loadAll} setNotice={setNotice} />}
               {activeView === "simulation" && <SimulationView simulations={data.simulations} refresh={loadAll} setNotice={setNotice} />}
               {activeView === "resources" && <ResourceView resources={data.resources} profile={data.profile} weakAbilities={data.match?.weakAbilities ?? []} />}
               {activeView === "memory" && <MemoryView memories={data.memories} candidates={data.candidates} memoryEnabled={data.profile.memoryEnabled} refresh={loadAll} setNotice={setNotice} />}
@@ -615,11 +619,13 @@ function Onboarding({
 
 function PathView({
   plan,
+  pendingPlan,
   executionMeta,
   refresh,
   setNotice,
 }: {
   plan: CareerPlanDto | null;
+  pendingPlan: CareerPlanDto | null;
   executionMeta: AiExecutionMeta | null;
   refresh: () => Promise<void>;
   setNotice: (value: string) => void;
@@ -679,6 +685,22 @@ function PathView({
     }
   }
 
+  async function acceptPendingPlan(planId: string) {
+    setError("");
+    setNotice("正在确认新计划版本...");
+    const response = await api(`/api/plans/${encodeURIComponent(planId)}/accept-replan`, {
+      method: "POST",
+    });
+    if (!response.ok) {
+      const message = response.error?.message ?? "新计划确认失败，请稍后重试。";
+      setError(message);
+      setNotice(message);
+      throw new Error(message);
+    }
+    await refresh();
+    setNotice("新计划版本已确认，旧版本已保留。 ");
+  }
+
   const timeline = plan ? groupPlanTimeline(plan) : [];
   const months = (plan?.months ?? []) as unknown as PlanMonth[];
   const currentMonth = months.find((month) => month.monthIndex === plan?.currentMonthIndex);
@@ -686,8 +708,16 @@ function PathView({
   return (
     <Panel title="3 年职业路径" action={<Button disabled={generating} onClick={generatePlan}>{generating ? "生成中..." : plan ? "重规划" : "生成路径"}</Button>}>
       {error ? <p className="mb-4 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
+      {pendingPlan ? (
+        <div className="mb-5">
+          <PlanSummaryCard
+            plan={pendingPlan}
+            onAcceptReplan={acceptPendingPlan}
+          />
+        </div>
+      ) : null}
       {!plan ? (
-        <div className="rounded-md bg-slate-50 p-5 text-sm text-slate-600">还没有职业路径，请先生成。</div>
+        pendingPlan ? null : <div className="rounded-md bg-slate-50 p-5 text-sm text-slate-600">还没有职业路径，请先生成。</div>
       ) : (
         <div className="space-y-5">
           {executionMeta ? (

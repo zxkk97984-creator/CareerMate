@@ -37,7 +37,7 @@ Do not run `db:migrate:baseline` for a new empty database. `db:migrate:deploy` a
 
 Browser sessions use a seven-day, HTTP-only cookie containing a random token. Only its SHA-256 hash is stored in the database; logging out removes that server-side session.
 
-Plugin endpoints deny requests when `CAREERMATE_PLUGIN_TOKEN` is missing. In non-production development only, an explicit `ALLOW_UNAUTHENTICATED_PLUGIN=true` permits an unconfigured client. When a token is configured, clients must send exactly `Authorization: Bearer <token>`.
+Plugin endpoints deny requests when `CAREERMATE_PLUGIN_TOKEN` is missing. In non-production development only, an explicit `ALLOW_UNAUTHENTICATED_PLUGIN=true` permits an unconfigured client. When a token is configured, clients must send exactly `Authorization: Bearer <token>`. Plugin and MCP calls are bound server-side with `CAREERMATE_PLUGIN_USER_ID` and the allowlisted `CAREERMATE_PLUGIN_SCOPES`; tool arguments cannot select another user or elevate permissions.
 
 ## Tests and verification
 

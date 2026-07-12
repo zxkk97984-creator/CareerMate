@@ -7,6 +7,11 @@ function echoTool() {
     name: "echo",
     description: "回显工具",
     inputSchema: z.object({ message: z.string() }),
+    inputJsonSchema: {
+      type: "object",
+      required: ["message"],
+      properties: { message: { type: "string" } },
+    },
     requiredScopes: ["profile:read"],
     handler: async (input: unknown) => input,
   };
@@ -29,6 +34,7 @@ describe("ToolRegistry", () => {
       name: "add",
       description: "加法",
       inputSchema: z.object({ a: z.number(), b: z.number() }),
+      inputJsonSchema: { type: "object" },
       requiredScopes: [],
       handler: async () => 0,
     });

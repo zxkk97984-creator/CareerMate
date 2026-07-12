@@ -6,6 +6,7 @@ import { ChatThread } from "./chat-thread";
 import { ChatComposer } from "./chat-composer";
 import { GrowthProfileDrawer } from "./growth-profile-drawer";
 import type { ConversationItem, MessageItem } from "@/lib/chat/schemas";
+import { consumeFrontendSseResponse } from "@/lib/tbox/frontend-sse";
 import { Menu, PanelRightClose, PanelRightOpen } from "lucide-react";
 
 interface ChatHomePageProps {
@@ -57,10 +58,27 @@ export function ChatHomePage({ displayName }: ChatHomePageProps) {
       setMessages([]);
       return;
     }
-    fetch(`/api/chat/conversations/${activeConversationId}/messages?limit=50`)
+    // 新会话发送的本地乐观消息优先于历史请求。否则空历史会在
+    // SSE 开始后返回，并覆盖刚加入的用户/助手消息。
+    if (streamingRef.current) return;
+
+    const requestedConversationId = activeConversationId;
+    const controller = new AbortController();
+    fetch(`/api/chat/conversations/${requestedConversationId}/messages?limit=50`, {
+      signal: controller.signal,
+    })
       .then(r => r.json())
-      .then(b => { if (b.ok) setMessages(b.data); })
+      .then(b => {
+        if (
+          b.ok &&
+          activeCidRef.current === requestedConversationId &&
+          !streamingRef.current
+        ) {
+          setMessages(b.data);
+        }
+      })
       .catch(() => {});
+    return () => controller.abort();
   }, [activeConversationId]);
 
   /** 核心发送逻辑：给定会话 ID 和文本，执行 SSE 流式请求 */
@@ -116,56 +134,38 @@ export function ChatHomePage({ displayName }: ChatHomePageProps) {
       return;
     }
 
-    // 消费SSE流
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
+    // 使用共享 SSE 消费器，正确处理跨网络 chunk 拆分的 event/data。
     let assistantContent = "";
 
     try {
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-
-        // 解析 SSE 事件
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || ""; // 保留不完整的行
-
-        let currentEvent = "";
-        for (const line of lines) {
-          if (line.startsWith("event: ")) {
-            currentEvent = line.slice(7).trim();
-          } else if (line.startsWith("data: ") && currentEvent === "delta") {
-            try {
-              const data = JSON.parse(line.slice(6));
-              if (data.text) {
-                assistantContent += data.text;
-                setMessages(prev =>
-                  prev.map(m => m.id === assistantMsg.id
-                    ? { ...m, content: assistantContent }
-                    : m,
-                  ),
-                );
-              }
-            } catch { /* 忽略解析错误 */ }
-          } else if (line.startsWith("data: ") && currentEvent === "done") {
-            setMessages(prev =>
-              prev.map(m => m.id === assistantMsg.id
-                ? { ...m, content: assistantContent, status: "completed" }
-                : m,
-              ),
-            );
-          } else if (line.startsWith("data: ") && currentEvent === "error") {
-            setMessages(prev =>
-              prev.map(m => m.id === assistantMsg.id
-                ? { ...m, status: "failed", content: assistantContent }
-                : m,
-              ),
-            );
+      await consumeFrontendSseResponse(response, {
+        onDelta(content) {
+          assistantContent += content;
+          setMessages(prev =>
+            prev.map(m => m.id === assistantMsg.id
+              ? { ...m, content: assistantContent }
+              : m,
+            ),
+          );
+        },
+        onArtifact(part) {
+          if (part.type === "profile_candidate_ref") {
+            setPendingCandidateCount((count) => count + 1);
           }
-        }
-      }
+          setMessages(prev =>
+            prev.map(m => m.id === assistantMsg.id
+              ? { ...m, parts: [...m.parts, part] }
+              : m,
+            ),
+          );
+        },
+      });
+      setMessages(prev =>
+        prev.map(m => m.id === assistantMsg.id
+          ? { ...m, content: assistantContent, status: "completed" }
+          : m,
+        ),
+      );
     } catch {
       setMessages(prev =>
         prev.map(m => m.id === assistantMsg.id
@@ -173,8 +173,6 @@ export function ChatHomePage({ displayName }: ChatHomePageProps) {
           : m,
         ),
       );
-    } finally {
-      reader.releaseLock();
     }
 
     streamingRef.current = false;
@@ -271,7 +269,12 @@ export function ChatHomePage({ displayName }: ChatHomePageProps) {
       <ConversationSidebar
         conversations={conversations}
         activeId={activeConversationId}
-        onSelect={id => { setActiveConversationId(id); activeCidRef.current = id; setSidebarOpen(false); }}
+        onSelect={id => {
+          setMessages([]);
+          setActiveConversationId(id);
+          activeCidRef.current = id;
+          setSidebarOpen(false);
+        }}
         onNew={handleNewChat}
         onDelete={handleDeleteConversation}
         onRename={handleRenameConversation}

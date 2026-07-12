@@ -1,4 +1,5 @@
 import type { CareerChatContextMeta, CareerChatIntent } from "@/lib/chat/types";
+import { chatMessagePartSchema, type ChatMessagePart } from "@/lib/chat/persistence";
 import type { AiExecutionMeta, TboxMode } from "@/lib/types";
 
 export interface FrontendSseBlock {
@@ -9,6 +10,7 @@ export interface FrontendSseBlock {
 interface FrontendSseHandlers {
   onDelta: (content: string) => void;
   onContext?: (context: CareerChatContextMeta) => void;
+  onArtifact?: (part: ChatMessagePart) => void;
 }
 
 export interface FrontendSseResult {
@@ -58,8 +60,13 @@ function careerContext(value: Record<string, unknown>): CareerChatContextMeta | 
   ) {
     return null;
   }
-  const retrievalMeta = value.retrievalMeta === null ? null : executionMeta(value.retrievalMeta);
-  if (value.retrievalMeta !== null && !retrievalMeta) return null;
+  const retrievalMeta =
+    value.retrievalMeta === null || value.retrievalMeta === undefined
+      ? null
+      : executionMeta(value.retrievalMeta);
+  if (value.retrievalMeta !== null && value.retrievalMeta !== undefined && !retrievalMeta) {
+    return null;
+  }
   return {
     intent: intent as CareerChatIntent | null,
     usedProfile: value.usedProfile,
@@ -130,14 +137,24 @@ export async function consumeFrontendSseResponse(
       handlers.onDelta(parsed.data.content);
       finalMeta = executionMeta(parsed.data.meta) ?? finalMeta;
     }
+    if (parsed.event === "delta" && typeof parsed.data.text === "string") {
+      handlers.onDelta(parsed.data.text);
+      finalMeta = executionMeta(parsed.data.meta) ?? finalMeta;
+    }
+    if (parsed.event === "artifact") {
+      const part = chatMessagePartSchema.safeParse(parsed.data.part);
+      if (!part.success) throw new Error("流式响应格式无效");
+      handlers.onArtifact?.(part.data);
+    }
     if (parsed.event === "context") {
       const context = careerContext(parsed.data);
       if (!context) throw new Error("流式响应格式无效");
       handlers.onContext?.(context);
     }
     if (parsed.event === "done") {
-      conversationId =
-        typeof parsed.data.conversationId === "string" ? parsed.data.conversationId : null;
+      const remoteConversationId =
+        parsed.data.remoteConversationId ?? parsed.data.conversationId;
+      conversationId = typeof remoteConversationId === "string" ? remoteConversationId : null;
       finalMeta = executionMeta(parsed.data.meta) ?? finalMeta;
       completed = true;
     }

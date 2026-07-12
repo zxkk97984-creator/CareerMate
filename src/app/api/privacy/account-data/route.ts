@@ -16,7 +16,10 @@ export async function DELETE(request: Request) {
   await prisma.$transaction(async (tx) => {
     await tx.simulationSession.deleteMany({ where: { userId: user.id } });
     await tx.profileUpdateCandidate.deleteMany({ where: { userId: user.id } });
+    await tx.abilityEvidence.deleteMany({ where: { userId: user.id } });
     await tx.careerPlan.deleteMany({ where: { userId: user.id } });
+    await tx.careerExplorationReport.deleteMany({ where: { userId: user.id } });
+    await tx.chatConversation.deleteMany({ where: { userId: user.id } });
     await tx.progressLog.deleteMany({ where: { userId: user.id } });
     await tx.memoryItem.deleteMany({ where: { userId: user.id } });
     await tx.onboardingConversation.deleteMany({ where: { userId: user.id } });

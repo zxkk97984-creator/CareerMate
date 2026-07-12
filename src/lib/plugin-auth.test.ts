@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isPluginAuthorized } from "./plugin-auth";
+import { getPluginPrincipal, isPluginAuthorized } from "./plugin-auth";
 
 function pluginRequest(authorization?: string) {
   return new Request("http://localhost/api/mcp/profile/read", {
@@ -47,5 +47,25 @@ describe("plugin authorization", () => {
     expect(isPluginAuthorized(pluginRequest("Bearer local-plugin-secret extra"))).toBe(false);
     expect(isPluginAuthorized(pluginRequest("Bearer wrong"))).toBe(false);
     expect(isPluginAuthorized(pluginRequest())).toBe(false);
+  });
+
+  it("binds an authenticated plugin token to a configured user and scopes", () => {
+    vi.stubEnv("CAREERMATE_PLUGIN_TOKEN", "local-plugin-secret");
+    vi.stubEnv("CAREERMATE_PLUGIN_USER_ID", "user-1");
+    vi.stubEnv("CAREERMATE_PLUGIN_SCOPES", "profile:read,jobs:read");
+
+    expect(
+      getPluginPrincipal(pluginRequest("Bearer local-plugin-secret")),
+    ).toEqual({ userId: "user-1", scopes: ["profile:read", "jobs:read"] });
+  });
+
+  it("does not invent a user binding when the configured user is missing", () => {
+    vi.stubEnv("CAREERMATE_PLUGIN_TOKEN", "local-plugin-secret");
+    vi.stubEnv("CAREERMATE_PLUGIN_USER_ID", "");
+    vi.stubEnv("CAREERMATE_PLUGIN_SCOPES", "profile:read");
+
+    expect(
+      getPluginPrincipal(pluginRequest("Bearer local-plugin-secret")),
+    ).toBeNull();
   });
 });

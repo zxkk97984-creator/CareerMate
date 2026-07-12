@@ -2,16 +2,32 @@ import { describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   isPluginAuthorized: vi.fn(),
+  getPluginPrincipal: vi.fn(),
 }));
 
 vi.mock("@/lib/plugin-auth", () => ({
   isPluginAuthorized: mocks.isPluginAuthorized,
+  getPluginPrincipal: mocks.getPluginPrincipal,
 }));
 
 const { POST } = await import("./route");
 
 function buildRequest(body: unknown, auth = true): Request {
   mocks.isPluginAuthorized.mockReturnValue(auth);
+  mocks.getPluginPrincipal.mockReturnValue(
+    auth
+      ? {
+          userId: "user-1",
+          scopes: [
+            "profile:read",
+            "profile:candidates",
+            "courses:read",
+            "jobs:read",
+            "progress:write",
+          ],
+        }
+      : null,
+  );
   return new Request("http://localhost/api/mcp", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -42,8 +58,13 @@ describe("MCP JSON-RPC endpoint", () => {
     const json = await res.json();
 
     expect(json.id).toBe(2);
-    expect(json.result.tools).toBeDefined();
-    expect(Array.isArray(json.result.tools)).toBe(true);
+    expect(json.result.tools.map((tool: { name: string }) => tool.name)).toEqual([
+      "profile.read",
+      "profile.candidate.create",
+      "courses.query",
+      "jobs.query",
+      "progress.update",
+    ]);
   });
 
   it("tools/call 缺少工具名称返回 -32602", async () => {

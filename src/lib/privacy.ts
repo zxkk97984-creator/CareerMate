@@ -13,6 +13,9 @@ type PrivacySource = {
   simulations: unknown[];
   candidates: unknown[];
   onboardingConversations: unknown[];
+  conversations: unknown[];
+  abilityEvidence: unknown[];
+  explorationReports: unknown[];
   authSessions?: unknown[];
 };
 
@@ -29,5 +32,8 @@ export function buildPrivacyExport(source: PrivacySource) {
     simulations: source.simulations,
     profileUpdateCandidates: source.candidates,
     onboardingConversations: source.onboardingConversations,
+    chatConversations: source.conversations,
+    abilityEvidence: source.abilityEvidence,
+    careerExplorationReports: source.explorationReports,
   };
 }

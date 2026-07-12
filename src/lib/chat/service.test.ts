@@ -301,18 +301,19 @@ describe("ChatService", () => {
       const { service, mock } = setupService();
       mock.chatConversation.findFirst.mockResolvedValue(conversationRow({ id: "conv-1", userId: "user-1" }));
       const rows = [
-        messageRow({ id: "m1", createdAt: new Date("2026-07-12T10:00:00Z") }),
         messageRow({ id: "m2", createdAt: new Date("2026-07-12T10:01:00Z") }),
+        messageRow({ id: "m1", createdAt: new Date("2026-07-12T10:00:00Z") }),
       ];
       mock.chatMessage.findMany.mockResolvedValue(rows);
 
       const result = await service.getMessages("conv-1", "user-1");
 
       expect(result).toHaveLength(2);
+      expect(result.map((message) => message.id)).toEqual(["m1", "m2"]);
       expect(mock.chatMessage.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { conversationId: "conv-1" },
-          orderBy: { createdAt: "asc" },
+          orderBy: { createdAt: "desc" },
         }),
       );
     });
@@ -328,9 +329,9 @@ describe("ChatService", () => {
       const { service, mock } = setupService();
       mock.chatConversation.findFirst.mockResolvedValue(conversationRow({ id: "conv-1", userId: "user-1" }));
       const rows = [
-        messageRow({ id: "m1", parts: "invalid json!!" }),
-        messageRow({ id: "m2", parts: "null" }),
         messageRow({ id: "m3", parts: '[{"type":"text","text":"有效"}]' }),
+        messageRow({ id: "m2", parts: "null" }),
+        messageRow({ id: "m1", parts: "invalid json!!" }),
       ];
       mock.chatMessage.findMany.mockResolvedValue(rows);
 

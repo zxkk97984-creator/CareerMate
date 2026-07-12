@@ -28,7 +28,7 @@ test("/chat redirects to home", async ({ page }) => {
   await expect(page).toHaveURL(/\/$/);
 });
 
-test("create conversation, send message, and reload preserves history", async ({ page }) => {
+test("create conversation, send two messages, and reload preserves history", async ({ page }) => {
   await login(page);
 
   // 创建新会话——直接发消息会自动创建
@@ -38,6 +38,12 @@ test("create conversation, send message, and reload preserves history", async ({
   // 等待回复出现且完成（SSE 流式接收）
   await expect(page.locator(".message-assistant")).toBeVisible({ timeout: 15000 });
   // 等待流式完成——消息状态变为 completed
+  await expect(page.locator(".streaming-cursor")).toHaveCount(0, { timeout: 15000 });
+
+  // 第二轮必须追加在同一会话，不能被历史加载请求覆盖
+  await page.getByPlaceholder(/Enter 发送/).fill("那数学基础要达到什么程度？");
+  await page.getByLabel("发送消息").click();
+  await expect(page.locator(".message-assistant")).toHaveCount(2, { timeout: 15000 });
   await expect(page.locator(".streaming-cursor")).toHaveCount(0, { timeout: 15000 });
 
   // 刷新页面
@@ -52,12 +58,14 @@ test("create conversation, send message, and reload preserves history", async ({
   await expect(firstConv).toBeVisible();
   await firstConv.click();
 
-  // 应该能看到之前的消息（1 user + 1 assistant = 2）
-  await expect(page.locator(".message-wrapper")).toHaveCount(2, { timeout: 10000 });
+  // 应该能看到之前的消息（2 user + 2 assistant = 4）
+  await expect(page.locator(".message-wrapper")).toHaveCount(4, { timeout: 10000 });
 });
 
 test("create new conversation clears message area", async ({ page }) => {
   await login(page);
+  await page.waitForLoadState("networkidle");
+  const initialConversationCount = await page.locator(".conversation-title-btn").count();
 
   // 发一条消息并等待完成
   await page.getByPlaceholder(/Enter 发送/).fill("会话一的测试消息");
@@ -70,8 +78,11 @@ test("create new conversation clears message area", async ({ page }) => {
   // 等待新会话创建完成并清空消息
   await page.waitForTimeout(500);
   await expect(page.locator(".message-wrapper")).toHaveCount(0);
-  // 验证新对话已创建
-  await expect(page.locator(".conversation-title-btn")).toHaveCount(2);
+  // 本测试文件共享同一 E2E 数据库，因此断言相对增量而不是固定总数。
+  // 发送消息自动创建一个会话，再点击按钮创建第二个。
+  await expect(page.locator(".conversation-title-btn")).toHaveCount(
+    initialConversationCount + 2,
+  );
 });
 
 test("can rename and delete conversations", async ({ page }) => {
@@ -108,6 +119,22 @@ test("can rename and delete conversations", async ({ page }) => {
 
   // 应该回到欢迎页面
   await expect(page.getByText("你好，我是 CareerMate")).toBeVisible();
+});
+
+test("chat profile candidate can be edited and confirmed", async ({ page }) => {
+  await login(page);
+  await page.getByPlaceholder(/Enter 发送/).fill("我每周可以投入 9 小时学习");
+  await page.getByLabel("发送消息").click();
+
+  const candidate = page.getByRole("region", { name: "每周可用时间候选更新" });
+  await expect(candidate).toBeVisible({ timeout: 15000 });
+  await candidate.getByRole("button", { name: "修改" }).click();
+  await candidate.getByLabel("修改每周可用时间").fill("10");
+  await candidate.getByRole("button", { name: "确认修改" }).click();
+  await expect(candidate.getByText("✅ 已确认")).toBeVisible();
+
+  await page.goto("/dashboard");
+  await expect(page.getByText(/每周 10 小时/)).toBeVisible();
 });
 
 // ── 375px 移动端视口 ────────────────────────────────────

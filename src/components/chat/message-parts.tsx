@@ -4,6 +4,10 @@ import { useEffect, useState } from "react";
 import type { ChatMessagePart } from "@/lib/chat/persistence";
 import { AlertCircle, UserCheck, Map, Compass, Link2 } from "lucide-react";
 import { ProfileCandidateCard } from "./profile-candidate-card";
+import { PlanSummaryCard } from "./plan-summary-card";
+import { ExplorationReportCard } from "./exploration-report-card";
+import type { CareerPlanDto } from "@/lib/types";
+import type { ExplorationReport } from "@/lib/careers/exploration-schema";
 
 interface MessagePartsProps {
   parts: ChatMessagePart[];
@@ -81,14 +85,48 @@ function ProfileCandidateRef({ candidateId }: { candidateId: string }) {
         await fetch("/api/profile/candidates", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ candidateId: id, action, ...(newValue ? { newValue } : {}) }),
+          body: JSON.stringify({
+            candidateId: id,
+            action,
+            ...(newValue !== undefined ? { newValue } : {}),
+          }),
         });
       }}
     />
   );
 }
 
-function PlanRef({ version }: { planId: string; version: number }) {
+function PlanRef({ planId, version }: { planId: string; version: number }) {
+  const [plan, setPlan] = useState<CareerPlanDto | null>(null);
+
+  useEffect(() => {
+    fetch(`/api/plans/${encodeURIComponent(planId)}`)
+      .then((response) => response.json())
+      .then((body) => {
+        if (body.ok) setPlan(body.data.plan as CareerPlanDto);
+      })
+      .catch(() => {});
+  }, [planId]);
+
+  if (plan) {
+    return (
+      <PlanSummaryCard
+        plan={plan}
+        diff={plan.status === "pending"
+          ? { directionChange: false, addedTasks: [], removedTasks: [] }
+          : null}
+        onAcceptReplan={async (id) => {
+          const response = await fetch(`/api/plans/${encodeURIComponent(id)}/accept-replan`, {
+            method: "POST",
+          });
+          if (!response.ok) throw new Error("计划确认失败");
+          setPlan((current) => current ? { ...current, status: "active" } : current);
+        }}
+        onViewPlan={() => { window.location.href = "/path"; }}
+      />
+    );
+  }
+
   return (
     <div className="parts-card parts-card-plan">
       <Map size={16} />
@@ -98,7 +136,42 @@ function PlanRef({ version }: { planId: string; version: number }) {
   );
 }
 
-function ExplorationReportRef({ }: { reportId: string }) {
+type ReportCardData = ExplorationReport & { id: string; status: string };
+
+function ExplorationReportRef({ reportId }: { reportId: string }) {
+  const [data, setData] = useState<{
+    report: ReportCardData;
+    sourceLabel: "精品职业资料" | "实时联网调研" | "AI分析与推断";
+  } | null>(null);
+
+  useEffect(() => {
+    fetch(`/api/careers/explorations/${encodeURIComponent(reportId)}`)
+      .then((response) => response.json())
+      .then((body) => {
+        if (body.ok) setData(body.data);
+      })
+      .catch(() => {});
+  }, [reportId]);
+
+  if (data) {
+    return (
+      <ExplorationReportCard
+        report={data.report}
+        sourceLabel={data.sourceLabel}
+        onSubmit={async (id) => {
+          const response = await fetch(
+            `/api/careers/explorations/${encodeURIComponent(id)}/submit`,
+            { method: "POST" },
+          );
+          if (!response.ok) throw new Error("报告提交失败");
+          setData((current) => current
+            ? { ...current, report: { ...current.report, status: "submitted" } }
+            : current);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="parts-card parts-card-report">
       <Compass size={16} />

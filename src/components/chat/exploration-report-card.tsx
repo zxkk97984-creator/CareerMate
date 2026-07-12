@@ -15,7 +15,7 @@ interface ExplorationReportCardProps {
     fitAnalysis: string[];
     sources: ExplorationSource[];
   };
-  sourceLabel: "精品职业资料" | "实时联网调研";
+  sourceLabel: "精品职业资料" | "实时联网调研" | "AI分析与推断";
   onSubmit?: (reportId: string) => Promise<void>;
 }
 
@@ -42,7 +42,9 @@ export function ExplorationReportCard({
           className={`text-xs px-2 py-0.5 rounded-full ${
             sourceLabel === "精品职业资料"
               ? "bg-green-100 text-green-700"
-              : "bg-blue-100 text-blue-700"
+              : sourceLabel === "实时联网调研"
+                ? "bg-blue-100 text-blue-700"
+                : "bg-amber-100 text-amber-700"
           }`}
         >
           {sourceLabel}

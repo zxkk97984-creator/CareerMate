@@ -2,6 +2,7 @@ import { fail, ok } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
 import { planDto } from "@/lib/dto";
 import { getPrisma } from "@/lib/prisma";
+import { z } from "zod";
 
 export async function GET() {
   const user = await requireCurrentUser().catch(() => null);
@@ -9,6 +10,10 @@ export async function GET() {
 
   const plan = await getPrisma().careerPlan.findFirst({
     where: { userId: user.id, status: "active" },
+    orderBy: { createdAt: "desc" },
+  });
+  const pendingPlan = await getPrisma().careerPlan.findFirst({
+    where: { userId: user.id, status: "pending" },
     orderBy: { createdAt: "desc" },
   });
 
@@ -27,7 +32,11 @@ export async function GET() {
     }
   }
 
-  return ok({ plan: plan ? planDto(plan) : null, executionMeta });
+  return ok({
+    plan: plan ? planDto(plan) : null,
+    pendingPlan: pendingPlan ? planDto(pendingPlan) : null,
+    executionMeta,
+  });
 }
 
 const executionMetaSchema = z.object({
@@ -37,4 +46,3 @@ const executionMetaSchema = z.object({
   fallbackReason: z.string().nullable(),
   source: z.string(),
 });
-import { z } from "zod";

@@ -3,6 +3,8 @@ import { createChatService, type ChatService } from "./service";
 import { streamChatWithTboxProgressive } from "@/lib/tbox/streaming";
 import { getTboxConfig } from "@/lib/env";
 import { writeSseEvent } from "./sse";
+import { createArtifactsForChat } from "./artifact-service";
+import { errorPart } from "./artifacts";
 
 // ── 类型 ──────────────────────────────────────────────────
 
@@ -129,10 +131,28 @@ export async function handleStreamRequest(
           },
         );
 
+        // 文本完成后生成结构化业务卡片。卡片失败不应抹掉已经完成的回答。
+        const parts = await createArtifactsForChat({
+          userId,
+          conversationId,
+          message,
+        }).catch(() => [
+          errorPart(
+            "ARTIFACT_UNAVAILABLE",
+            "回答已生成，但这次画像、计划或职业报告卡片暂未生成，可以稍后重试。",
+          ),
+        ]);
+        for (const part of parts) {
+          writeSseEvent(controller, "artifact", {
+            messageId: assistantMsg.id,
+            part,
+          });
+        }
+
         // 流正常结束：持久化助手消息
         await svc.updateMessage(assistantMsg.id, {
           content: fullContent,
-          parts: JSON.stringify([]), // Task 3 暂时无 artifact
+          parts: JSON.stringify(parts),
           status: "completed",
           executionMeta: JSON.stringify(finalMeta ?? {}),
           contextMeta: JSON.stringify({

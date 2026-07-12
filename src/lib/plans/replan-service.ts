@@ -1,5 +1,6 @@
 import { getPrisma } from "@/lib/prisma";
 import { toJson } from "@/lib/json";
+import { planDto } from "@/lib/dto";
 import type {
   CareerPlanDto,
   PlanGenerationMeta,
@@ -96,7 +97,7 @@ export interface ReplanService {
     planId: string,
     userId: string,
   ): Promise<{
-    old: CareerPlanDto;
+    old: CareerPlanDto | null;
     new: CareerPlanDto;
     diff: PlanVersionDiff;
   }>;
@@ -138,8 +139,9 @@ export function createReplanService(): ReplanService {
     },
 
     async acceptReplan(planId, userId) {
+      return db.$transaction(async (transaction) => {
       // 查找待确认计划，校验所有权
-      const pending = await db.careerPlan.findFirst({
+      const pending = await transaction.careerPlan.findFirst({
         where: { id: planId, userId, status: "pending" },
       });
       if (!pending) {
@@ -147,82 +149,47 @@ export function createReplanService(): ReplanService {
       }
 
       // 归档所有当前 active 计划
-      const activePlans = await db.careerPlan.findMany({
+      const activePlans = await transaction.careerPlan.findMany({
         where: { userId, status: "active" },
       });
       for (const active of activePlans) {
-        await db.careerPlan.update({
+        await transaction.careerPlan.update({
           where: { id: active.id },
           data: { status: "archived" },
         });
       }
 
-      // 激活新计划：版本号 = max(旧active版本) + 1，至少为 1
-      const maxVersion = Math.max(
-        ...activePlans.map((p) => p.version),
-        pending.version,
-      );
-      const newVersion = maxVersion + 1;
+      // pending 计划在生成时已经分配版本；仅当旧 active 版本更高时才补齐。
+      const maxActiveVersion = Math.max(0, ...activePlans.map((p) => p.version));
+      const newVersion = Math.max(pending.version, maxActiveVersion + 1);
 
-      const activated = await db.careerPlan.update({
+      const activated = await transaction.careerPlan.update({
         where: { id: planId },
         data: { status: "active", version: newVersion },
       });
 
-      // 构造简化的 DTO 返回
-      const oldDto: CareerPlanDto = {
-        id: activePlans[0]?.id ?? "",
-        targetRole: activePlans[0]?.targetRole ?? "",
-        version: activePlans[0]?.version ?? 0,
-        status: "archived",
-        years: [],
-        quarters: [],
-        months: [],
-        currentMonthIndex: 0,
-        assumptions: [],
-        riskNotes: [],
-        generationMeta: {
-          requestedMode: "",
-          actualMode: "",
-          degraded: false,
-          fallbackReason: null,
-          source: "",
-          triggeredBy: "manual",
-        },
-        sourceReportId: null,
-        createdAt: "",
-        updatedAt: "",
-      };
-
-      const newDto: CareerPlanDto = {
-        id: activated.id,
-        targetRole: activated.targetRole,
-        version: activated.version,
-        status: activated.status,
-        years: [],
-        quarters: [],
-        months: [],
-        currentMonthIndex: activated.currentMonthIndex,
-        assumptions: [],
-        riskNotes: [],
-        generationMeta: {
-          requestedMode: "",
-          actualMode: "",
-          degraded: false,
-          fallbackReason: null,
-          source: "",
-          triggeredBy: "manual",
-        },
-        sourceReportId: activated.sourceReportId,
-        createdAt: activated.createdAt.toISOString(),
-        updatedAt: activated.updatedAt.toISOString(),
-      };
+      const oldPlan = activePlans[0] ?? null;
+      const oldDto = oldPlan ? planDto({ ...oldPlan, status: "archived" }) : null;
+      const newDto = planDto(activated);
+      const directionChange = oldPlan
+        ? oldPlan.targetRole !== activated.targetRole
+        : true;
 
       return {
         old: oldDto,
         new: newDto,
-        diff: { directionChange: false, addedMilestones: [], removedMilestones: [], addedTasks: [], removedTasks: [] },
+        diff: {
+          directionChange,
+          directionSummary: directionChange
+            ? `目标方向调整为“${activated.targetRole}”`
+            : undefined,
+          addedMilestones: [],
+          removedMilestones: [],
+          addedTasks: [],
+          removedTasks: [],
+        },
       };
+      });
     },
 
     generateDiff,

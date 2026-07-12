@@ -221,7 +221,7 @@ export function createChatService(repo?: ChatRepository): ChatService {
       if (!conv) throw notFound("会话");
 
       const rows = await r.listMessages(conversationId, before, limit);
-      return rows.slice(0, limit).map(toMessageItem);
+      return rows.slice(-limit).map(toMessageItem);
     },
 
     // ── 创建消息 ──────────────────────────────────────

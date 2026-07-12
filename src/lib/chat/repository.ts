@@ -127,14 +127,15 @@ export function createChatRepository(): ChatRepository {
       })) as unknown as ConversationRow;
     },
 
-    // 消息列表：升序
+    // 先取游标之前最近的一页，再反转为前端需要的时间升序。
     async listMessages(conversationId, before, limit = 50) {
-      return (await db.chatMessage.findMany({
+      const rows = await db.chatMessage.findMany({
         where: { conversationId },
-        orderBy: { createdAt: "asc" },
+        orderBy: { createdAt: "desc" },
         ...(before ? { cursor: { id: before }, skip: 1 } : {}),
         take: limit + 1,
-      })) as unknown as MessageRow[];
+      });
+      return rows.reverse() as unknown as MessageRow[];
     },
 
     // 创建消息

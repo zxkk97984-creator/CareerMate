@@ -58,153 +58,152 @@ export interface CandidateService {
   ): Promise<ProcessResult>;
 }
 
+function validatedProfileValue(field: string, value: unknown) {
+  if (field === "weeklyAvailableHours") {
+    if (!Number.isInteger(value) || Number(value) < 1 || Number(value) > 168) {
+      throw new CandidateServiceError(
+        "每周可投入时间必须是1到168之间的整数",
+        "INVALID_VALUE",
+        400,
+      );
+    }
+    return value;
+  }
+  if (["learningPreference", "interestTags", "constraints"].includes(field)) {
+    if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
+      throw new CandidateServiceError("该字段必须是字符串数组", "INVALID_VALUE", 400);
+    }
+    return value;
+  }
+  if (typeof value !== "string" || !value.trim()) {
+    throw new CandidateServiceError("该字段必须是非空文本", "INVALID_VALUE", 400);
+  }
+  return value.trim();
+}
+
 // ── 实现 ────────────────────────────────────────────────
 
 export function createCandidateService(): CandidateService {
   const db = getPrisma();
 
-  async function getCandidate(candidateId: string, userId: string) {
-    return db.profileUpdateCandidate.findFirst({
-      where: { id: candidateId, userId },
-    });
-  }
-
-  async function getProfile(userId: string) {
-    return db.userProfile.findUnique({ where: { userId } });
-  }
-
-  async function getEvidence(evidenceId: string | null) {
-    if (!evidenceId) return null;
-    return db.abilityEvidence.findUnique({ where: { id: evidenceId } });
-  }
-
   return {
     async processCandidate(candidateId, userId, action, field, newValue) {
-      // 1. 获取候选，校验所有权和状态
-      const candidate = await getCandidate(candidateId, userId);
-      if (!candidate) {
-        throw new CandidateServiceError("画像更新候选不存在", "NOT_FOUND", 404);
-      }
+      return db.$transaction(async (transaction) => {
+        const candidate = await transaction.profileUpdateCandidate.findFirst({
+          where: { id: candidateId, userId },
+        });
+        if (!candidate) {
+          throw new CandidateServiceError("画像更新候选不存在", "NOT_FOUND", 404);
+        }
+        if (candidate.status !== "pending") {
+          throw new CandidateServiceError(
+            "该候选已经处理过",
+            "ALREADY_PROCESSED",
+            409,
+          );
+        }
 
-      if (candidate.status !== "pending") {
-        throw new CandidateServiceError(
-          "该候选已经处理过",
-          "ALREADY_PROCESSED",
-          409,
-        );
-      }
+        const targetField = field ?? candidate.field;
+        if (!ALLOWED_CANDIDATE_FIELDS.has(targetField)) {
+          throw new CandidateServiceError("不允许修改该字段", "FIELD_NOT_ALLOWED", 400);
+        }
 
-      const targetField = field ?? candidate.field;
+        if (action === "reject") {
+          const updated = await transaction.profileUpdateCandidate.update({
+            where: { id: candidateId },
+            data: { status: "rejected" },
+          });
+          return {
+            id: updated.id,
+            status: updated.status,
+            field: updated.field,
+            newValue: parseJson(updated.newValue, null),
+          };
+        }
 
-      // 2. 白名单校验
-      if (!ALLOWED_CANDIDATE_FIELDS.has(targetField)) {
-        throw new CandidateServiceError("不允许修改该字段", "FIELD_NOT_ALLOWED", 400);
-      }
+        const profile = await transaction.userProfile.findUnique({ where: { userId } });
+        if (!profile) {
+          throw new CandidateServiceError("用户画像不存在", "NOT_FOUND", 404);
+        }
 
-      // 3. reject：只更新状态，不修改画像和证据
-      if (action === "reject") {
-        const updated = await db.profileUpdateCandidate.update({
+        const resolvedValue =
+          action === "edit" && newValue !== undefined ? newValue : candidate.newValue;
+        const parsed = parseJson<unknown>(resolvedValue, undefined);
+        if (parsed === undefined) {
+          throw new CandidateServiceError("候选值不合法", "INVALID_VALUE", 400);
+        }
+
+        if (targetField.startsWith("abilityScores.")) {
+          const abilityKey = targetField.split(".")[1];
+          if (!abilityKeys.includes(abilityKey as (typeof abilityKeys)[number])) {
+            throw new CandidateServiceError(
+              `无效的能力维度: ${abilityKey}`,
+              "INVALID_ABILITY_KEY",
+              400,
+            );
+          }
+          const score = Number(parsed);
+          if (!Number.isFinite(score) || score < 0 || score > 100) {
+            throw new CandidateServiceError(
+              "能力分必须在0到100之间",
+              "INVALID_SCORE",
+              400,
+            );
+          }
+
+          const currentScores = parseJson<AbilityScores>(profile.abilityScores, {
+            aiTooling: 0,
+            roleFoundation: 0,
+            dataAnalysis: 0,
+            businessProduct: 0,
+            communication: 0,
+            projectPractice: 0,
+          });
+          currentScores[abilityKey as keyof AbilityScores] = score;
+          await transaction.userProfile.update({
+            where: { userId },
+            data: { abilityScores: toJson(currentScores) },
+          });
+        } else {
+          const validated = validatedProfileValue(targetField, parsed);
+          const updateData: Record<string, unknown> = {
+            [targetField]: Array.isArray(validated) ? toJson(validated) : validated,
+          };
+          await transaction.userProfile.update({
+            where: { userId },
+            data: updateData,
+          });
+        }
+
+        if (candidate.abilityEvidenceId) {
+          const evidence = await transaction.abilityEvidence.findUnique({
+            where: { id: candidate.abilityEvidenceId },
+          });
+          if (evidence?.status === "pending") {
+            await transaction.abilityEvidence.update({
+              where: { id: candidate.abilityEvidenceId },
+              data: { status: "confirmed" },
+            });
+          }
+        }
+
+        const updated = await transaction.profileUpdateCandidate.update({
           where: { id: candidateId },
-          data: { status: "rejected" },
+          data: {
+            status: "accepted",
+            ...(action === "edit" ? { newValue: resolvedValue } : {}),
+          },
         });
         return {
           id: updated.id,
           status: updated.status,
           field: updated.field,
-          newValue: parseJson(updated.newValue, null),
+          newValue: parseJson(
+            action === "edit" ? resolvedValue : updated.newValue,
+            null,
+          ),
         };
-      }
-
-      // 4. accept 或 edit：需要更新画像
-      const profile = await getProfile(userId);
-      if (!profile) {
-        throw new CandidateServiceError("用户画像不存在", "NOT_FOUND", 404);
-      }
-
-      const resolvedValue =
-        action === "edit" && newValue !== undefined
-          ? newValue
-          : candidate.newValue;
-
-      // 5. 结构化值校验——必须能解析为合法 JSON
-      const parsed = parseJson<unknown>(resolvedValue, undefined);
-      if (parsed === undefined) {
-        throw new CandidateServiceError("候选值不合法", "INVALID_VALUE", 400);
-      }
-
-      // 6. 根据字段类型更新画像
-      if (targetField.startsWith("abilityScores.")) {
-        const abilityKey = targetField.split(".")[1];
-        if (!abilityKeys.includes(abilityKey as (typeof abilityKeys)[number])) {
-          throw new CandidateServiceError(
-            `无效的能力维度: ${abilityKey}`,
-            "INVALID_ABILITY_KEY",
-            400,
-          );
-        }
-        const score = Number(parsed);
-        if (!Number.isFinite(score) || score < 0 || score > 100) {
-          throw new CandidateServiceError(
-            "能力分必须在0到100之间",
-            "INVALID_SCORE",
-            400,
-          );
-        }
-
-        const currentScores = parseJson<AbilityScores>(profile.abilityScores, {
-          aiTooling: 0,
-          roleFoundation: 0,
-          dataAnalysis: 0,
-          businessProduct: 0,
-          communication: 0,
-          projectPractice: 0,
-        });
-        currentScores[abilityKey as keyof AbilityScores] = score;
-
-        await db.userProfile.update({
-          where: { userId },
-          data: { abilityScores: toJson(currentScores) },
-        });
-      } else {
-        // 直接字段更新：字符串直接写入，其他类型 JSON 序列化
-        const updateData: Record<string, unknown> = {};
-        updateData[targetField] =
-          typeof parsed === "string" ? parsed : toJson(parsed);
-        await db.userProfile.update({
-          where: { userId },
-          data: updateData,
-        });
-      }
-
-      // 7. 关联证据变 confirmed
-      if (candidate.abilityEvidenceId) {
-        const evidence = await getEvidence(candidate.abilityEvidenceId);
-        if (evidence && evidence.status === "pending") {
-          await db.abilityEvidence.update({
-            where: { id: candidate.abilityEvidenceId },
-            data: { status: "confirmed" },
-          });
-        }
-      }
-
-      // 8. 更新候选状态
-      const updated = await db.profileUpdateCandidate.update({
-        where: { id: candidateId },
-        data: {
-          status: "accepted",
-          ...(action === "edit" ? { newValue: resolvedValue } : {}),
-        },
       });
-
-      return {
-        id: updated.id,
-        status: updated.status,
-        field: updated.field,
-        newValue: parseJson(
-          action === "edit" ? resolvedValue : updated.newValue,
-          null,
-        ),
-      };
     },
   };
 }

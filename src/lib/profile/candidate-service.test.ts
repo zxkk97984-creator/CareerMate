@@ -70,7 +70,7 @@ function evidenceRow(overrides: Record<string, unknown> = {}) {
 
 /** 创建带有模拟 Prisma 的 CandidateService 实例 */
 function setupService() {
-  const mockPrisma = {
+  const mockPrisma: any = {
     profileUpdateCandidate: {
       findFirst: vi.fn(),
       findUnique: vi.fn(),
@@ -85,6 +85,10 @@ function setupService() {
       update: vi.fn(),
     },
   };
+  mockPrisma.$transaction = vi.fn(
+    async (operation: (transaction: typeof mockPrisma) => Promise<unknown>) =>
+      operation(mockPrisma),
+  );
 
   (getPrisma as any).mockReturnValue(mockPrisma);
   const svc = createCandidateService();
@@ -121,6 +125,20 @@ describe("CandidateService", () => {
   });
 
   describe("accept", () => {
+    it("在一个事务中更新画像、证据和候选状态", async () => {
+      const { svc, mock } = setupService();
+      mock.profileUpdateCandidate.findFirst.mockResolvedValue(candidateRow());
+      mock.userProfile.findUnique.mockResolvedValue(profileRow());
+      mock.abilityEvidence.findUnique.mockResolvedValue(evidenceRow());
+      mock.profileUpdateCandidate.update.mockResolvedValue(
+        candidateRow({ status: "accepted" }),
+      );
+
+      await svc.processCandidate("cand-1", "user-1", "accept");
+
+      expect(mock.$transaction).toHaveBeenCalledTimes(1);
+    });
+
     it("接受候选更新画像直接字段", async () => {
       const { svc, mock } = setupService();
       mock.profileUpdateCandidate.findFirst.mockResolvedValue(
@@ -214,6 +232,18 @@ describe("CandidateService", () => {
 
       expect(result.status).toBe("accepted");
       expect(result.newValue).toBe("UX研究员");
+    });
+
+    it("每周可投入时间拒绝字符串值", async () => {
+      const { svc, mock } = setupService();
+      mock.profileUpdateCandidate.findFirst.mockResolvedValue(
+        candidateRow({ field: "weeklyAvailableHours", newValue: "8" }),
+      );
+      mock.userProfile.findUnique.mockResolvedValue(profileRow());
+
+      await expect(
+        svc.processCandidate("cand-1", "user-1", "edit", undefined, '"8"'),
+      ).rejects.toThrow("每周可投入时间必须是1到168之间的整数");
     });
   });
 

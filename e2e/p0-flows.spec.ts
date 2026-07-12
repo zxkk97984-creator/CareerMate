@@ -42,7 +42,7 @@ test("chat-first persistent conversation continues across page visits", async ({
   await expect(page.locator(".message-assistant")).toHaveCount(2, { timeout: 15000 });
 
   // 新对话不串消息
-  await page.getByRole("button", { name: "新对话" }).click();
+  await page.locator(".new-chat-btn").click();
   await expect(page.locator(".message-wrapper")).toHaveCount(0);
 });
 
@@ -101,7 +101,7 @@ test("chat-first complete flow: persistent chat, plan generation, conversation s
 
   // 1. 验证聊天首页
   await expect(page.getByText("你好，我是 CareerMate")).toBeVisible();
-  await expect(page.getByRole("button", { name: "新对话" })).toBeVisible();
+  await expect(page.locator(".new-chat-btn")).toBeVisible();
 
   // 2. 连续多轮对话
   await page.getByPlaceholder(/Enter 发送/).fill("我想了解数据分析师需要哪些能力？");

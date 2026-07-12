@@ -19,3 +19,31 @@ export function isPluginAuthorized(request: Request) {
   const token = extractBearerToken(request);
   return token === configured;
 }
+
+const allowedPluginScopes = new Set([
+  "profile:read",
+  "profile:candidates",
+  "courses:read",
+  "jobs:read",
+  "progress:write",
+]);
+
+export interface PluginPrincipal {
+  userId: string;
+  scopes: string[];
+}
+
+/**
+ * 将静态插件 Token 绑定到服务端配置的用户与权限。
+ * userId 和 scopes 只从服务端环境读取，绝不接受工具参数覆盖。
+ */
+export function getPluginPrincipal(request: Request): PluginPrincipal | null {
+  if (!isPluginAuthorized(request)) return null;
+  const userId = (process.env.CAREERMATE_PLUGIN_USER_ID ?? "").trim();
+  if (!userId) return null;
+  const scopes = (process.env.CAREERMATE_PLUGIN_SCOPES ?? "")
+    .split(",")
+    .map((scope) => scope.trim())
+    .filter((scope) => allowedPluginScopes.has(scope));
+  return { userId, scopes: [...new Set(scopes)] };
+}

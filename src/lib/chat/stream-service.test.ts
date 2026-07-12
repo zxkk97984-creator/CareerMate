@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   touchConversation: vi.fn(),
   updateConversationTitleFromFirstMessage: vi.fn(),
   streamProgressive: vi.fn(),
+  createArtifactsForChat: vi.fn(),
   onEvent: null as ((event: any) => void) | null,
 }));
 
@@ -40,6 +41,10 @@ vi.mock("@/lib/env", () => ({
       ethicsRules: "ds4",
     },
   }),
+}));
+
+vi.mock("./artifact-service", () => ({
+  createArtifactsForChat: mocks.createArtifactsForChat,
 }));
 
 import { handleStreamRequest } from "./stream-service";
@@ -124,6 +129,7 @@ beforeEach(() => {
     lastMessageAt: "2026-07-12T10:00:00.000Z",
     createdAt: "2026-07-12T09:00:00.000Z",
   });
+  mocks.createArtifactsForChat.mockResolvedValue([]);
 
   // 默认：模拟成功的渐进式流
   mocks.streamProgressive.mockImplementation(
@@ -279,5 +285,35 @@ describe("handleStreamRequest", () => {
     expect(contextBlock).toContain("roleCompetency");
     expect(contextBlock).toContain("role-data-analyst");
     expect(contextBlock).toContain("usedProfile");
+  });
+
+  it("把结构化 artifact 持久化并在 done 前发送给浏览器", async () => {
+    mocks.createArtifactsForChat.mockResolvedValueOnce([
+      { type: "profile_candidate_ref", candidateId: "candidate-1" },
+    ]);
+    const service = createMockService();
+    const response = await handleStreamRequest(
+      { userId: "user-1", conversationId: "conv-1", message: "我每周投入8小时" },
+      service as any,
+    );
+
+    const blocks = await readSseBody(response);
+
+    expect(mocks.createArtifactsForChat).toHaveBeenCalledWith({
+      userId: "user-1",
+      conversationId: "conv-1",
+      message: "我每周投入8小时",
+    });
+    expect(blocks.findIndex((block) => block.startsWith("event: artifact"))).toBeGreaterThan(-1);
+    expect(blocks.findIndex((block) => block.startsWith("event: artifact")))
+      .toBeLessThan(blocks.findIndex((block) => block.startsWith("event: done")));
+    expect(mocks.updateMessage).toHaveBeenCalledWith(
+      "msg-asst-1",
+      expect.objectContaining({
+        parts: JSON.stringify([
+          { type: "profile_candidate_ref", candidateId: "candidate-1" },
+        ]),
+      }),
+    );
   });
 });

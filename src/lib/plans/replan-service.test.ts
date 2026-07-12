@@ -57,7 +57,7 @@ function unifiedPlan(overrides: {
 }
 
 function setupService() {
-  const mockPrisma = {
+  const mockPrisma: any = {
     careerPlan: {
       findFirst: vi.fn(),
       findMany: vi.fn(),
@@ -66,6 +66,10 @@ function setupService() {
       updateMany: vi.fn(),
     },
   };
+  mockPrisma.$transaction = vi.fn(
+    async (operation: (transaction: typeof mockPrisma) => Promise<unknown>) =>
+      operation(mockPrisma),
+  );
   (getPrisma as any).mockReturnValue(mockPrisma);
   const svc = createReplanService();
   return { svc, mock: mockPrisma };
@@ -119,6 +123,21 @@ describe("ReplanService", () => {
   });
 
   describe("acceptReplan", () => {
+    it("在同一事务中归档旧计划并激活新计划", async () => {
+      const { svc, mock } = setupService();
+      const oldPlan = planRow({ id: "plan-old", version: 2, status: "active" });
+      const pending = planRow({ id: "plan-new", version: 3, status: "pending" });
+      mock.careerPlan.findFirst.mockResolvedValueOnce(pending);
+      mock.careerPlan.findMany.mockResolvedValue([oldPlan]);
+      mock.careerPlan.update.mockResolvedValue(
+        planRow({ ...pending, status: "active", version: 3 }),
+      );
+
+      await svc.acceptReplan("plan-new", "user-1");
+
+      expect(mock.$transaction).toHaveBeenCalledTimes(1);
+    });
+
     it("用户确认后归档旧计划并激活新版本", async () => {
       const { svc, mock } = setupService();
       const oldPlan = planRow({ id: "plan-old", version: 2, status: "active" });
@@ -177,19 +196,23 @@ describe("ReplanService", () => {
       ).rejects.toThrow("重规划候选不存在");
     });
 
-    it("版本号正确递增", async () => {
+    it("保留生成候选时已分配的版本号", async () => {
       const { svc, mock } = setupService();
       mock.careerPlan.findFirst.mockResolvedValueOnce(
         planRow({ id: "plan-new", version: 5, status: "pending" })
       );
       mock.careerPlan.findMany.mockResolvedValue([]);
       mock.careerPlan.update.mockResolvedValue(
-        planRow({ id: "plan-new", status: "active", version: 6 })
+        planRow({ id: "plan-new", status: "active", version: 5 })
       );
 
       const result = await svc.acceptReplan("plan-new", "user-1");
 
-      expect(result.new.version).toBe(6);
+      expect(result.new.version).toBe(5);
+      expect(mock.careerPlan.update).toHaveBeenLastCalledWith({
+        where: { id: "plan-new" },
+        data: { status: "active", version: 5 },
+      });
     });
   });
 

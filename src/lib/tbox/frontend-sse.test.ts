@@ -24,6 +24,41 @@ describe("frontend SSE parsing", () => {
 });
 
 describe("frontend SSE response consumption", () => {
+  it("consumes the persisted chat protocol when SSE fields are split across chunks", async () => {
+    const encoder = new TextEncoder();
+    const deltas: string[] = [];
+    const response = new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoder.encode('event: context\n'));
+          controller.enqueue(
+            encoder.encode(
+              'data: {"conversationId":"local-1","userMessageId":"u1","assistantMessageId":"a1","intent":null,"usedProfile":false,"usedPlan":false,"usedMemoryCount":0,"knowledgeSources":[]}\n\n',
+            ),
+          );
+          controller.enqueue(encoder.encode('event: delta\nda'));
+          controller.enqueue(encoder.encode('ta: {"messageId":"a1","text":"你'));
+          controller.enqueue(encoder.encode('好"}\n\n'));
+          controller.enqueue(
+            encoder.encode(
+              'event: done\ndata: {"messageId":"a1","remoteConversationId":"remote-1","status":"completed","meta":{"requestedMode":"mock","actualMode":"mock","degraded":false,"fallbackReason":null,"source":"local-mock"}}\n\n',
+            ),
+          );
+          controller.close();
+        },
+      }),
+      { status: 200, headers: { "Content-Type": "text/event-stream" } },
+    );
+
+    const result = await consumeFrontendSseResponse(response, {
+      onDelta: (content) => deltas.push(content),
+    });
+
+    expect(deltas).toEqual(["你好"]);
+    expect(result.conversationId).toBe("remote-1");
+    expect(result.meta?.actualMode).toBe("mock");
+  });
+
   it("rejects non-SSE HTTP errors", async () => {
     await expect(
       consumeFrontendSseResponse(

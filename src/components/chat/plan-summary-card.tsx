@@ -62,7 +62,7 @@ export function PlanSummaryCard({
     }
   }
 
-  const isPending = plan.status === "pending" && diff && !confirmed;
+  const isPending = plan.status === "pending" && !confirmed;
 
   return (
     <div
@@ -107,7 +107,7 @@ export function PlanSummaryCard({
       )}
 
       {/* 重规划差异 */}
-      {isPending && (
+      {isPending && diff && (
         <div className="text-xs bg-white rounded-lg p-2 mb-3 space-y-1">
           {diff.directionChange && diff.directionSummary && (
             <p className="text-blue-700">🔄 {diff.directionSummary}</p>

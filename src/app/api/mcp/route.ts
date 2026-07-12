@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { createToolRegistry, McpError } from "@/lib/tools/registry";
-import { isPluginAuthorized } from "@/lib/plugin-auth";
+import { McpError } from "@/lib/tools/registry";
+import { createCareerMateToolRegistry } from "@/lib/tools/careermate-registry";
+import { getPluginPrincipal, isPluginAuthorized } from "@/lib/plugin-auth";
 
 // ── JSON-RPC 请求 schema ─────────────────────────────────
 
@@ -27,10 +28,7 @@ async function handleRequest(request: Request) {
   }
 
   const { id, method, params } = parsed.data;
-  const registry = createToolRegistry();
-
-  // 注册内置工具
-  // （实际工具在运行时由各服务注入）
+  const registry = createCareerMateToolRegistry();
 
   try {
     switch (method) {
@@ -54,11 +52,15 @@ async function handleRequest(request: Request) {
           return jsonRpcError(id, -32602, "缺少工具名称");
         }
 
-        // 校验用户身份——MCP 调用应使用 token 绑定的用户
+        const principal = getPluginPrincipal(request);
+        if (!principal) {
+          return jsonRpcError(id, -32003, "插件 Token 尚未绑定用户或权限");
+        }
+
         const ctx = {
-          userId: "token-bound-user", // 由 plugin-auth 提供
+          userId: principal.userId,
           sessionId: crypto.randomUUID(),
-          scopes: ["profile:read", "profile:candidates", "courses:read", "jobs:read", "progress:write"],
+          scopes: principal.scopes,
         };
 
         const result = await registry.call(

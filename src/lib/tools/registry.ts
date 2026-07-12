@@ -12,6 +12,7 @@ export interface ToolDefinition {
   name: string;
   description: string;
   inputSchema: z.ZodType;
+  inputJsonSchema: Record<string, unknown>;
   requiredScopes: string[];
   handler: (input: unknown, ctx: ToolContext) => Promise<unknown>;
 }
@@ -56,9 +57,7 @@ export function createToolRegistry(): ToolRegistry {
       return Array.from(tools.values()).map((t) => ({
         name: t.name,
         description: t.description,
-        inputSchema: t.inputSchema
-          ? (t.inputSchema as unknown as { _def?: unknown; shape?: Record<string, unknown> } as any)
-          : {},
+        inputSchema: t.inputJsonSchema,
       }));
     },
 

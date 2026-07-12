@@ -39,7 +39,7 @@ interface ProfileCandidateCardProps {
   onAction: (
     candidateId: string,
     action: "accept" | "edit" | "reject",
-    newValue?: string,
+    newValue?: unknown,
   ) => Promise<void>;
 }
 
@@ -50,7 +50,15 @@ export function ProfileCandidateCard({
   onAction,
 }: ProfileCandidateCardProps) {
   const [status, setStatus] = useState(candidate.status);
+  const [displayValue, setDisplayValue] = useState(candidate.newValue);
   const [loading, setLoading] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState(
+    Array.isArray(candidate.newValue)
+      ? candidate.newValue.join("、")
+      : String(candidate.newValue ?? ""),
+  );
+  const [editError, setEditError] = useState("");
 
   const fieldName = fieldLabels[candidate.field] ?? candidate.field;
 
@@ -64,15 +72,36 @@ export function ProfileCandidateCard({
 
   async function handleAction(
     action: "accept" | "edit" | "reject",
-    newValue?: string,
+    newValue?: unknown,
   ) {
     setLoading(true);
     try {
       await onAction(candidate.id, action, newValue);
+      if (action === "edit" && newValue !== undefined) setDisplayValue(newValue);
       setStatus(action === "reject" ? "rejected" : "accepted");
     } finally {
       setLoading(false);
     }
+  }
+
+  function submitEdit() {
+    const trimmed = editValue.trim();
+    if (!trimmed) {
+      setEditError("请输入修改后的值");
+      return;
+    }
+    let value: unknown = trimmed;
+    if (typeof candidate.newValue === "number") {
+      value = Number(trimmed);
+      if (!Number.isFinite(value)) {
+        setEditError("请输入有效数字");
+        return;
+      }
+    } else if (Array.isArray(candidate.newValue)) {
+      value = trimmed.split(/[、,，\n]/).map((item) => item.trim()).filter(Boolean);
+    }
+    setEditError("");
+    void handleAction("edit", value);
   }
 
   // 已处理状态：简洁展示
@@ -84,7 +113,8 @@ export function ProfileCandidateCard({
             ? "bg-green-50 border border-green-200"
             : "bg-gray-50 border border-gray-200"
         }`}
-        role="status"
+        role="region"
+        aria-label={`${fieldName}候选更新`}
       >
         <div className="flex items-center gap-2">
           <span className="font-medium text-gray-800">{fieldName}</span>
@@ -92,7 +122,7 @@ export function ProfileCandidateCard({
             {status === "accepted" ? "✅ 已确认" : "❌ 已忽略"}
           </span>
         </div>
-        <span className="text-xs text-gray-500">{formatValue(candidate.newValue)}</span>
+        <span className="text-xs text-gray-500">{formatValue(displayValue)}</span>
       </div>
     );
   }
@@ -139,6 +169,17 @@ export function ProfileCandidateCard({
       )}
 
       {/* 操作按钮 */}
+      {editing && (
+        <div className="mb-3">
+          <input
+            value={editValue}
+            onChange={(event) => setEditValue(event.target.value)}
+            className="w-full rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs text-gray-800 outline-none focus:border-blue-500"
+            aria-label={`修改${fieldName}`}
+          />
+          {editError && <p className="mt-1 text-xs text-red-600">{editError}</p>}
+        </div>
+      )}
       <div className="flex gap-2" role="group" aria-label="候选操作">
         <button
           onClick={() => handleAction("accept")}
@@ -147,13 +188,32 @@ export function ProfileCandidateCard({
         >
           确认
         </button>
-        <button
-          onClick={() => handleAction("edit")}
-          disabled={loading}
-          className="px-3 py-1.5 text-xs rounded-lg bg-blue-100 text-blue-700 hover:bg-blue-200 disabled:opacity-50 transition-colors"
-        >
-          修改
-        </button>
+        {editing ? (
+          <>
+            <button
+              onClick={submitEdit}
+              disabled={loading}
+              className="px-3 py-1.5 text-xs rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            >
+              确认修改
+            </button>
+            <button
+              onClick={() => setEditing(false)}
+              disabled={loading}
+              className="px-3 py-1.5 text-xs rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 disabled:opacity-50 transition-colors"
+            >
+              取消
+            </button>
+          </>
+        ) : (
+          <button
+            onClick={() => setEditing(true)}
+            disabled={loading}
+            className="px-3 py-1.5 text-xs rounded-lg bg-blue-100 text-blue-700 hover:bg-blue-200 disabled:opacity-50 transition-colors"
+          >
+            修改
+          </button>
+        )}
         <button
           onClick={() => handleAction("reject")}
           disabled={loading}

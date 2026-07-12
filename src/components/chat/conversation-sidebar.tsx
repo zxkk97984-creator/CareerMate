@@ -71,7 +71,7 @@ export function ConversationSidebar({
       </div>
 
       {/* 新对话按钮 */}
-      <button className="new-chat-btn" onClick={onNew}>
+      <button className="new-chat-btn" onClick={() => onNew()}>
         <MessageSquarePlus size={18} />
         <span>新对话</span>
       </button>
