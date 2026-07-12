@@ -9,14 +9,11 @@ import {
   Check,
   X,
   MessageSquareText,
-  LayoutDashboard,
-  Route,
-  BrainCircuit,
-  Database,
-  ShieldCheck,
   LogOut,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { mainNavItems } from "@/components/shell/nav-items";
 
 interface ConversationSidebarProps {
   conversations: ConversationItem[];
@@ -46,6 +43,13 @@ export function ConversationSidebar({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const router = useRouter();
+
+  /** POST 退出登录 */
+  const handleLogout = async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.push("/login");
+  };
 
   const startRename = useCallback((conv: ConversationItem) => {
     setEditingId(conv.id);
@@ -142,36 +146,27 @@ export function ConversationSidebar({
 
       {/* 底部导航入口 */}
       <div className="sidebar-footer">
-        <Link href="/dashboard" className="footer-link" onClick={onClose}>
-          <LayoutDashboard size={16} />
-          <span>成长概览</span>
-        </Link>
-        <Link href="/path" className="footer-link" onClick={onClose}>
-          <Route size={16} />
-          <span>职业路径</span>
-        </Link>
-        <Link href="/simulation" className="footer-link" onClick={onClose}>
-          <BrainCircuit size={16} />
-          <span>模拟训练</span>
-        </Link>
-        <Link href="/resources" className="footer-link" onClick={onClose}>
-          <Database size={16} />
-          <span>资源中心</span>
-        </Link>
-        <Link href="/memory" className="footer-link" onClick={onClose}>
-          <ShieldCheck size={16} />
-          <span>
-            记忆权限
-            {pendingCandidateCount > 0 && (
-              <span className="footer-badge">{pendingCandidateCount}</span>
-            )}
-          </span>
-        </Link>
+        {mainNavItems.map((item) => (
+          <Link key={item.href} href={item.href} className="footer-link" onClick={onClose}>
+            <item.icon size={16} />
+            <span>
+              {item.label}
+              {item.href === "/memory" && pendingCandidateCount > 0 && (
+                <span className="footer-badge">{pendingCandidateCount}</span>
+              )}
+            </span>
+          </Link>
+        ))}
         <div className="sidebar-user">
           <span className="user-name">{displayName}</span>
-          <a href="/api/auth/logout" className="logout-link" title="退出登录">
+          <button
+            type="button"
+            className="logout-link"
+            onClick={handleLogout}
+            title="退出登录"
+          >
             <LogOut size={14} />
-          </a>
+          </button>
         </div>
       </div>
     </aside>

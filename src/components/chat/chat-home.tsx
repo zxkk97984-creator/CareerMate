@@ -255,7 +255,7 @@ export function ChatHomePage({ displayName }: ChatHomePageProps) {
   }, []);
 
   return (
-    <div className="chat-home-layout">
+    <div className="chat-home-layout" data-testid="app-shell">
       {/* 移动端遮罩 */}
       {sidebarOpen && (
         <div

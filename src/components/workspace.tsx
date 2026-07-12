@@ -168,7 +168,7 @@ function CareerMateCompanion({ status, runtime }: { status: string; runtime: AiR
   );
 }
 
-export function Workspace({ initialView }: { initialView: View }) {
+export function Workspace({ initialView, isAdmin = false }: { initialView: View; isAdmin?: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
   const [view] = useState<View>(initialView);
@@ -230,7 +230,7 @@ export function Workspace({ initialView }: { initialView: View }) {
       api<{ items: any[] }>("/api/memories"),
       api<{ items: any[] }>("/api/profile/candidates"),
       api<{ items: any[] }>("/api/simulations"),
-      me.data.user?.role === "admin" ? api<{ drafts: any[]; templates: any[] }>("/api/admin/role-drafts") : Promise.resolve({ ok: true, data: { drafts: [], templates: [] } }),
+      isAdmin ? api<{ drafts: any[]; templates: any[] }>("/api/admin/role-drafts") : Promise.resolve({ ok: true, data: { drafts: [], templates: [] } }),
     ]);
     setData({
       user: me.data.user,
@@ -290,7 +290,7 @@ export function Workspace({ initialView }: { initialView: View }) {
             {navItems.map((item) => {
               const Icon = item.icon;
               const active = activeView === item.view;
-              if (item.view === "admin" && data.user?.role !== "admin") return null;
+              if (item.view === "admin" && !isAdmin) return null;
               return (
                 <Link
                   key={item.href}
