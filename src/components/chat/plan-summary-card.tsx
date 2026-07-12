@@ -39,6 +39,7 @@ export function PlanSummaryCard({
 }: PlanSummaryCardProps) {
   const [loading, setLoading] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
+  const [error, setError] = useState("");
 
   // 提取当前月目标
   const currentMonth = (plan.months as Array<Record<string, unknown>>)?.[
@@ -54,9 +55,12 @@ export function PlanSummaryCard({
   async function handleAccept() {
     if (!onAcceptReplan) return;
     setLoading(true);
+    setError("");
     try {
       await onAcceptReplan(plan.id);
       setConfirmed(true);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "计划确认失败，请稍后重试");
     } finally {
       setLoading(false);
     }
@@ -145,6 +149,7 @@ export function PlanSummaryCard({
           </button>
         )}
       </div>
+      {error ? <p className="mt-2 text-xs text-red-600" role="alert">{error}</p> : null}
     </div>
   );
 }

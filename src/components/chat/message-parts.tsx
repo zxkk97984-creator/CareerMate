@@ -8,6 +8,7 @@ import { PlanSummaryCard } from "./plan-summary-card";
 import { ExplorationReportCard } from "./exploration-report-card";
 import type { CareerPlanDto } from "@/lib/types";
 import type { ExplorationReport } from "@/lib/careers/exploration-schema";
+import { requireApiOk } from "@/lib/client-api";
 
 interface MessagePartsProps {
   parts: ChatMessagePart[];
@@ -82,7 +83,7 @@ function ProfileCandidateRef({ candidateId }: { candidateId: string }) {
         impactSummary: candidate.impactSummary as string,
       }}
       onAction={async (id, action, newValue) => {
-        await fetch("/api/profile/candidates", {
+        const response = await fetch("/api/profile/candidates", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -91,28 +92,17 @@ function ProfileCandidateRef({ candidateId }: { candidateId: string }) {
             ...(newValue !== undefined ? { newValue } : {}),
           }),
         });
+        await requireApiOk(response);
       }}
     />
   );
 }
 
 function PlanRef({ planId, version }: { planId: string; version: number }) {
-  // 后台异步生成的占位符——显示加载中状态而非请求API
-  if (planId === "__generating__") {
-    return (
-      <div className="parts-card parts-card-plan parts-card-generating">
-        <Map size={16} />
-        <span>学习计划正在生成中…</span>
-        <span className="parts-card-hint">
-          预计30秒内完成，届时可在「<a href="/path" className="inline-link">职业路径</a>」页面查看。
-        </span>
-      </div>
-    );
-  }
-
   const [plan, setPlan] = useState<CareerPlanDto | null>(null);
 
   useEffect(() => {
+    if (planId === "__generating__") return;
     fetch(`/api/plans/${encodeURIComponent(planId)}`)
       .then((response) => response.json())
       .then((body) => {
@@ -120,6 +110,19 @@ function PlanRef({ planId, version }: { planId: string; version: number }) {
       })
       .catch(() => {});
   }, [planId]);
+
+  // 兼容已持久化的旧占位符；新消息不应继续写入该值。
+  if (planId === "__generating__") {
+    return (
+      <div className="parts-card parts-card-plan">
+        <Map size={16} />
+        <span>旧版计划生成任务无法恢复</span>
+        <span className="parts-card-hint">
+          请重新发起计划生成，或前往「<a href="/path" className="inline-link">职业路径</a>」查看已有计划。
+        </span>
+      </div>
+    );
+  }
 
   if (plan) {
     return (
@@ -132,7 +135,7 @@ function PlanRef({ planId, version }: { planId: string; version: number }) {
           const response = await fetch(`/api/plans/${encodeURIComponent(id)}/accept-replan`, {
             method: "POST",
           });
-          if (!response.ok) throw new Error("计划确认失败");
+          await requireApiOk(response);
           setPlan((current) => current ? { ...current, status: "active" } : current);
         }}
         onViewPlan={() => { window.location.href = "/path"; }}
@@ -176,7 +179,7 @@ function ExplorationReportRef({ reportId }: { reportId: string }) {
             `/api/careers/explorations/${encodeURIComponent(id)}/submit`,
             { method: "POST" },
           );
-          if (!response.ok) throw new Error("报告提交失败");
+          await requireApiOk(response);
           setData((current) => current
             ? { ...current, report: { ...current.report, status: "submitted" } }
             : current);

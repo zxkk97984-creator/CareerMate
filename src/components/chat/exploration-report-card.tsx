@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { FileText, CheckCircle } from "lucide-react";
 import type { ExplorationSource } from "@/lib/careers/exploration-schema";
 
@@ -25,6 +26,21 @@ export function ExplorationReportCard({
   onSubmit,
 }: ExplorationReportCardProps) {
   const isSubmitted = report.status === "submitted";
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit() {
+    if (!onSubmit || submitting) return;
+    setSubmitting(true);
+    setError("");
+    try {
+      await onSubmit(report.id);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "报告提交失败，请稍后重试");
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <div
@@ -83,10 +99,11 @@ export function ExplorationReportCard({
       {/* 提交审核按钮 */}
       {!isSubmitted && onSubmit && (
         <button
-          onClick={() => onSubmit(report.id)}
+          onClick={submit}
+          disabled={submitting}
           className="px-3 py-1.5 text-xs rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
         >
-          提交到共享职业库
+          {submitting ? "提交中..." : "提交到共享职业库"}
         </button>
       )}
       {isSubmitted && (
@@ -94,6 +111,7 @@ export function ExplorationReportCard({
           <CheckCircle size={12} /> 已提交审核
         </span>
       )}
+      {error ? <p className="mt-2 text-xs text-red-600" role="alert">{error}</p> : null}
     </div>
   );
 }

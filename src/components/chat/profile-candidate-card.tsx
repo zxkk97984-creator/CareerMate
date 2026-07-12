@@ -59,6 +59,7 @@ export function ProfileCandidateCard({
       : String(candidate.newValue ?? ""),
   );
   const [editError, setEditError] = useState("");
+  const [actionError, setActionError] = useState("");
 
   const fieldName = fieldLabels[candidate.field] ?? candidate.field;
 
@@ -75,10 +76,13 @@ export function ProfileCandidateCard({
     newValue?: unknown,
   ) {
     setLoading(true);
+    setActionError("");
     try {
       await onAction(candidate.id, action, newValue);
       if (action === "edit" && newValue !== undefined) setDisplayValue(newValue);
       setStatus(action === "reject" ? "rejected" : "accepted");
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "操作失败，请稍后重试");
     } finally {
       setLoading(false);
     }
@@ -222,6 +226,7 @@ export function ProfileCandidateCard({
           忽略
         </button>
       </div>
+      {actionError ? <p className="mt-2 text-xs text-red-600" role="alert">{actionError}</p> : null}
     </div>
   );
 }
