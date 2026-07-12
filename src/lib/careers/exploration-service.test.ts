@@ -114,7 +114,12 @@ describe("ExplorationService", () => {
           learningSuggestions: ["建议1"],
           fitAnalysis: ["这与你的背景匹配"], // 未标注AI推断
           risksAndUncertainties: ["风险1"],
-          sources: [],
+          sources: [{
+            title: "AI分析说明",
+            organization: "CareerMate",
+            accessedAt: "2026-07-12",
+            label: "AI分析与推断",
+          }],
         },
       });
 
