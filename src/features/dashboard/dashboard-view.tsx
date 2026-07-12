@@ -1,6 +1,7 @@
 "use client";
 
 /** 成长概览 —— 指标卡、能力雷达、本月任务、近期记录 */
+import { useState } from "react";
 import { PolarAngleAxis, PolarGrid, Radar, RadarChart, ResponsiveContainer } from "recharts";
 import { abilityKeys, abilityLabels, type PlanMonth } from "@/lib/types";
 import type { WorkspaceData } from "@/lib/workspace-types";
@@ -32,8 +33,26 @@ interface DashboardViewProps { data: WorkspaceData; refresh: () => Promise<void>
 export function DashboardView({ data, refresh, setNotice }: DashboardViewProps) {
   const radar = abilityKeys.map((k) => ({ ability: abilityLabels[k], score: data.profile?.abilityScores[k] ?? 0 }));
   const currentMonth = (data.plan?.months?.[Math.max((data.plan?.currentMonthIndex ?? 1) - 1, 0)] ?? null) as PlanMonth | null;
+  const [generating, setGenerating] = useState(false);
 
-  async function generatePlan() { setNotice("正在生成 3 年路径..."); await fetchApi("/api/plans/generate", { method: "POST" }); setNotice("3 年路径已生成，当前月任务已刷新。"); await refresh(); }
+  async function generatePlan() {
+    if (generating) return;
+    setGenerating(true);
+    setNotice("正在生成 3 年路径...");
+    try {
+      const r = await fetchApi("/api/plans/generate", { method: "POST" });
+      if (!r.ok) {
+        setNotice(r.error?.message ?? "路径生成失败，请稍后重试。");
+        return;
+      }
+      setNotice("3 年路径已生成，当前月任务已刷新。");
+      await refresh();
+    } catch {
+      setNotice("网络异常，路径生成失败，请检查网络后重试。");
+    } finally {
+      setGenerating(false);
+    }
+  }
 
   return (<>
     <div style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(3, 1fr)" }} className="max-md:grid-cols-1">
@@ -42,7 +61,7 @@ export function DashboardView({ data, refresh, setNotice }: DashboardViewProps) 
       <Metric title="待确认画像" value={`${data.candidates.filter((c: any) => c.status === "pending").length} 条`} tone="warning" />
     </div>
     <div style={{ display: "grid", gap: 20, gridTemplateColumns: "420px 1fr" }} className="max-lg:grid-cols-1">
-      <SurfaceCard title="能力雷达图" action={<Button variant="secondary" onClick={generatePlan}>重生成路径</Button>}>
+      <SurfaceCard title="能力雷达图" action={<Button variant="secondary" disabled={generating} onClick={generatePlan}>{generating ? "生成中..." : "重生成路径"}</Button>}>
         <div style={{ height: 320 }}><ResponsiveContainer width="100%" height="100%"><RadarChart data={radar}><PolarGrid /><PolarAngleAxis dataKey="ability" tick={{ fontSize: 12 }} /><Radar dataKey="score" stroke="var(--cm-brand)" fill="var(--cm-brand)" fillOpacity={0.22} /></RadarChart></ResponsiveContainer></div>
       </SurfaceCard>
       <SurfaceCard title="当前月重点">
