@@ -6,6 +6,7 @@ import type {
   AiResult,
   ChatInput,
   Clock,
+  NormalizedAiEvent,
   NormalizedStreamEvent,
   TboxConfig,
 } from "./types";
@@ -44,6 +45,26 @@ function localEvents(chunks: string[], conversationId?: string): NormalizedStrea
 
 function throwIfAborted(signal?: AbortSignal) {
   if (signal?.aborted) throw new TboxError("aborted");
+}
+
+/** 将 NormalizedAiEvent 转换为 NormalizedStreamEvent（Task 4 临时桥接，Task 5 将移除） */
+async function* bridgeToStreamEvents(
+  events: AsyncGenerator<NormalizedAiEvent>,
+): AsyncGenerator<NormalizedStreamEvent> {
+  let conversationId: string | null = null;
+  for await (const event of events) {
+    if (event.type === "conversation") conversationId = event.conversationId;
+    if (event.type === "text_delta") {
+      yield { event: "message", data: { type: "delta", content: event.text } };
+    }
+    if (event.type === "error") {
+      yield { event: "error", data: { type: "error", message: event.message } };
+    }
+    if (event.type === "done") {
+      yield { event: "done", data: { conversationId } };
+    }
+    // text_final, tool_start, tool_end, structured_result, citation, warning 在当前接口中暂不产出
+  }
 }
 
 async function manualEvents(input: ChatInput, deps: StreamDependencies) {
@@ -86,7 +107,7 @@ export async function streamChatWithTbox(
     const events = await consumeChatResponse(input, true, deps, async (response, onActivity) => {
       if (!response.body) throw new TboxError("sse_error");
       const normalized: NormalizedStreamEvent[] = [];
-      for await (const event of parseUpstreamSse(response.body, { onActivity })) {
+      for await (const event of bridgeToStreamEvents(parseUpstreamSse(response.body, { onActivity }))) {
         if (event.event === "error") throw new TboxError("sse_error");
         normalized.push(event);
       }
@@ -163,7 +184,7 @@ export async function streamChatWithTboxProgressive(
       if (!response.body) throw new TboxError("sse_error");
       let hasDone = false;
       const apiMetaObj = meta(requested, "api", null, "tbox-api");
-      for await (const event of parseUpstreamSse(response.body, { onActivity })) {
+      for await (const event of bridgeToStreamEvents(parseUpstreamSse(response.body, { onActivity }))) {
         if (event.event === "error") throw new TboxError("sse_error");
         if (event.event === "done") hasDone = true;
         // 立即回调，不收集到数组
