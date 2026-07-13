@@ -65,6 +65,30 @@ export type NormalizedStreamEvent =
   | { event: "done"; data: { conversationId: string | null; meta?: AiExecutionMeta } }
   | { event: "error"; data: { type: "error"; message: string; meta?: AiExecutionMeta } };
 
+// ── 统一内部事件与结果类型 ─────────────────────────────
+
+/** SSE 归一化后的内部事件（替代 NormalizedStreamEvent 用于内部处理） */
+export type NormalizedAiEvent =
+  | { type: "conversation"; conversationId: string }
+  | { type: "text_delta"; text: string }
+  | { type: "text_final"; text: string }
+  | { type: "tool_start"; name?: string }
+  | { type: "tool_end"; name?: string; payload?: unknown }
+  | { type: "structured_result"; payload: unknown }
+  | { type: "citation"; payload: unknown }
+  | { type: "warning"; code: string }
+  | { type: "error"; code: string; message: string }
+  | { type: "done" };
+
+/** 累积后的最终助手结果 */
+export interface NormalizedAssistantResult {
+  text: string;
+  structured?: unknown;
+  citations: unknown[];
+  conversationId?: string;
+  warnings: string[];
+}
+
 // ── 工作流与知识库配置类型 ─────────────────────────────
 
 export type WorkflowType =
