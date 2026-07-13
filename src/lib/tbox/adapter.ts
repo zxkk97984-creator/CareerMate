@@ -7,7 +7,7 @@ import type {
   AiResult,
   ChatInput,
   Clock,
-  NormalizedChat,
+  NormalizedAssistantResult,
   TboxConfig,
 } from "./types";
 
@@ -33,8 +33,8 @@ function meta(
   };
 }
 
-function mockChat(input: ChatInput): NormalizedChat {
-  return { conversationId: input.conversationId ?? null, answer: createMockChatChunks(input.question).join("\n") };
+function mockChat(input: ChatInput): NormalizedAssistantResult {
+  return { text: createMockChatChunks(input.question).join("\n"), conversationId: input.conversationId, citations: [], warnings: [] };
 }
 
 async function manualChat(input: ChatInput, deps: AdapterDependencies) {
@@ -43,7 +43,7 @@ async function manualChat(input: ChatInput, deps: AdapterDependencies) {
       ? await deps.manualChat(input)
       : createManualChatAnswer(input.question);
     return answer?.trim()
-      ? { conversationId: input.conversationId ?? null, answer: answer.trim() }
+      ? { text: answer.trim(), conversationId: input.conversationId, citations: [], warnings: [] }
       : null;
   } catch {
     return null;
@@ -53,7 +53,7 @@ async function manualChat(input: ChatInput, deps: AdapterDependencies) {
 export async function chatWithTbox(
   input: ChatInput,
   deps: AdapterDependencies,
-): Promise<AiResult<NormalizedChat>> {
+): Promise<AiResult<NormalizedAssistantResult>> {
   const requested = deps.config.mode;
   if (requested === "mock") {
     return { data: mockChat(input), meta: meta(requested, "mock", null, "local-mock") };
@@ -164,13 +164,13 @@ export async function generateStructuredWithTbox<T>(
 
   let reason: TboxFailureReason;
   try {
-    const chat = normalizeNonStreamChatResponse(
+    const normalized = normalizeNonStreamChatResponse(
       await requestChatJson(
         { question: options.prompt, userId: options.userId },
         options,
       ),
     );
-    const data = validate(options.schema, extractJson(chat.answer), "validation_error");
+    const data = validate(options.schema, extractJson(normalized.text), "validation_error");
     return { data, meta: meta(requested, "api", null, "tbox-api") };
   } catch (error) {
     reason = failureReason(error);

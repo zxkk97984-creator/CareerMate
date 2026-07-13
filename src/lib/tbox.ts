@@ -7,12 +7,12 @@ export {
   retrieveWithTbox,
 } from "@/lib/tbox/retrieval";
 export { careerPlanSchema, chatInputSchema } from "@/lib/tbox/schemas";
-export { streamChatWithTbox } from "@/lib/tbox/streaming";
+export { streamChatWithTbox, streamChatWithTboxProgressive } from "@/lib/tbox/streaming";
 export type {
   AiResult,
   ChatInput,
   DatasetKey,
-  NormalizedChat,
+  NormalizedAssistantResult,
   NormalizedStreamEvent,
   RetrievalItem,
   TboxConfig,

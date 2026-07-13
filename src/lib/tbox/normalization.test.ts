@@ -9,20 +9,12 @@ describe("non-stream chat normalization", () => {
         result: {
           conversation_id: "conversation-live",
           messages: [
-            {
-              type: "answer",
-              content_type: "text",
-              content: "真实百宝箱回答",
-            },
-            {
-              type: "follow_up",
-              content_type: "text",
-              content: "下一步想了解什么？",
-            },
+            { type: "answer", content_type: "text", content: "真实百宝箱回答" },
+            { type: "follow_up", content_type: "text", content: "下一步想了解什么？" },
           ],
         },
       }),
-    ).toEqual({ conversationId: "conversation-live", answer: "真实百宝箱回答" });
+    ).toEqual({ text: "真实百宝箱回答", conversationId: "conversation-live", citations: [], warnings: [] });
   });
 
   it.each([
@@ -41,6 +33,6 @@ describe("non-stream chat normalization", () => {
           ],
         },
       }),
-    ).toEqual({ conversationId: "conversation-1", answer: "第一段\n第二段" });
+    ).toEqual({ text: "第一段\n第二段", conversationId: "conversation-1", citations: [], warnings: [] });
   });
 });

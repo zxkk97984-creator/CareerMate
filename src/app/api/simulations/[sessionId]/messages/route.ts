@@ -29,8 +29,8 @@ export async function POST(request: Request, context: { params: Promise<{ sessio
     history: transcript,
   }, { config });
   const nextTurn = session.turnCount + 1;
-  const assistantMessage = result.meta.actualMode === "api" && result.data.answer.trim()
-    ? result.data.answer.trim()
+  const assistantMessage = result.meta.actualMode === "api" && result.data.text.trim()
+    ? result.data.text.trim()
     : nextSimulationPrompt(scenarioKey.data, nextTurn);
   const updatedTranscript = [...transcript,
     { role: "user" as const, content: parsed.data.message },

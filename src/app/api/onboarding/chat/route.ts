@@ -88,8 +88,8 @@ export async function POST(request: Request) {
   );
   const executionMeta = result.meta;
   let assistantMessage = deterministicQuestion;
-  if (result.meta.actualMode === "api" && result.data.answer.trim()) {
-    assistantMessage = result.data.answer.trim();
+  if (result.meta.actualMode === "api" && result.data.text.trim()) {
+    assistantMessage = result.data.text.trim();
   }
 
   transcript.push(

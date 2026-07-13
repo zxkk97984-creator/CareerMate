@@ -2,11 +2,12 @@ import { failureReason, TboxError, type TboxFailureReason } from "./errors";
 import { createManualChatAnswer, createMockChatChunks } from "./fixtures";
 import { consumeChatResponse } from "./client";
 import { parseUpstreamSse } from "./sse";
+import { createAssistantResultAccumulator } from "./result";
 import type {
   AiResult,
   ChatInput,
   Clock,
-  NormalizedAiEvent,
+  NormalizedAssistantResult,
   NormalizedStreamEvent,
   TboxConfig,
 } from "./types";
@@ -43,28 +44,17 @@ function localEvents(chunks: string[], conversationId?: string): NormalizedStrea
   ];
 }
 
-function throwIfAborted(signal?: AbortSignal) {
-  if (signal?.aborted) throw new TboxError("aborted");
+function localResult(chunks: string[], conversationId?: string): NormalizedAssistantResult {
+  return {
+    text: chunks.join(""),
+    conversationId,
+    citations: [],
+    warnings: [],
+  };
 }
 
-/** 将 NormalizedAiEvent 转换为 NormalizedStreamEvent（Task 4 临时桥接，Task 5 将移除） */
-async function* bridgeToStreamEvents(
-  events: AsyncGenerator<NormalizedAiEvent>,
-): AsyncGenerator<NormalizedStreamEvent> {
-  let conversationId: string | null = null;
-  for await (const event of events) {
-    if (event.type === "conversation") conversationId = event.conversationId;
-    if (event.type === "text_delta") {
-      yield { event: "message", data: { type: "delta", content: event.text } };
-    }
-    if (event.type === "error") {
-      yield { event: "error", data: { type: "error", message: event.message } };
-    }
-    if (event.type === "done") {
-      yield { event: "done", data: { conversationId } };
-    }
-    // text_final, tool_start, tool_end, structured_result, citation, warning 在当前接口中暂不产出
-  }
+function throwIfAborted(signal?: AbortSignal) {
+  if (signal?.aborted) throw new TboxError("aborted");
 }
 
 async function manualEvents(input: ChatInput, deps: StreamDependencies) {
@@ -73,6 +63,19 @@ async function manualEvents(input: ChatInput, deps: StreamDependencies) {
       ? await deps.manualChat(input)
       : createManualChatAnswer(input.question);
     return answer?.trim() ? localEvents([answer.trim()], input.conversationId) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function manualResult(input: ChatInput, deps: StreamDependencies) {
+  try {
+    const answer = deps.manualChat
+      ? await deps.manualChat(input)
+      : createManualChatAnswer(input.question);
+    return answer?.trim()
+      ? { text: answer.trim(), conversationId: input.conversationId, citations: [], warnings: [] }
+      : null;
   } catch {
     return null;
   }
@@ -107,11 +110,19 @@ export async function streamChatWithTbox(
     const events = await consumeChatResponse(input, true, deps, async (response, onActivity) => {
       if (!response.body) throw new TboxError("sse_error");
       const normalized: NormalizedStreamEvent[] = [];
-      for await (const event of bridgeToStreamEvents(parseUpstreamSse(response.body, { onActivity }))) {
-        if (event.event === "error") throw new TboxError("sse_error");
-        normalized.push(event);
+      let conversationId: string | null = null;
+      for await (const event of parseUpstreamSse(response.body, { onActivity })) {
+        if (event.type === "error") throw new TboxError("sse_error");
+        if (event.type === "conversation") conversationId = event.conversationId;
+        // 桥接 NormalizedAiEvent → NormalizedStreamEvent
+        if (event.type === "text_delta") {
+          normalized.push({ event: "message", data: { type: "delta", content: event.text } });
+        }
+        if (event.type === "done") {
+          normalized.push({ event: "done", data: { conversationId } });
+        }
       }
-      if (!normalized.some((event) => event.event === "done")) {
+      if (!normalized.some((e) => e.event === "done")) {
         throw new TboxError("sse_error");
       }
       return normalized;
@@ -139,61 +150,85 @@ export type StreamEventCallback = (event: NormalizedStreamEvent & {
 }) => void;
 
 /**
- * 渐进式流式对话——每个事件到达后立即调用 onEvent 回调，
- * 不缓冲整个事件数组。用于需要实时 SSE 推送到浏览器的场景。
+ * 渐进式流式对话——每个事件到达后立即通过 accumulator 处理，
+ * 只将非空增量通过 onEvent 回调发送到浏览器。
  *
- * 返回 Promise，resolve 时表示流结束。meta 信息在 onEvent 中通过 event.meta 携带。
+ * 返回 Promise<AiResult<NormalizedAssistantResult>>，包含最终文本和结构化结果。
  */
 export async function streamChatWithTboxProgressive(
   input: ChatInput,
   deps: StreamDependencies,
   onEvent: StreamEventCallback,
-): Promise<ReturnType<typeof meta>> {
+): Promise<AiResult<NormalizedAssistantResult>> {
   throwIfAborted(deps.signal);
   const requested = deps.config.mode;
 
   // mock 模式
   if (requested === "mock") {
-    const events = localEvents(createMockChatChunks(input.question), input.conversationId);
+    const chunks = createMockChatChunks(input.question);
     const metaObj = meta(requested, "mock", null, "local-mock");
-    for (const event of events) {
-      onEvent({ ...event, meta: metaObj });
+    for (const chunk of chunks) {
+      onEvent({ event: "message", data: { type: "delta", content: chunk }, meta: metaObj });
     }
-    return metaObj;
+    onEvent({ event: "done", data: { conversationId: input.conversationId ?? null }, meta: metaObj });
+    return { data: localResult(chunks, input.conversationId), meta: metaObj };
   }
 
   // manual 模式
   if (requested === "manual") {
-    const events = await manualEvents(input, deps);
+    const mResult = await manualResult(input, deps);
     throwIfAborted(deps.signal);
-    const source = events ? "manual-fixture" : "local-mock";
-    const actualMode: TboxConfig["mode"] = events ? "manual" : "mock";
-    const reason = events ? null : "manual_unavailable";
-    const effective = events ?? localEvents(createMockChatChunks(input.question), input.conversationId);
-    const metaObj = meta(requested, actualMode, reason, source);
-    for (const event of effective) {
-      onEvent({ ...event, meta: metaObj });
+    if (mResult) {
+      const metaObj = meta(requested, "manual", null, "manual-fixture");
+      onEvent({ event: "message", data: { type: "delta", content: mResult.text }, meta: metaObj });
+      onEvent({ event: "done", data: { conversationId: mResult.conversationId ?? null }, meta: metaObj });
+      return { data: mResult, meta: metaObj };
     }
-    return metaObj;
+    const chunks = createMockChatChunks(input.question);
+    const metaObj = meta(requested, "mock", "manual_unavailable", "local-mock");
+    for (const chunk of chunks) {
+      onEvent({ event: "message", data: { type: "delta", content: chunk }, meta: metaObj });
+    }
+    onEvent({ event: "done", data: { conversationId: input.conversationId ?? null }, meta: metaObj });
+    return { data: localResult(chunks, input.conversationId), meta: metaObj };
   }
 
-  // api 模式：渐进式消费上游 SSE，边收边回调
+  // api 模式：渐进式消费上游 SSE，经过 accumulator
   let reason: TboxFailureReason;
   try {
-    const resultMeta = await consumeChatResponse(input, true, deps, async (response, onActivity) => {
+    const result = await consumeChatResponse(input, true, deps, async (response, onActivity) => {
       if (!response.body) throw new TboxError("sse_error");
-      let hasDone = false;
+      const acc = createAssistantResultAccumulator();
       const apiMetaObj = meta(requested, "api", null, "tbox-api");
-      for await (const event of bridgeToStreamEvents(parseUpstreamSse(response.body, { onActivity }))) {
-        if (event.event === "error") throw new TboxError("sse_error");
-        if (event.event === "done") hasDone = true;
-        // 立即回调，不收集到数组
-        onEvent({ ...event, meta: apiMetaObj });
+      let aborted = false;
+
+      for await (const event of parseUpstreamSse(response.body, { onActivity })) {
+        if (event.type === "error") {
+          aborted = true;
+          throw new TboxError("sse_error");
+        }
+
+        // 消费事件，获取需转发的增量文本
+        const delta = acc.consume(event);
+        if (delta) {
+          onEvent({ event: "message", data: { type: "delta", content: delta }, meta: apiMetaObj });
+        }
       }
-      if (!hasDone) throw new TboxError("sse_error");
-      return apiMetaObj;
+
+      if (aborted) throw new TboxError("sse_error");
+
+      const final = acc.finalize();
+      if (!final.text && !final.structured) throw new TboxError("sse_error");
+
+      onEvent({
+        event: "done",
+        data: { conversationId: final.conversationId ?? null },
+        meta: apiMetaObj,
+      });
+
+      return final;
     });
-    return resultMeta;
+    return { data: result, meta: meta(requested, "api", null, "tbox-api") };
   } catch (error) {
     reason = failureReason(error);
     if (reason === "aborted" || deps.signal?.aborted) throw new TboxError("aborted");
@@ -201,14 +236,22 @@ export async function streamChatWithTboxProgressive(
 
   // api 失败后降级到 manual/mock
   throwIfAborted(deps.signal);
-  const fallbackEvents = await manualEvents(input, deps);
+  const mResult = await manualResult(input, deps);
   throwIfAborted(deps.signal);
-  const effective = fallbackEvents ?? localEvents(createMockChatChunks(input.question), input.conversationId);
-  const actualMode: TboxConfig["mode"] = fallbackEvents ? "manual" : "mock";
-  const source = fallbackEvents ? "manual-fixture" : "local-mock";
+  const fallbackReason = mResult ? null : "manual_unavailable";
+  const actualMode: TboxConfig["mode"] = mResult ? "manual" : "mock";
+  const source = mResult ? "manual-fixture" : "local-mock";
   const metaObj = meta(requested, actualMode, reason, source);
-  for (const event of effective) {
-    onEvent({ ...event, meta: metaObj });
+
+  if (mResult) {
+    onEvent({ event: "message", data: { type: "delta", content: mResult.text }, meta: metaObj });
+    onEvent({ event: "done", data: { conversationId: mResult.conversationId ?? null }, meta: metaObj });
+    return { data: { ...mResult, warnings: [...mResult.warnings, reason] }, meta: metaObj };
   }
-  return metaObj;
+  const chunks = createMockChatChunks(input.question);
+  for (const chunk of chunks) {
+    onEvent({ event: "message", data: { type: "delta", content: chunk }, meta: metaObj });
+  }
+  onEvent({ event: "done", data: { conversationId: input.conversationId ?? null }, meta: metaObj });
+  return { data: { ...localResult(chunks, input.conversationId), warnings: [reason] }, meta: metaObj };
 }

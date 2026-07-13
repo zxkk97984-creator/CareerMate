@@ -106,7 +106,7 @@ export async function handleStreamRequest(
         });
 
         // 渐进式调用百宝箱——每个事件到达后立即写入 SSE
-        finalMeta = await streamChatWithTboxProgressive(
+        const aiResponse = await streamChatWithTboxProgressive(
           {
             question: prepared.enhancedQuestion,
             userId,
@@ -130,6 +130,8 @@ export async function handleStreamRequest(
             }
           },
         );
+        finalMeta = aiResponse.meta;
+        remoteConversationId = aiResponse.data.conversationId ?? remoteConversationId;
 
         // 文本完成后生成结构化业务卡片。卡片失败不应抹掉已经完成的回答。
         const parts = await createArtifactsForChat({

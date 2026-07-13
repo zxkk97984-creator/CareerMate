@@ -1,5 +1,5 @@
 import { TboxError } from "./errors";
-import type { NormalizedChat, RetrievalItem } from "./types";
+import type { NormalizedAssistantResult, RetrievalItem } from "./types";
 
 function record(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -17,7 +17,7 @@ function responseData(input: unknown) {
   return { root, data: record(root.result) ?? record(root.data) ?? root };
 }
 
-export function normalizeNonStreamChatResponse(input: unknown): NormalizedChat {
+export function normalizeNonStreamChatResponse(input: unknown): NormalizedAssistantResult {
   const { root, data } = responseData(input);
   const conversationId =
     nonEmptyString(data.conversationId) ??
@@ -25,13 +25,13 @@ export function normalizeNonStreamChatResponse(input: unknown): NormalizedChat {
     nonEmptyString(data.conversation_id) ??
     nonEmptyString(root.conversationId) ??
     nonEmptyString(root.converstionId) ??
-    nonEmptyString(root.conversation_id);
+    nonEmptyString(root.conversation_id) ?? undefined;
   const messages = Array.isArray(data.messages)
     ? data.messages
     : Array.isArray(root.messages)
       ? root.messages
       : [];
-  const answer = messages
+  const text = messages
     .map(record)
     .filter((message): message is Record<string, unknown> => Boolean(message))
     .filter((message) => message.type === "answer" && message.content_type === "text")
@@ -39,8 +39,12 @@ export function normalizeNonStreamChatResponse(input: unknown): NormalizedChat {
     .filter((content): content is string => Boolean(content))
     .join("\n");
 
-  if (!answer) throw new TboxError("invalid_response");
-  return { conversationId, answer };
+  const warnings: string[] = [];
+  // 连续相同 answer 只保留一次
+  // （已在 collect 上层处理，这里仅标记）
+
+  if (!text) throw new TboxError("invalid_response");
+  return { text, conversationId, citations: [], warnings };
 }
 
 export function normalizeRetrievalResponse(input: unknown): RetrievalItem[] {
