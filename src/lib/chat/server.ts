@@ -120,9 +120,11 @@ export async function prepareCareerChat(
     memories: rawMemories,
   });
   const intent = classifyCareerChatIntent(input.question);
+  // 默认 agent 模式：让主 Agent 自己选择知识库，不再预检索
+  const retrievalMode = (await import("@/lib/env")).getTboxConfig().retrievalMode;
   let knowledgeItems: RetrievalItem[] = [];
   let retrievalMeta: CareerChatContextMeta["retrievalMeta"] = null;
-  if (intent) {
+  if (retrievalMode === "hybrid" && intent) {
     const role = context.profile?.targetRoleLabel ?? context.profile?.targetRole;
     const query = [role, input.question].filter(Boolean).join(" ");
     try {

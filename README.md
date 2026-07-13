@@ -18,12 +18,12 @@ AI 职业导航与终身学习伙伴系统 —— 为浙江大学学生服务创
 | 领域 | 选型 |
 |------|------|
 | 框架 | Next.js 16 (App Router) |
-| 语言 | TypeScript |
+| 语言 | TypeScript 5.9 |
+| 前端 | React 19 + Tailwind CSS v4 |
 | 数据库 | SQLite (Prisma 6 ORM) |
-| 运行时校验 | Zod |
-| 测试 | Vitest (单元) + Playwright (E2E) |
+| 运行时校验 | Zod 3 |
+| 测试 | Vitest 3 (单元) + Playwright 1.61 (E2E) |
 | AI | 蚂蚁百宝箱 API (mock 模式默认可用) |
-| CSS | 纯 CSS (globals.css) |
 
 ## 前置条件
 
@@ -59,11 +59,14 @@ npm.cmd run dev
 
 种子数据包含以下测试账号，密码均为 `careermate123`：
 
-| 账号 | 角色 | 画像状态 |
-|------|------|---------|
-| `student_lin` | 学生 | 已完成引导，目标 AI 产品经理 |
-| `student_zhang` | 学生 | 已完成引导，目标数据分析师 |
-| `admin` | 管理员 | 可访问 Admin 页面 |
+| 账号 | 显示名 | 身份 | 目标岗位 |
+|------|--------|------|---------|
+| `student_lin` | 小林 | 大三·数字媒体技术 | AI 产品经理 |
+| `student_chen` | 小周 | 大二·统计学 | 数据分析师 |
+| `student_wu` | 小陈 | 大三·新闻传播 | AIGC 内容运营 |
+| `worker_zhao` | 阿敏 | 职场新人·运营1年 | AI 产品经理（转岗） |
+| `career_switch_li` | 宇航 | 新媒体运营 | 数据分析师（摇摆中） |
+| `admin` | 管理员 | - | 管理员（审核岗位草稿） |
 
 ## Mock 模式与真实百宝箱
 

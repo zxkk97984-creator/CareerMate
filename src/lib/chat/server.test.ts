@@ -2,6 +2,29 @@ import { describe, expect, it, vi } from "vitest";
 import type { CareerChatDependencies } from "./server";
 import { prepareCareerChat } from "./server";
 
+// Mock env to return hybrid mode for tests that need retrieval
+vi.mock("@/lib/env", () => ({
+  getTboxConfig: () => ({
+    mode: "api" as const,
+    apiKey: "test-key",
+    agentId: "test-agent",
+    agentVersion: undefined,
+    searchEngine: false,
+    retrievalMode: "hybrid" as const,
+    chatEndpoint: "http://localhost/chat",
+    retrieveEndpoint: "http://localhost/retrieve",
+    streamTimeoutMs: 30000,
+    datasetIds: {
+      roleCompetency: "ds1",
+      learningResources: "ds2",
+      simulationScenes: "ds3",
+      ethicsRules: "ds4",
+      careerTrends: "",
+    },
+  }),
+  getPluginToken: () => "",
+}));
+
 const apiMeta = {
   requestedMode: "api" as const,
   actualMode: "api" as const,

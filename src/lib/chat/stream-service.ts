@@ -174,11 +174,12 @@ export async function handleStreamRequest(
           await svc.touchConversation(conversationId, remoteConversationId).catch(() => {});
         }
 
-        // 发送 done 事件
+        // 发送 done 事件（携带 warnings 和 meta）
         writeSseEvent(controller, "done", {
           messageId: assistantMsg.id,
           remoteConversationId,
           status: "completed" as const,
+          warnings: assistantResult.warnings ?? [],
           meta: finalMeta ?? {
             requestedMode: config.mode,
             actualMode: config.mode,
