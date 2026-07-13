@@ -62,7 +62,7 @@ export function OnboardingView({ refresh, setNotice, setAiExecution, activeConve
   ];
 
   return (
-    <div style={{ display: "grid", gap: 20, gridTemplateColumns: "minmax(0,1.4fr) minmax(280px,0.8fr)" }} className="max-lg:grid-cols-1">
+    <div style={{ display: "grid", gap: 20 }} className="grid-cols-[minmax(0,1.4fr)_minmax(280px,0.8fr)] max-lg:grid-cols-1">
       <SurfaceCard title="对话式画像引导">
         <div style={{ marginBottom: 16 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 14 }}>

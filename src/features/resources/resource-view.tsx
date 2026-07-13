@@ -22,7 +22,7 @@ export function ResourceView({ resources, profile, weakAbilities }: ResourceView
 
   return (
     <SurfaceCard title="资源中心">
-      <div style={{ marginBottom: 20, display: "grid", gap: 12, gridTemplateColumns: "repeat(3,1fr)" }} className="max-md:grid-cols-1">
+      <div style={{ marginBottom: 20, display: "grid", gap: 12 }} className="grid-cols-3 max-md:grid-cols-1">
         <label style={{ fontSize: 14, color: "var(--cm-text-muted)" }}>目标岗位<select style={selectStyle} value={roleKey} onChange={(e) => setRoleKey(e.target.value)}>{supportedRoleKeys.map((r) => <option key={r} value={r}>{roleLabels[r]}</option>)}</select></label>
         <label style={{ fontSize: 14, color: "var(--cm-text-muted)" }}>能力方向<select style={selectStyle} value={abilityKey} onChange={(e) => setAbilityKey(e.target.value)}><option value="all">全部能力</option>{abilityKeys.map((a) => <option key={a} value={a}>{abilityLabels[a]}</option>)}</select></label>
         <label style={{ fontSize: 14, color: "var(--cm-text-muted)" }}>资源类型<select style={selectStyle} value={resourceType} onChange={(e) => setResourceType(e.target.value)}><option value="all">全部类型</option>{resourceTypes.map((t) => <option key={t} value={t}>{t}</option>)}</select></label>
@@ -38,7 +38,7 @@ export function ResourceView({ resources, profile, weakAbilities }: ResourceView
       {relevant.length === 0 ? (
         <div style={{ borderRadius: "var(--cm-radius-sm)", background: "var(--cm-canvas)", padding: 20, fontSize: 14, color: "var(--cm-text-muted)" }}>没有符合当前筛选条件的资源。</div>
       ) : (
-        <div style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(2,1fr)" }} className="max-md:grid-cols-1">
+        <div style={{ display: "grid", gap: 16 }} className="grid-cols-2 max-md:grid-cols-1">
           {relevant.map((item) => (
             <div key={item.id} style={{ borderRadius: "var(--cm-radius-card)", border: "1px solid var(--cm-border)", padding: 16 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}><div style={{ fontWeight: 600, color: "var(--cm-text-strong)" }}>{item.title}</div><span style={{ borderRadius: 999, background: "var(--cm-canvas)", padding: "4px 12px", fontSize: 12, color: "var(--cm-text-muted)" }}>{item.type}</span></div>

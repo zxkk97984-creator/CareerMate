@@ -105,7 +105,7 @@ export function AdminView({ drafts, templates, refresh, setNotice }: AdminViewPr
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <SurfaceCard title="岗位草稿审核" action={<Button onClick={createDraft}>生成草稿</Button>}>
-        <div style={{ marginBottom: 20, display: "grid", gap: 12, gridTemplateColumns: "repeat(3,1fr)" }} className="max-md:grid-cols-1">
+        <div style={{ marginBottom: 20, display: "grid", gap: 12 }} className="grid-cols-3 max-md:grid-cols-1">
           <input aria-label="岗位名称" style={inputStyle} value={roleName} onChange={(e) => setRoleName(e.target.value)} />
           <input aria-label="岗位分类" style={inputStyle} value={category} onChange={(e) => setCategory(e.target.value)} />
           <textarea aria-label="岗位来源" style={{ ...inputStyle, minHeight: 72, height: "auto", padding: "8px 12px", resize: "vertical" }} value={sourceNotes} onChange={(e) => setSourceNotes(e.target.value)} />
@@ -122,7 +122,7 @@ export function AdminView({ drafts, templates, refresh, setNotice }: AdminViewPr
                 {isEditing ? (
                   /* 内联编辑表单 */
                   <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 12 }}>
-                    <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr" }}>
+                    <div style={{ display: "grid", gap: 12 }} className="grid-cols-2">
                       <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "var(--cm-text-muted)" }}>
                         岗位名称
                         <input aria-label="编辑岗位名称" style={inputStyle} value={editName} onChange={(e) => setEditName(e.target.value)} />
@@ -177,7 +177,7 @@ export function AdminView({ drafts, templates, refresh, setNotice }: AdminViewPr
         </div>
       </SurfaceCard>
       <SurfaceCard title="正式岗位库">
-        <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(3,1fr)" }} className="max-md:grid-cols-1">
+        <div style={{ display: "grid", gap: 12 }} className="grid-cols-3 max-md:grid-cols-1">
           {templates.map((t) => (
             <div key={t.id} style={{ borderRadius: "var(--cm-radius-sm)", border: "1px solid var(--cm-border)", padding: 16 }}>
               <div style={{ fontWeight: 600, color: "var(--cm-text-strong)" }}>{t.roleName}</div>

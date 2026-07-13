@@ -166,23 +166,25 @@ export function Workspace({ initialView, isAdmin = false }: { initialView: View;
           <Menu size={20} />
         </button>
 
-        {/* 页面标题 */}
-        <PageHeader
-          title={`${data.profile.targetRoleLabel} 成长工作台`}
-          description={`${data.user.displayName} · ${data.profile.major || "未填写专业"} · 每周 ${data.profile.weeklyAvailableHours} 小时`}
-          aiStatus={
-            <div style={{ display: "flex", alignItems: "center", gap: 8, borderRadius: "var(--cm-radius-sm)", border: "1px solid var(--cm-border)", padding: "6px 12px", fontSize: 13, color: "var(--cm-text-muted)" }}>
-              <Gauge size={16} />
-              {formatAiRuntimeBadge(aiExecution)}
-            </div>
-          }
-        />
+        {/* 可滚动主内容（移动端预留菜单按钮空间） */}
+        <div className="pt-12 md:pt-0" style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", display: "flex", flexDirection: "column", gap: 20, maxWidth: "var(--cm-content-max)", margin: "0 auto", width: "100%", padding: "0 16px 20px 16px" }}>
+          {/* 页面标题 */}
+          <PageHeader
+            title={`${data.profile.targetRoleLabel} 成长工作台`}
+            description={`${data.user.displayName} · ${data.profile.major || "未填写专业"} · 每周 ${data.profile.weeklyAvailableHours} 小时`}
+            aiStatus={
+              <div style={{ display: "flex", alignItems: "center", gap: 8, borderRadius: "var(--cm-radius-sm)", border: "1px solid var(--cm-border)", padding: "6px 12px", fontSize: 13, color: "var(--cm-text-muted)" }}>
+                <Gauge size={16} />
+                {formatAiRuntimeBadge(aiExecution)}
+              </div>
+            }
+          />
 
-        {/* 状态提示（辅助技术可见） */}
-        <div className="sr-only" aria-live="polite" aria-atomic="true">{notice}</div>
+          {/* 状态提示（辅助技术可见） */}
+          <div className="sr-only" aria-live="polite" aria-atomic="true">{notice}</div>
 
-        {/* 视图内容 */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: "var(--cm-content-max)", margin: "0 auto" }}>
+          {/* 视图内容 */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           {activeView === "dashboard" && <DashboardView data={data} refresh={loadAll} setNotice={setNotice} />}
           {activeView === "onboarding" && (
             <OnboardingView
@@ -198,6 +200,7 @@ export function Workspace({ initialView, isAdmin = false }: { initialView: View;
           {activeView === "memory" && <MemoryView memories={data.memories} candidates={data.candidates} memoryEnabled={data.profile.memoryEnabled} refresh={loadAll} setNotice={setNotice} />}
           {activeView === "chat" && <ChatView setNotice={setNotice} />}
           {activeView === "admin" && <AdminView drafts={data.drafts} templates={data.templates} refresh={loadAll} setNotice={setNotice} />}
+          </div>
         </div>
       </main>
     </div>

@@ -55,12 +55,12 @@ export function DashboardView({ data, refresh, setNotice }: DashboardViewProps) 
   }
 
   return (<>
-    <div style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(3, 1fr)" }} className="max-md:grid-cols-1">
+    <div style={{ display: "grid", gap: 16 }} className="grid-cols-3 max-md:grid-cols-1">
       <Metric title="加权岗位匹配度" value={`${data.match?.score ?? 0}%`} tone="brand" />
       <Metric title="本月任务" value={`${currentMonth?.learningTasks?.length ?? 0} 项`} tone="success" />
       <Metric title="待确认画像" value={`${data.candidates.filter((c: any) => c.status === "pending").length} 条`} tone="warning" />
     </div>
-    <div style={{ display: "grid", gap: 20, gridTemplateColumns: "420px 1fr" }} className="max-lg:grid-cols-1">
+    <div style={{ display: "grid", gap: 20 }} className="grid-cols-[420px_1fr] max-lg:grid-cols-1">
       <SurfaceCard title="能力雷达图" action={<Button variant="secondary" disabled={generating} onClick={generatePlan}>{generating ? "生成中..." : "重生成路径"}</Button>}>
         <div style={{ height: 320 }}><ResponsiveContainer width="100%" height="100%"><RadarChart data={radar}><PolarGrid /><PolarAngleAxis dataKey="ability" tick={{ fontSize: 12 }} /><Radar dataKey="score" stroke="var(--cm-brand)" fill="var(--cm-brand)" fillOpacity={0.22} /></RadarChart></ResponsiveContainer></div>
       </SurfaceCard>
@@ -81,7 +81,7 @@ export function DashboardView({ data, refresh, setNotice }: DashboardViewProps) 
         </div>
       </SurfaceCard>
     </div>
-    <div style={{ display: "grid", gap: 20, gridTemplateColumns: "1fr 1fr" }} className="max-lg:grid-cols-1">
+    <div style={{ display: "grid", gap: 20 }} className="grid-cols-2 max-lg:grid-cols-1">
       <SurfaceCard title="匹配度说明">
         <p style={{ fontSize: 14, lineHeight: 1.6, color: "var(--cm-text-muted)" }}>{data.match?.explanation ?? "完成画像后将生成岗位匹配度说明。"}</p>
         <div style={{ marginTop: 16, display: "flex", flexWrap: "wrap", gap: 8 }}>

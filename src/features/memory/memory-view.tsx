@@ -73,7 +73,7 @@ export function MemoryView({ memories, candidates, memoryEnabled, refresh, setNo
   }
 
   return (
-    <div style={{ display: "grid", gap: 20, gridTemplateColumns: "1fr 1fr" }} className="max-lg:grid-cols-1">
+    <div style={{ display: "grid", gap: 20 }} className="grid-cols-2 max-lg:grid-cols-1">
       <SurfaceCard title="长期记忆" action={<Button variant="secondary" onClick={toggleMemory}>{memoryEnabled ? "关闭长期记忆" : "开启长期记忆"}</Button>}>
         <div style={{ marginBottom: 16, display: "flex", gap: 8 }}>
           <input aria-label="新记忆" disabled={!memoryEnabled} style={{ ...inputStyle, flex: 1 }} placeholder={memoryEnabled ? "添加一条长期记忆" : "长期记忆已关闭"} value={content} onChange={(e) => setContent(e.target.value)} />

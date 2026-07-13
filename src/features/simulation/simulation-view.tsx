@@ -71,7 +71,7 @@ export function SimulationView({ simulations, refresh, setNotice }: { simulation
     finally { setBusy(false); }
   }
 
-  return <div style={{ display: "grid", gap: 20, gridTemplateColumns: "360px 1fr" }} className="max-lg:grid-cols-1">
+  return <div style={{ display: "grid", gap: 20 }} className="grid-cols-[360px_1fr] max-lg:grid-cols-1">
     <SurfaceCard title="训练场景"><div style={{ display: "flex", flexDirection: "column", gap: 12 }}>{scenarios.map((scenario) => <button key={scenario.key} disabled={busy || active?.status === "active"} onClick={() => setSelected(scenario)} style={{ width: "100%", borderRadius: "var(--cm-radius-sm)", border: selected.key === scenario.key ? "2px solid var(--cm-brand)" : "1px solid var(--cm-border-strong)", background: selected.key === scenario.key ? "var(--cm-surface-soft)" : "var(--cm-surface)", color: selected.key === scenario.key ? "var(--cm-brand)" : "var(--cm-text-strong)", padding: 16, textAlign: "left", cursor: "pointer", fontSize: 14, fontWeight: 600 }}><div>{scenario.title}</div><div style={{ marginTop: 8, fontSize: 12, opacity: 0.75 }}>{scenario.prompt}</div></button>)}</div><div style={{ marginTop: 16 }}><Button disabled={busy || active?.status === "active"} onClick={start}>开始新训练</Button></div></SurfaceCard>
     <SurfaceCard title={active?.scenarioTitle ?? selected.title}>
       {error ? <p style={{ marginBottom: 16, borderRadius: "var(--cm-radius-sm)", background: "var(--cm-danger-bg)", padding: "8px 12px", fontSize: 14, color: "var(--cm-danger)" }}>{error}</p> : null}

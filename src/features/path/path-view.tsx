@@ -60,13 +60,13 @@ export function PathView({ plan, pendingPlan, executionMeta, refresh, setNotice 
                 <details key={year.yearIndex ?? index} open={index === 0} style={{ borderRadius: "var(--cm-radius-card)", border: "1px solid var(--cm-border)", background: "var(--cm-surface)" }}>
                   <summary style={{ cursor: "pointer", padding: "16px", fontWeight: 600, color: "var(--cm-text-strong)" }}>第 {year.yearIndex ?? index + 1} 年 · {year.goal ?? "年度目标"}</summary>
                   <div style={{ display: "flex", flexDirection: "column", gap: 16, borderTop: "1px solid var(--cm-border)", padding: 16 }}>
-                    <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(4,1fr)" }} className="max-md:grid-cols-2">
+                    <div style={{ display: "grid", gap: 12 }} className="grid-cols-4 max-md:grid-cols-2">
                       {section.quarters.map((item: any, qi: number) => {
                         const q = item as { quarterIndex?: number; goal?: string; milestone?: string };
                         return (<div key={q.quarterIndex ?? qi} style={{ borderRadius: "var(--cm-radius-sm)", border: "1px solid var(--cm-border)", padding: 12 }}><div style={{ fontSize: 12, fontWeight: 500, color: "var(--cm-text-subtle)" }}>Q{q.quarterIndex ?? qi + 1}</div><div style={{ marginTop: 4, fontSize: 14, fontWeight: 600, color: "var(--cm-text-strong)" }}>{q.goal}</div>{q.milestone ? <p style={{ marginTop: 8, fontSize: 12, lineHeight: 1.5, color: "var(--cm-text-muted)" }}>{q.milestone}</p> : null}</div>);
                       })}
                     </div>
-                    <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(3,1fr)" }} className="max-md:grid-cols-2">
+                    <div style={{ display: "grid", gap: 12 }} className="grid-cols-3 max-md:grid-cols-2">
                       {section.months.map((item: any, mi: number) => {
                         const m = item as unknown as PlanMonth;
                         return (<div key={m.monthIndex ?? mi} style={{ borderRadius: "var(--cm-radius-sm)", border: "1px solid var(--cm-border)", background: "var(--cm-canvas)", padding: 12 }}><div style={{ fontSize: 12, fontWeight: 500, color: "var(--cm-text-subtle)" }}>Month {m.monthIndex}</div><div style={{ marginTop: 4, fontSize: 14, fontWeight: 600, color: "var(--cm-text-strong)" }}>{m.goal}</div></div>);
@@ -77,7 +77,7 @@ export function PathView({ plan, pendingPlan, executionMeta, refresh, setNotice 
               );
             })}
           </div>
-          <div style={{ display: "grid", gap: 16, gridTemplateColumns: "1fr 1fr" }} className="max-md:grid-cols-1">
+          <div style={{ display: "grid", gap: 16 }} className="grid-cols-2 max-md:grid-cols-1">
             <section style={{ borderRadius: "var(--cm-radius-card)", border: "1px solid var(--cm-border)", padding: 16 }}><h3 style={{ fontWeight: 600, color: "var(--cm-text-strong)", margin: 0 }}>计划假设</h3><ul style={{ marginTop: 12, paddingLeft: 20, display: "flex", flexDirection: "column", gap: 8, fontSize: 14, color: "var(--cm-text-muted)" }}>{plan.assumptions.map((item) => <li key={item}>{item}</li>)}</ul></section>
             <section style={{ borderRadius: "var(--cm-radius-card)", border: "1px solid rgba(184,138,30,0.3)", background: "var(--cm-warning-bg)", padding: 16 }}><h3 style={{ fontWeight: 600, color: "var(--cm-text-strong)", margin: 0 }}>风险提示</h3><ul style={{ marginTop: 12, paddingLeft: 20, display: "flex", flexDirection: "column", gap: 8, fontSize: 14, color: "var(--cm-text-muted)" }}>{plan.riskNotes.map((item) => <li key={item}>{item}</li>)}</ul></section>
           </div>
