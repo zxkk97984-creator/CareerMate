@@ -16,11 +16,20 @@ vi.mock("@/lib/env", () => ({
     apiKey: "",
     appId: "app",
     agentId: "agent",
+    agentVersion: undefined,
+    searchEngine: false,
+    retrievalMode: "agent" as const,
     chatEndpoint: "https://example.test/chat",
     retrieveEndpoint: "https://example.test/retrieve",
     streamTimeoutMs: 100,
     webServiceUrl: "",
-    datasetIds: {},
+    datasetIds: {
+      roleCompetency: "",
+      learningResources: "",
+      simulationScenes: "",
+      ethicsRules: "",
+      careerTrends: "",
+    },
   }),
 }));
 vi.mock("@/lib/tbox/adapter", () => ({ chatWithTbox: mocks.chat }));
@@ -66,7 +75,7 @@ beforeEach(() => {
     updatedAt: new Date("2026-07-10T00:00:00.000Z"),
   });
   mocks.chat.mockResolvedValue({
-    data: { conversationId: null, answer: "generic mock answer" },
+    data: { conversationId: null, text: "generic mock answer" },
     meta: degradedMeta,
   });
   mocks.conversationUpdateMany.mockResolvedValue({ count: 1 });
@@ -152,7 +161,7 @@ describe("POST /api/onboarding/chat", () => {
       updatedAt: new Date("2026-07-10T00:00:00.000Z"),
     });
     mocks.chat.mockResolvedValue({
-      data: { conversationId: "remote-1", answer: "很好。接下来请告诉我每周可投入的小时数。" },
+      data: { conversationId: "remote-1", text: "很好。接下来请告诉我每周可投入的小时数。" },
       meta: { requestedMode: "api", actualMode: "api", degraded: false, fallbackReason: null, source: "tbox-api" },
     });
 
@@ -189,7 +198,7 @@ describe("POST /api/onboarding/chat", () => {
     mocks.chat.mockResolvedValue({
       data: {
         conversationId: "remote-1",
-        answer: "接下来请告诉我每周可投入多少小时。",
+        text: "接下来请告诉我每周可投入多少小时。",
       },
       meta: {
         requestedMode: "api",
@@ -268,7 +277,7 @@ describe("POST /api/onboarding/chat", () => {
         source: mode === "mock" ? "local-mock" : "manual-fixture",
       };
       mocks.chat.mockResolvedValue({
-        data: { conversationId: null, answer: `${mode} generic answer` },
+        data: { conversationId: null, text: `${mode} generic answer` },
         meta,
       });
 
