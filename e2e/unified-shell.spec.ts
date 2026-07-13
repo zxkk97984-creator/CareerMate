@@ -101,12 +101,51 @@ test("workspace pages have no horizontal overflow at 375px", async ({ page }) =>
   const pagesToCheck = ["/dashboard", "/path", "/simulation", "/resources", "/memory"];
   for (const path of pagesToCheck) {
     await page.goto(path);
-    // 等待页面渲染完成
     await page.waitForLoadState("networkidle");
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     const innerWidth = await page.evaluate(() => window.innerWidth);
     expect(scrollWidth, `${path} 页面横向溢出：scrollWidth=${scrollWidth} > innerWidth=${innerWidth}`).toBeLessThanOrEqual(innerWidth);
   }
+});
+
+test("mobile menu button does not overlap page title", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await login(page);
+  await page.goto("/dashboard");
+  await page.waitForLoadState("networkidle");
+
+  // 菜单按钮可见
+  const menuBtn = page.locator(".mobile-menu-btn");
+  await expect(menuBtn).toBeVisible();
+
+  // 获取菜单按钮和标题的边界矩形
+  const menuRect = await menuBtn.boundingBox();
+  const heading = page.getByRole("heading", { name: /成长工作台/ }).first();
+  const headingRect = await heading.boundingBox();
+
+  if (menuRect && headingRect) {
+    // 标题底部应在菜单顶部以下（标题不被菜单遮挡）
+    const headingOverlapped = headingRect.x < menuRect.x + menuRect.width
+      && headingRect.x + headingRect.width > menuRect.x
+      && headingRect.y < menuRect.y + menuRect.height
+      && headingRect.y + headingRect.height > menuRect.y;
+    expect(headingOverlapped, "移动端标题与菜单按钮不应重叠").toBe(false);
+  }
+});
+
+test("workspace scroll container has no internal overflow at 375px", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await login(page);
+  await page.goto("/dashboard");
+  await page.waitForLoadState("networkidle");
+
+  // 检查 chat-main 容器内部无横向溢出
+  const overflow = await page.evaluate(() => {
+    const main = document.querySelector("[data-testid='page-content']");
+    if (!main) return { scrollW: 0, clientW: 0 };
+    return { scrollW: main.scrollWidth, clientW: main.clientWidth };
+  });
+  expect(overflow.scrollW, `主区内部溢出：scrollWidth=${overflow.scrollW} > clientWidth=${overflow.clientW}`).toBeLessThanOrEqual(overflow.clientW + 1);
 });
 
 test("login page has no horizontal overflow at 375px", async ({ page }) => {

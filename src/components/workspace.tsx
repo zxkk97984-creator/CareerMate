@@ -167,7 +167,7 @@ export function Workspace({ initialView, isAdmin = false }: { initialView: View;
         </button>
 
         {/* 可滚动主内容（移动端预留菜单按钮空间） */}
-        <div className="pt-12 md:pt-0" style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", display: "flex", flexDirection: "column", gap: 20, maxWidth: "var(--cm-content-max)", margin: "0 auto", width: "100%", padding: "0 16px 20px 16px" }}>
+        <div className="pt-12 md:pt-0 px-4 pb-5" style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", display: "flex", flexDirection: "column", gap: 20, maxWidth: "var(--cm-content-max)", margin: "0 auto", width: "100%" }}>
           {/* 页面标题 */}
           <PageHeader
             title={`${data.profile.targetRoleLabel} 成长工作台`}
