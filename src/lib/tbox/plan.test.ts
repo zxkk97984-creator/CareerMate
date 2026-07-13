@@ -33,6 +33,8 @@ const config: TboxConfig = {
   mode: "manual",
   apiKey: "",
   agentId: "",
+  searchEngine: false,
+  retrievalMode: "agent",
   chatEndpoint: "https://tbox.example/chat/create",
   retrieveEndpoint: "https://tbox.example/retrieve",
   streamTimeoutMs: 90_000,
@@ -41,6 +43,7 @@ const config: TboxConfig = {
     learningResources: "",
     simulationScenes: "",
     ethicsRules: "",
+    careerTrends: "",
   },
 };
 

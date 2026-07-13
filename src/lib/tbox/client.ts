@@ -77,13 +77,16 @@ export async function consumeChatResponse<T>(
 ): Promise<T> {
   ensureChatConfig(deps);
   const url = new URL(deps.config.chatEndpoint);
-  if (input.conversationId) url.searchParams.set("conversation_id", input.conversationId);
+  // conversation_id 放入请求体，不再放在 URL 查询参数中
   const body: Record<string, unknown> = {
     agent_id: deps.config.agentId,
     question: input.question,
     user_id: input.userId,
+    search_engine: deps.config.searchEngine,
     stream,
   };
+  if (input.conversationId) body.conversation_id = input.conversationId;
+  if (deps.config.agentVersion) body.agent_version = deps.config.agentVersion;
   if (input.history !== undefined) body.history = input.history;
   if (input.context !== undefined) body.business_data = JSON.stringify(input.context);
   const headers: Record<string, string> = authorizationHeaders(deps.config.apiKey);

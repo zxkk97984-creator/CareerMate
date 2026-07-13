@@ -52,6 +52,11 @@ const retrievalFixtures: Record<DatasetKey, RetrievalItem[]> = {
       score: 1,
     },
   ],
+  careerTrends: [{
+    content: "本地职业趋势资料只能作为静态背景，不能宣称为实时招聘市场。",
+    source: "local-career-trends",
+    score: 1,
+  }],
 };
 
 export function getMockRetrievalItems(datasetKey: DatasetKey, limit: number) {

@@ -11,6 +11,8 @@ const config: TboxConfig = {
   mode: "api",
   apiKey: "test-api-key",
   agentId: "agent-1",
+  searchEngine: false,
+  retrievalMode: "agent",
   chatEndpoint: "https://tbox.example/chat/create",
   retrieveEndpoint: "https://tbox.example/retrieve",
   streamTimeoutMs: 90_000,
@@ -19,6 +21,7 @@ const config: TboxConfig = {
     learningResources: "dataset-learning",
     simulationScenes: "dataset-simulation",
     ethicsRules: "dataset-ethics",
+    careerTrends: "",
   },
 };
 

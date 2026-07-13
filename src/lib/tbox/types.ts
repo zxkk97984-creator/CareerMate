@@ -6,13 +6,17 @@ export type DatasetKey =
   | "roleCompetency"
   | "learningResources"
   | "simulationScenes"
-  | "ethicsRules";
+  | "ethicsRules"
+  | "careerTrends";
 
 export interface TboxConfig {
   mode: AiMode;
   apiKey: string;
   appId?: string;
   agentId: string;
+  agentVersion?: string;
+  searchEngine: boolean;
+  retrievalMode: "agent" | "hybrid";
   chatEndpoint: string;
   retrieveEndpoint: string;
   streamTimeoutMs: number;

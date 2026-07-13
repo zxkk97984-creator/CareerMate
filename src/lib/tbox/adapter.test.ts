@@ -7,6 +7,8 @@ const baseConfig: TboxConfig = {
   mode: "api",
   apiKey: "test-api-key",
   agentId: "agent-1",
+  searchEngine: false,
+  retrievalMode: "agent",
   chatEndpoint: "https://tbox.example/chat/create",
   retrieveEndpoint: "https://tbox.example/retrieve",
   streamTimeoutMs: 90_000,
@@ -15,6 +17,7 @@ const baseConfig: TboxConfig = {
     learningResources: "dataset-learning",
     simulationScenes: "dataset-simulation",
     ethicsRules: "dataset-ethics",
+    careerTrends: "",
   },
 };
 
@@ -55,7 +58,8 @@ describe("Tbox fallback adapter", () => {
       },
     });
     const [url, init] = fetchImpl.mock.calls[0];
-    expect(String(url)).toBe("https://tbox.example/chat/create?conversation_id=conversation-1");
+    // conversation_id 现在在请求体中，不在 URL 查询参数中
+    expect(String(url)).toBe("https://tbox.example/chat/create");
     expect(init?.headers).toMatchObject({
       Authorization: "test-api-key",
       "Content-Type": "application/json",
@@ -65,6 +69,8 @@ describe("Tbox fallback adapter", () => {
       agent_id: "agent-1",
       question: "Next question",
       user_id: "user-1",
+      conversation_id: "conversation-1",
+      search_engine: false,
       stream: false,
       business_data: JSON.stringify({ targetRole: "data_analyst" }),
     });
