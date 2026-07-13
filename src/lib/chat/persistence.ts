@@ -14,6 +14,7 @@ export const chatMessagePartSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("profile_candidate_ref"), candidateId: z.string().trim().min(1).max(100) }),
   z.object({ type: z.literal("plan_ref"), planId: z.string().trim().min(1).max(100), version: z.number().int().min(1) }),
   z.object({ type: z.literal("exploration_report_ref"), reportId: z.string().trim().min(1).max(100) }),
+  z.object({ type: z.literal("simulation_report_ref"), sessionId: z.string().trim().min(1).max(100) }),
   z.object({
     type: z.literal("error"),
     code: z.string().trim().min(1).max(100),

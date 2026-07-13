@@ -135,16 +135,13 @@ beforeEach(() => {
   mocks.streamProgressive.mockImplementation(
     async (_input: any, _deps: any, onEvent: (event: any) => void) => {
       mocks.onEvent = onEvent;
-      // 模拟异步发送事件
-      onEvent({ event: "message", data: { type: "delta", content: "数据分析师" }, meta: { requestedMode: "api", actualMode: "api", degraded: false, fallbackReason: null, source: "tbox-api" } });
-      onEvent({ event: "message", data: { type: "delta", content: "是热门职业" }, meta: { requestedMode: "api", actualMode: "api", degraded: false, fallbackReason: null, source: "tbox-api" } });
-      onEvent({ event: "done", data: { conversationId: "remote-123" }, meta: { requestedMode: "api", actualMode: "api", degraded: false, fallbackReason: null, source: "tbox-api" } });
+      const metaObj = { requestedMode: "api" as const, actualMode: "api" as const, degraded: false, fallbackReason: null, source: "tbox-api" };
+      onEvent({ event: "message", data: { type: "delta", content: "数据分析师" }, meta: metaObj });
+      onEvent({ event: "message", data: { type: "delta", content: "是热门职业" }, meta: metaObj });
+      onEvent({ event: "done", data: { conversationId: "remote-123" }, meta: metaObj });
       return {
-        requestedMode: "api",
-        actualMode: "api",
-        degraded: false,
-        fallbackReason: null,
-        source: "tbox-api",
+        data: { text: "数据分析师是热门职业", conversationId: "remote-123", citations: [], warnings: [] },
+        meta: metaObj,
       };
     },
   );
@@ -293,7 +290,7 @@ describe("handleStreamRequest", () => {
     ]);
     const service = createMockService();
     const response = await handleStreamRequest(
-      { userId: "user-1", conversationId: "conv-1", message: "我每周投入8小时" },
+      { userId: "user-1", conversationId: "conv-1", message: "数据分析师是什么？" },
       service as any,
     );
 
@@ -302,7 +299,7 @@ describe("handleStreamRequest", () => {
     expect(mocks.createArtifactsForChat).toHaveBeenCalledWith({
       userId: "user-1",
       conversationId: "conv-1",
-      message: "我每周投入8小时",
+      assistantResult: expect.objectContaining({ text: "数据分析师是热门职业" }),
     });
     expect(blocks.findIndex((block) => block.startsWith("event: artifact"))).toBeGreaterThan(-1);
     expect(blocks.findIndex((block) => block.startsWith("event: artifact")))

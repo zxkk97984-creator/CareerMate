@@ -1,19 +1,17 @@
 import { getPrisma } from "@/lib/prisma";
-import { getTboxConfig } from "@/lib/env";
 import { toJson } from "@/lib/json";
-import { generateStructuredWithTbox } from "@/lib/tbox/adapter";
 import { createPlanGenerationService } from "@/lib/plans/generation-service";
-import {
-  explorationReportSchema,
-  type ExplorationReport,
-} from "@/lib/careers/exploration-schema";
 import type { AiExecutionMeta } from "@/lib/types";
+import type { NormalizedAssistantResult } from "@/lib/tbox/types";
+import type { TboxStructuredResult } from "@/lib/tbox/capability-schemas";
 import type { ChatMessagePart } from "./persistence";
 import {
   citationsPart,
   explorationReportRefPart,
   planRefPart,
   profileCandidateRefPart,
+  simulationReportRefPart,
+  errorPart,
 } from "./artifacts";
 
 interface CandidateInput {
@@ -27,21 +25,9 @@ interface CandidateInput {
   impactSummary: string;
 }
 
-interface ResearchResult {
-  report: ExplorationReport;
-  meta: AiExecutionMeta;
-}
-
 export interface ChatArtifactDependencies {
   createProfileCandidate(input: CandidateInput): Promise<string>;
   createPendingPlan(userId: string, conversationId?: string): Promise<{ id: string; version: number }>;
-  researchCareer(roleName: string, userId: string): Promise<ResearchResult>;
-  createExplorationReport(input: {
-    userId: string;
-    conversationId: string;
-    report: ExplorationReport;
-    meta: AiExecutionMeta;
-  }): Promise<string>;
   listPendingCandidateIds(input: {
     userId: string;
     conversationId: string;
@@ -51,77 +37,19 @@ export interface ChatArtifactDependencies {
 interface ChatArtifactInput {
   userId: string;
   conversationId: string;
-  message: string;
+  /** 来自本次 Agent 响应的归一化结果（通过 parseStructuredAssistantResult 处理后） */
+  assistantResult: NormalizedAssistantResult;
 }
 
-const knownRoleNames = new Set([
-  "ai产品经理",
-  "数据分析师",
-  "内容运营",
-  "aigc内容运营",
+// 画像字段白名单（与 candidate-service.ts 保持一致）
+const ALLOWED_CANDIDATE_FIELDS = new Set([
+  "educationStage", "major", "targetRole", "targetRoleLabel",
+  "weeklyAvailableHours", "learningPreference", "experienceSummary",
+  "interestTags", "constraints",
+  "abilityScores.aiTooling", "abilityScores.roleFoundation",
+  "abilityScores.dataAnalysis", "abilityScores.businessProduct",
+  "abilityScores.communication", "abilityScores.projectPractice",
 ]);
-
-function weeklyHours(message: string) {
-  const matched = message.match(/每周(?:可以|能够|能|可)?(?:投入|学习|安排)?\s*(\d{1,2})\s*(?:个)?小时/);
-  if (!matched) return null;
-  const value = Number(matched[1]);
-  return value >= 1 && value <= 80 ? value : null;
-}
-
-function requestedRole(message: string) {
-  const patterns = [
-    /(?:介绍|了解|研究|想做|想成为|转行做)\s*([A-Za-z0-9\u4e00-\u9fa5·]{2,20}?)(?:这个)?(?:岗位|职业|需要|的|，|。|,|\?|？|$)/i,
-    /([A-Za-z0-9\u4e00-\u9fa5·]{2,20})这个(?:岗位|职业)/i,
-  ];
-  for (const pattern of patterns) {
-    const role = message.match(pattern)?.[1]?.trim().replace(/^一下/, "");
-    if (role) return role;
-  }
-  return null;
-}
-
-function isKnownRole(roleName: string) {
-  return knownRoleNames.has(roleName.toLowerCase().replace(/\s+/g, ""));
-}
-
-function requestsPlan(message: string) {
-  return /(?:制定|生成|调整|重做|规划).{0,10}(?:计划|路径)|(?:三个月|90天|本周).{0,8}(?:计划|行动)/.test(message);
-}
-
-function safeMockReport(roleName: string): ExplorationReport {
-  return {
-    roleName,
-    summary: `当前处于本地辅助模式，先为“${roleName}”建立探索框架；联网事实需要在百宝箱真实搜索成功后补充。`,
-    responsibilities: [],
-    coreCompetencies: [],
-    entryPaths: [],
-    marketSignals: [],
-    learningSuggestions: ["先收集 3 个权威岗位说明，再对照个人经历补充能力证据。"],
-    fitAnalysis: ["AI推断：现有信息不足，暂不判断匹配程度。"],
-    risksAndUncertainties: ["尚未取得实时联网来源，不能把市场信息视为已核验事实。"],
-    sources: [{
-      title: "本地辅助分析",
-      organization: "CareerMate",
-      accessedAt: new Date().toISOString().slice(0, 10),
-      label: "AI分析与推断",
-    }],
-  };
-}
-
-function normalizeResearchSources(result: ResearchResult): ResearchResult {
-  if (result.meta.actualMode === "api" && !result.meta.degraded) return result;
-  return {
-    ...result,
-    report: {
-      ...result.report,
-      sources: result.report.sources.map((source) => ({
-        ...source,
-        url: undefined,
-        label: "AI分析与推断" as const,
-      })),
-    },
-  };
-}
 
 const productionDependencies: ChatArtifactDependencies = {
   async createProfileCandidate(input) {
@@ -168,38 +96,6 @@ const productionDependencies: ChatArtifactDependencies = {
     return { id: plan.id, version: plan.version };
   },
 
-  async researchCareer(roleName, userId) {
-    const result = await generateStructuredWithTbox({
-      config: getTboxConfig(),
-      userId,
-      prompt: [
-        `请调研职业“${roleName}”。如果职业库未覆盖，必须调用百宝箱 search_engine。`,
-        "优先政府/职业标准、行业协会、企业官方页面和权威研究报告。",
-        "只输出符合职业探索报告结构的 JSON；事实来源写访问日期和 URL，AI判断标为AI分析与推断。",
-      ].join("\n"),
-      schema: explorationReportSchema,
-      manual: async () => null,
-      mock: () => safeMockReport(roleName),
-    });
-    return normalizeResearchSources({ report: result.data, meta: result.meta });
-  },
-
-  async createExplorationReport(input) {
-    const db = getPrisma();
-    const created = await db.careerExplorationReport.create({
-      data: {
-        userId: input.userId,
-        conversationId: input.conversationId,
-        roleName: input.report.roleName,
-        status: "exploratory",
-        content: toJson(input.report),
-        sources: toJson(input.report.sources),
-        executionMeta: toJson(input.meta),
-      },
-    });
-    return created.id;
-  },
-
   async listPendingCandidateIds(input) {
     const rows = await getPrisma().profileUpdateCandidate.findMany({
       where: {
@@ -219,60 +115,90 @@ export async function createArtifactsForChat(
   dependencies: ChatArtifactDependencies = productionDependencies,
 ): Promise<ChatMessagePart[]> {
   const parts: ChatMessagePart[] = [];
-  const hours = weeklyHours(input.message);
-  if (hours !== null) {
-    const candidateId = await dependencies.createProfileCandidate({
-      userId: input.userId,
-      sourceConversationId: input.conversationId,
-      field: "weeklyAvailableHours",
-      newValue: hours,
-      confidence: 0.99,
-      reason: "用户在对话中明确说明了每周可投入时间。",
-      evidenceExcerpt: input.message,
-      impactSummary: "确认后，后续计划会按新的每周可投入时间调整任务强度。",
-    });
-    parts.push(profileCandidateRefPart(candidateId));
+  const { userId, conversationId, assistantResult } = input;
+  const structured = assistantResult.structured as TboxStructuredResult | undefined;
+
+  // SCHEMA_MISMATCH → 返回安全 error part 或 warning，但不创建引用卡片
+  if (assistantResult.warnings.includes("SCHEMA_MISMATCH")) {
+    parts.push(errorPart(
+      "SCHEMA_MISMATCH",
+      "回答已保留，但结构化卡片未生成。",
+    ));
+    return parts;
   }
 
-  if (requestsPlan(input.message)) {
-    const plan = await dependencies.createPendingPlan(input.userId, input.conversationId);
-    parts.push(planRefPart(plan.id, plan.version));
+  // 没有结构化结果 → 返回空 parts，文本照常完成
+  if (!structured) {
+    return parts;
   }
 
-  const roleName = requestedRole(input.message);
-  if (roleName && !isKnownRole(roleName)) {
-    const research = await dependencies.researchCareer(roleName, input.userId);
-    const reportId = await dependencies.createExplorationReport({
-      userId: input.userId,
-      conversationId: input.conversationId,
-      report: research.report,
-      meta: research.meta,
-    });
-    parts.push(explorationReportRefPart(reportId));
-    if (research.report.sources.length > 0) {
-      parts.push(citationsPart(research.report.sources.map((source) => ({
-        title: source.title,
-        source: source.organization,
-        url: source.url,
-        accessedAt: source.accessedAt,
-        label: source.label,
-      }))));
+  // ── 按结构化结果类型创建候选 ────────────────────────
+
+  // 处理 candidateUpdates（多个能力类型可能都有此字段）
+  const candidateUpdates = "candidateUpdates" in structured
+    ? (structured as unknown as { candidateUpdates?: Array<{
+        field: string; newValue: unknown; confidence: number;
+        reason: string; evidenceExcerpt: string; impactSummary: string;
+      }> }).candidateUpdates
+    : undefined;
+
+  if (candidateUpdates && Array.isArray(candidateUpdates)) {
+    for (const update of candidateUpdates) {
+      if (!ALLOWED_CANDIDATE_FIELDS.has(update.field)) continue;
+      try {
+        const candidateId = await dependencies.createProfileCandidate({
+          userId,
+          sourceConversationId: conversationId,
+          field: update.field,
+          newValue: update.newValue,
+          confidence: update.confidence,
+          reason: update.reason,
+          evidenceExcerpt: update.evidenceExcerpt,
+          impactSummary: update.impactSummary,
+        });
+        parts.push(profileCandidateRefPart(candidateId));
+      } catch {
+        // 创建候选失败不中断整个流程
+      }
     }
   }
 
-  const referencedCandidateIds = new Set(
-    parts
-      .filter((part): part is Extract<ChatMessagePart, { type: "profile_candidate_ref" }> => part.type === "profile_candidate_ref")
-      .map((part) => part.candidateId),
-  );
-  const conversationCandidateIds = await dependencies.listPendingCandidateIds({
-    userId: input.userId,
-    conversationId: input.conversationId,
-  });
-  for (const candidateId of conversationCandidateIds) {
-    if (referencedCandidateIds.has(candidateId)) continue;
-    parts.push(profileCandidateRefPart(candidateId));
-    referencedCandidateIds.add(candidateId);
+  // career_plan → 创建 pending plan
+  if (structured.type === "career_plan") {
+    try {
+      const plan = await dependencies.createPendingPlan(userId, conversationId);
+      parts.push(planRefPart(plan.id, plan.version));
+    } catch {
+      parts.push(errorPart("PLAN_CREATE_FAILED", "计划卡片未生成，可以稍后重试。"));
+    }
   }
+
+  // simulation_report → report ref
+  if (structured.type === "simulation_report") {
+    // sessionId 需要从调用上下文传入，这里通过 structured 本身不包含
+    // 由模拟训练完成的 API 路由单独处理
+  }
+
+  // ── 合并已有候选 ──────────────────────────────────
+
+  try {
+    const referencedCandidateIds = new Set(
+      parts
+        .filter((p): p is Extract<ChatMessagePart, { type: "profile_candidate_ref" }> => p.type === "profile_candidate_ref")
+        .map((p) => p.candidateId),
+    );
+    const conversationCandidateIds = await dependencies.listPendingCandidateIds({
+      userId,
+      conversationId,
+    });
+    for (const candidateId of conversationCandidateIds) {
+      if (referencedCandidateIds.has(candidateId)) continue;
+      parts.push(profileCandidateRefPart(candidateId));
+      referencedCandidateIds.add(candidateId);
+    }
+  } catch {
+    // 查询候选失败不中断流程
+  }
+
   return parts;
 }

@@ -39,6 +39,11 @@ export function explorationReportRefPart(reportId: string): ChatMessagePart {
   return { type: "exploration_report_ref", reportId };
 }
 
+/** 创建模拟报告引用部件 */
+export function simulationReportRefPart(sessionId: string): ChatMessagePart {
+  return { type: "simulation_report_ref", sessionId };
+}
+
 /** 创建错误部件 */
 export function errorPart(code: string, message: string): ChatMessagePart {
   return { type: "error", code, message };

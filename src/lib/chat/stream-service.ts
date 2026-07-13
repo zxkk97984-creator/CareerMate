@@ -1,6 +1,7 @@
 import { prepareCareerChat } from "./server";
 import { createChatService, type ChatService } from "./service";
 import { streamChatWithTboxProgressive } from "@/lib/tbox/streaming";
+import { parseStructuredAssistantResult } from "@/lib/tbox/structured-result";
 import { getTboxConfig } from "@/lib/env";
 import { writeSseEvent } from "./sse";
 import { createArtifactsForChat } from "./artifact-service";
@@ -134,10 +135,12 @@ export async function handleStreamRequest(
         remoteConversationId = aiResponse.data.conversationId ?? remoteConversationId;
 
         // 文本完成后生成结构化业务卡片。卡片失败不应抹掉已经完成的回答。
+        // 使用 parseStructuredAssistantResult 从 Agent 结果提取结构化数据
+        const assistantResult = parseStructuredAssistantResult(aiResponse.data);
         const parts = await createArtifactsForChat({
           userId,
           conversationId,
-          message,
+          assistantResult,
         }).catch(() => [
           errorPart(
             "ARTIFACT_UNAVAILABLE",
