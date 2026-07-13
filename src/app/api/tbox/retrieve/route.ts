@@ -15,6 +15,9 @@ async function localRetrieval(input: RetrievalInput): Promise<RetrievalItem[]> {
   if (input.datasetKey === "ethicsRules") {
     return getMockRetrievalItems("ethicsRules", input.limit);
   }
+  if (input.datasetKey === "careerTrends") {
+    return getMockRetrievalItems("careerTrends", input.limit);
+  }
   const prisma = getPrisma();
   if (input.datasetKey === "learningResources") {
     const items = await prisma.resourceItem.findMany({

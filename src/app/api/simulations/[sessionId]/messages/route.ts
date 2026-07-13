@@ -25,7 +25,7 @@ export async function POST(request: Request, context: { params: Promise<{ sessio
   const result = await chatWithTbox({
     question: `你正在进行${session.scenarioTitle}训练。根据回答追问一个具体问题：${parsed.data.message}`,
     userId: user.id,
-    conversationId: session.id,
+    ...(session.remoteConversationId ? { conversationId: session.remoteConversationId } : {}),
     history: transcript,
   }, { config });
   const nextTurn = session.turnCount + 1;
@@ -38,7 +38,7 @@ export async function POST(request: Request, context: { params: Promise<{ sessio
   ];
   const winner = await getPrisma().simulationSession.updateMany({
     where: { id: session.id, userId: user.id, status: "active", updatedAt: session.updatedAt, turnCount: session.turnCount },
-    data: { transcript: JSON.stringify(updatedTranscript), turnCount: nextTurn, requestedMode: result.meta.requestedMode, actualMode: result.meta.actualMode },
+    data: { transcript: JSON.stringify(updatedTranscript), turnCount: nextTurn, requestedMode: result.meta.requestedMode, actualMode: result.meta.actualMode, remoteConversationId: result.data.conversationId ?? session.remoteConversationId },
   });
   if (winner.count !== 1) return fail("SESSION_CONFLICT", "训练会话已更新，请刷新后重试", 409);
   const persisted = await getPrisma().simulationSession.findUnique({ where: { id: session.id } });

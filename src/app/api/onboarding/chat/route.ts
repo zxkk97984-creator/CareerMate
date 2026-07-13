@@ -82,6 +82,7 @@ export async function POST(request: Request) {
     {
       question: buildApiPrompt(parsed.data.message, draft),
       userId: user.id,
+      ...(conversation.remoteConversationId ? { conversationId: conversation.remoteConversationId } : {}),
       context: { draft, missingGroups: missingOnboardingGroups(draft) },
     },
     { config },
@@ -109,6 +110,8 @@ export async function POST(request: Request) {
       completeness,
       requestedMode: executionMeta.requestedMode,
       actualMode: executionMeta.actualMode,
+      remoteConversationId:
+        result.data.conversationId ?? conversation.remoteConversationId,
     },
   });
   if (updateResult.count === 0) {

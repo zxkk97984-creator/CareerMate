@@ -111,7 +111,7 @@ describe("frontend SSE response consumption", () => {
       intent: "roleCompetency",
       knowledgeSources: ["role-ai-product-manager"],
     });
-    expect(result).toEqual({ conversationId: "c1", meta });
+    expect(result).toEqual({ conversationId: "c1", meta, warnings: [] });
 
     await expect(
       consumeFrontendSseResponse(

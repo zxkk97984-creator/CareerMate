@@ -71,7 +71,7 @@ export function canCompleteSimulation(turnCount: number) {
 export function simulationDto(session: {
   id: string; scenarioKey: string; scenarioTitle: string; transcript: string; score: number | null;
   feedback: string; status: string; turnCount: number; requestedMode: string; actualMode: string;
-  candidateId: string | null; createdAt: Date; updatedAt: Date;
+  candidateId: string | null; remoteConversationId?: string | null; createdAt: Date; updatedAt: Date;
 }) {
   return {
     id: session.id,
@@ -85,6 +85,7 @@ export function simulationDto(session: {
     requestedMode: session.requestedMode,
     actualMode: session.actualMode,
     candidateId: session.candidateId,
+    remoteConversationId: session.remoteConversationId ?? null,
     createdAt: session.createdAt.toISOString(),
     updatedAt: session.updatedAt.toISOString(),
   };

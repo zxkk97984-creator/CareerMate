@@ -16,6 +16,7 @@ export const datasetKeySchema = z.enum([
   "learningResources",
   "simulationScenes",
   "ethicsRules",
+  "careerTrends",
 ]);
 
 export const retrievalInputSchema = z.object({

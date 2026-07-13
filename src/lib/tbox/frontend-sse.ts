@@ -16,6 +16,7 @@ interface FrontendSseHandlers {
 export interface FrontendSseResult {
   conversationId: string | null;
   meta: AiExecutionMeta | null;
+  warnings: string[];
 }
 
 const modes: TboxMode[] = ["api", "manual", "mock"];
@@ -115,6 +116,7 @@ export async function consumeFrontendSseResponse(
   let completed = false;
   let conversationId: string | null = null;
   let finalMeta: AiExecutionMeta | null = null;
+  let warnings: string[] = [];
 
   function boundary() {
     const match = /\r\n\r\n|\n\n|\r\r/.exec(buffer);
@@ -156,6 +158,9 @@ export async function consumeFrontendSseResponse(
         parsed.data.remoteConversationId ?? parsed.data.conversationId;
       conversationId = typeof remoteConversationId === "string" ? remoteConversationId : null;
       finalMeta = executionMeta(parsed.data.meta) ?? finalMeta;
+      if (Array.isArray(parsed.data.warnings)) {
+        warnings = parsed.data.warnings.filter((w): w is string => typeof w === "string");
+      }
       completed = true;
     }
   }
@@ -188,5 +193,5 @@ export async function consumeFrontendSseResponse(
     }
     reader.releaseLock();
   }
-  return { conversationId, meta: finalMeta };
+  return { conversationId, meta: finalMeta, warnings };
 }

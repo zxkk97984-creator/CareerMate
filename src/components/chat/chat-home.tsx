@@ -6,7 +6,8 @@ import { ChatThread } from "./chat-thread";
 import { ChatComposer } from "./chat-composer";
 import { GrowthProfileDrawer } from "./growth-profile-drawer";
 import type { ConversationItem, MessageItem } from "@/lib/chat/schemas";
-import { consumeFrontendSseResponse } from "@/lib/tbox/frontend-sse";
+import { consumeFrontendSseResponse, type FrontendSseResult } from "@/lib/tbox/frontend-sse";
+import type { AiExecutionMeta } from "@/lib/types";
 import { Menu, PanelRightClose, PanelRightOpen } from "lucide-react";
 
 interface ChatHomePageProps {
@@ -22,6 +23,8 @@ export function ChatHomePage({ displayName }: ChatHomePageProps) {
   const [messages, setMessages] = useState<MessageItem[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [pendingCandidateCount, setPendingCandidateCount] = useState(0);
+  const [lastAssistantMeta, setLastAssistantMeta] = useState<AiExecutionMeta | null>(null);
+  const [lastAssistantWarnings, setLastAssistantWarnings] = useState<string[]>([]);
 
   // 用 ref 追踪当前活跃会话和流式状态，避免闭包过期
   const activeCidRef = useRef<string | null>(null);
@@ -136,9 +139,10 @@ export function ChatHomePage({ displayName }: ChatHomePageProps) {
 
     // 使用共享 SSE 消费器，正确处理跨网络 chunk 拆分的 event/data。
     let assistantContent = "";
+    let sseResult: FrontendSseResult | null = null;
 
     try {
-      await consumeFrontendSseResponse(response, {
+      sseResult = await consumeFrontendSseResponse(response, {
         onDelta(content) {
           assistantContent += content;
           setMessages(prev =>
@@ -160,6 +164,8 @@ export function ChatHomePage({ displayName }: ChatHomePageProps) {
           );
         },
       });
+      setLastAssistantMeta(sseResult.meta);
+      setLastAssistantWarnings(sseResult.warnings);
       setMessages(prev =>
         prev.map(m => m.id === assistantMsg.id
           ? { ...m, content: assistantContent, status: "completed" }
@@ -312,6 +318,17 @@ export function ChatHomePage({ displayName }: ChatHomePageProps) {
           activeConversationId={activeConversationId}
           onNewChat={handleNewChat}
         />
+
+        {lastAssistantMeta?.degraded && (
+          <div className="degradation-notice">
+            百宝箱服务本次已降级，内容来源：{lastAssistantMeta.actualMode === "manual" ? "manual" : "mock"}。
+          </div>
+        )}
+        {lastAssistantWarnings.includes("SCHEMA_MISMATCH") && !lastAssistantMeta?.degraded && (
+          <div className="degradation-notice schema-warning">
+            回答已保留，但结构化卡片未生成。
+          </div>
+        )}
 
         <ChatComposer
           onSend={handleSendMessage}
