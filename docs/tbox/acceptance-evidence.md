@@ -31,6 +31,34 @@
 - [ ] `profile.candidate.create` 或旧 REST 兼容插件的一次真实调用记录。
 - [ ] 标准 MCP `tools/list` 和 `tools/call` 的外部客户端调用记录。
 
+## 2026-07-14 SSE 事件协议采集
+
+使用主 Agent `202607APx4uo20054136`，问题："请用一句话介绍 CareerMate，并返回一个简单的 Markdown 列表。"
+
+### 真实 SSE 事件序列（不含敏感内容）
+
+| 序号 | 事件名 | data 字段 | 是否重复 | conversation_id 位置 |
+|------|--------|-----------|----------|---------------------|
+| 1 | `conversation.chat.created` | created_time, conversation_id, usage, chat_id, status | 否 | data.conversation_id |
+| 2 | `conversation.chat.in_progress` | created_time, agent_id, conversation_id, usage, chat_id, status | 否 | data.conversation_id |
+| 3-24 | `conversation.message.delta` | updated_time, role, content_type, conversation_id, message_id, type, content, chat_id | 是（22次delta） | data.conversation_id |
+| 25 | `conversation.chat.completed` | created_time, agent_id, completed_time, conversation_id, usage, chat_id, status | 否 | data.conversation_id |
+| 26 | `done` | `[DONE]`（纯文本） | 否 | 无（在 done 事件中不携带） |
+
+### 关键发现
+
+- **不存在 `conversation.message.completed` 事件**：文本在 `conversation.message.delta` 中逐段推送，最后由 `conversation.chat.completed` 终止
+- 存在 `conversation.chat.created` 和 `conversation.chat.in_progress` 两个新事件类型（当前解析器未处理，但不影响正常流程）
+- `done` 事件 data 为 `[DONE]` 纯文本（非 JSON）
+- conversation_id 在 `conversation.chat.created` 中首次出现，后续所有 delta 和 completed 事件均携带
+
+### 配置状态
+
+- `TBOX_MODE`: api
+- `TBOX_API_KEY`: PRESENT
+- `TBOX_AGENT_ID`: PRESENT（202607APx4uo20054136）
+- `TBOX_AGENT_VERSION`: ABSENT（未配置）
+
 ## 额外验证
 
 - ✅ 画像候选自动生成：输入"我每周可以投入20小时学习"触发 `profile_candidate_ref` artifact
