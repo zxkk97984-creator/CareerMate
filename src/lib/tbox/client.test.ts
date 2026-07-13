@@ -3,9 +3,10 @@ import { consumeChatResponse } from "./client";
 
 describe("tbox client request contract", () => {
   it("sends conversation and agent options in the JSON body", async () => {
-    const fetchImpl = vi.fn(async (_url: URL | RequestInfo, init?: RequestInit) =>
-      new Response("{}", { status: 200 }),
-    );
+    const fetchFn = vi.fn(async (url: URL | RequestInfo, init?: RequestInit) => {
+      void url; void init;
+      return new Response("{}", { status: 200 });
+    });
     await consumeChatResponse(
       { question: "hello", userId: "user-1", conversationId: "remote-1" },
       true,
@@ -28,15 +29,17 @@ describe("tbox client request contract", () => {
             careerTrends: "",
           },
         } as import("./types").TboxConfig,
-        fetchImpl: fetchImpl as typeof fetch,
+        fetchImpl: fetchFn as typeof fetch,
       },
       async () => undefined,
     );
-    const [url, init] = fetchImpl.mock.calls[0]!;
+    const callArgs = fetchFn.mock.calls[0]!;
+    const callUrl = callArgs[0]!;
+    const callInit = callArgs[1];
     // conversation_id 不应出现在 URL 查询参数中
-    expect(String(url)).not.toContain("conversation_id");
+    expect(String(callUrl)).not.toContain("conversation_id");
     // 请求体应包含新字段
-    const body = JSON.parse(String(init?.body));
+    const body = JSON.parse(String(callInit?.body));
     expect(body).toMatchObject({
       agent_id: "agent-1",
       agent_version: "2.0",

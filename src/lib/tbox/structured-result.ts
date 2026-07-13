@@ -1,4 +1,4 @@
-import { tboxStructuredResultSchema, type TboxStructuredResult } from "./capability-schemas";
+import { tboxStructuredResultSchema } from "./capability-schemas";
 import type { NormalizedAssistantResult } from "./types";
 
 /**

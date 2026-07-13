@@ -1,16 +1,12 @@
 import { getPrisma } from "@/lib/prisma";
 import { toJson } from "@/lib/json";
 import { createPlanGenerationService } from "@/lib/plans/generation-service";
-import type { AiExecutionMeta } from "@/lib/types";
 import type { NormalizedAssistantResult } from "@/lib/tbox/types";
 import type { TboxStructuredResult } from "@/lib/tbox/capability-schemas";
 import type { ChatMessagePart } from "./persistence";
 import {
-  citationsPart,
-  explorationReportRefPart,
   planRefPart,
   profileCandidateRefPart,
-  simulationReportRefPart,
   errorPart,
 } from "./artifacts";
 

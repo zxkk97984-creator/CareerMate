@@ -5,7 +5,6 @@ import { buildSimulationFeedback } from "@/lib/career";
 import type { AiResult, NormalizedAssistantResult } from "@/lib/tbox/types";
 import type { SimulationReportResult } from "@/lib/tbox/capability-schemas";
 import type { SimulationScenarioKey } from "../simulation";
-import type { AiExecutionMeta } from "@/lib/types";
 
 interface SimulationTranscriptTurn {
   role: "user" | "assistant";

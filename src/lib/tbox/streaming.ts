@@ -238,7 +238,6 @@ export async function streamChatWithTboxProgressive(
   throwIfAborted(deps.signal);
   const mResult = await manualResult(input, deps);
   throwIfAborted(deps.signal);
-  const fallbackReason = mResult ? null : "manual_unavailable";
   const actualMode: TboxConfig["mode"] = mResult ? "manual" : "mock";
   const source = mResult ? "manual-fixture" : "local-mock";
   const metaObj = meta(requested, actualMode, reason, source);
