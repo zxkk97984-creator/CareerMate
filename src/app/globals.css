@@ -547,6 +547,223 @@ button:disabled {
   margin-left: 2px;
 }
 
+/* ── AI 消息 Markdown 渲染样式 ─────────────────────────── */
+
+.markdown-body {
+  /* 继承消息卡片的字体大小和行高 */
+  line-height: 1.75;
+  word-break: break-word;
+}
+
+.markdown-body > *:first-child {
+  margin-top: 0;
+}
+
+.markdown-body > *:last-child {
+  margin-bottom: 0;
+}
+
+/* 段落 */
+.markdown-body p {
+  margin: 0.6em 0;
+}
+
+/* 标题 —— 不使用浏览器默认大字号，渐进缩小 */
+.markdown-body h1 {
+  margin: 1em 0 0.4em;
+  font-size: 1.3em;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--cm-text-strong);
+}
+
+.markdown-body h2 {
+  margin: 0.9em 0 0.35em;
+  font-size: 1.15em;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--cm-text-strong);
+}
+
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  margin: 0.7em 0 0.3em;
+  font-size: 1.05em;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--cm-text-strong);
+}
+
+/* 加粗和斜体 */
+.markdown-body strong {
+  font-weight: 700;
+  color: var(--cm-text-strong);
+}
+
+.markdown-body em {
+  font-style: italic;
+}
+
+/* 无序列表 */
+.markdown-body ul {
+  margin: 0.5em 0;
+  padding-left: 1.4em;
+  list-style: disc;
+}
+
+.markdown-body ul ul {
+  list-style: circle;
+}
+
+.markdown-body ul ul ul {
+  list-style: square;
+}
+
+/* 有序列表 */
+.markdown-body ol {
+  margin: 0.5em 0;
+  padding-left: 1.4em;
+  list-style: decimal;
+}
+
+.markdown-body li {
+  margin: 0.25em 0;
+  line-height: 1.7;
+}
+
+.markdown-body li > p {
+  margin: 0.25em 0;
+}
+
+/* 行内代码 */
+.markdown-body code {
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  font-family: "Fira Code", "Cascadia Code", "Consolas", monospace;
+  font-size: 0.88em;
+  background: var(--cm-canvas);
+  color: var(--cm-brand);
+  word-break: break-word;
+}
+
+/* 代码块 */
+.markdown-body pre {
+  margin: 0.6em 0;
+  padding: 12px 14px;
+  border-radius: var(--cm-radius-sm);
+  background: var(--cm-canvas);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border: 1px solid var(--cm-border);
+}
+
+.markdown-body pre code {
+  padding: 0;
+  background: none;
+  color: var(--cm-text-strong);
+  font-size: 0.85em;
+  line-height: 1.6;
+}
+
+/* 引用 */
+.markdown-body blockquote {
+  margin: 0.6em 0;
+  padding: 8px 14px;
+  border-left: 3px solid var(--cm-brand);
+  background: var(--cm-surface-soft);
+  border-radius: 0 var(--cm-radius-sm) var(--cm-radius-sm) 0;
+  color: var(--cm-text-muted);
+}
+
+.markdown-body blockquote p {
+  margin: 0.3em 0;
+}
+
+/* 链接 */
+.markdown-body a {
+  color: var(--cm-brand);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  word-break: break-word;
+}
+
+.markdown-body a:hover {
+  color: var(--cm-brand-hover);
+}
+
+/* 表格（GFM） */
+.markdown-body table {
+  margin: 0.6em 0;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.93em;
+  overflow-x: auto;
+  display: block;
+}
+
+.markdown-body thead {
+  border-bottom: 2px solid var(--cm-border-strong);
+}
+
+.markdown-body th {
+  padding: 6px 12px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--cm-text-strong);
+  white-space: nowrap;
+}
+
+.markdown-body td {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--cm-border);
+  color: var(--cm-text-muted);
+}
+
+.markdown-body tr:last-child td {
+  border-bottom: none;
+}
+
+/* 水平分割线 */
+.markdown-body hr {
+  margin: 1em 0;
+  border: none;
+  border-top: 1px solid var(--cm-border);
+}
+
+/* 删除线（GFM） */
+.markdown-body del {
+  text-decoration: line-through;
+  color: var(--cm-text-subtle);
+}
+
+/* 图片 —— 限制不超出容器 */
+.markdown-body img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--cm-radius-sm);
+}
+
+/* 移动端 375px 无横向溢出 */
+@media (max-width: 375px) {
+  .markdown-body pre {
+    margin-left: 0;
+    margin-right: 0;
+    padding: 10px 12px;
+  }
+
+  .markdown-body table {
+    font-size: 0.83em;
+  }
+
+  .markdown-body th,
+  .markdown-body td {
+    padding: 4px 8px;
+  }
+}
+
 @keyframes blink {
   50% { opacity: 0; }
 }
