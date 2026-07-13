@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import type { MessageItem } from "@/lib/chat/schemas";
 import type { ChatMessagePart } from "@/lib/chat/persistence";
 import { MessageParts } from "./message-parts";
+import { MemoizedMarkdown } from "./memoized-markdown";
 import { MessageSquareText, Sparkles } from "lucide-react";
 
 interface ChatThreadProps {
@@ -72,7 +73,11 @@ export function ChatThread({ messages, activeConversationId, onNewChat }: ChatTh
           <div className="message-body">
             <div className="message-content">
               {msg.content ? (
-                <p className="message-text">{msg.content}</p>
+                msg.role === "assistant" ? (
+                  <MemoizedMarkdown content={msg.content} />
+                ) : (
+                  <p className="message-text">{msg.content}</p>
+                )
               ) : msg.status === "streaming" ? (
                 <p className="message-text streaming-cursor">思考中...</p>
               ) : null}

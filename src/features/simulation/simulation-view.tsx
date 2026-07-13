@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
+import { SurfaceCard } from "@/components/ui/surface-card";
+import { Button } from "@/components/ui/button";
 
 interface ApiPayload<T> {
   ok: boolean;
@@ -28,14 +30,6 @@ const scenarios = [
 async function request<T>(url: string, init?: RequestInit): Promise<ApiPayload<T>> {
   const response = await fetch(url, { ...init, headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) } });
   return response.json();
-}
-
-function Panel({ title, children }: { title: string; children: ReactNode }) {
-  return <section className="rounded-lg border border-slate-200 bg-white shadow-sm"><div className="border-b border-slate-100 px-5 py-4"><h2 className="text-base font-semibold text-slate-950">{title}</h2></div><div className="p-5">{children}</div></section>;
-}
-
-function Button({ children, onClick, disabled, secondary = false }: { children: ReactNode; onClick: () => void; disabled?: boolean; secondary?: boolean }) {
-  return <button disabled={disabled} onClick={onClick} className={`h-10 rounded-md px-4 text-sm font-semibold ${secondary ? "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50" : "bg-slate-950 text-white hover:bg-slate-800"}`}>{children}</button>;
 }
 
 export function SimulationView({ simulations, refresh, setNotice }: { simulations: SimulationSession[]; refresh: () => Promise<void>; setNotice: (value: string) => void }) {
@@ -77,12 +71,12 @@ export function SimulationView({ simulations, refresh, setNotice }: { simulation
     finally { setBusy(false); }
   }
 
-  return <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
-    <Panel title="训练场景"><div className="space-y-3">{scenarios.map((scenario) => <button key={scenario.key} disabled={busy || active?.status === "active"} onClick={() => setSelected(scenario)} className={`w-full rounded-md border p-4 text-left ${selected.key === scenario.key ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-700"}`}><div className="text-sm font-semibold">{scenario.title}</div><div className="mt-2 text-xs opacity-75">{scenario.prompt}</div></button>)}</div><div className="mt-4"><Button disabled={busy || active?.status === "active"} onClick={start}>开始新训练</Button></div></Panel>
-    <Panel title={active?.scenarioTitle ?? selected.title}>
-      {error ? <p className="mb-4 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
-      {active ? <div className="space-y-3">{active.transcript.map((turn, index) => <div key={`${turn.role}-${index}`} className={`rounded-md p-3 text-sm leading-6 ${turn.role === "user" ? "ml-8 bg-slate-950 text-white" : "mr-8 bg-slate-100 text-slate-700"}`}>{turn.content}</div>)}{active.status === "active" ? <><textarea aria-label="训练回答" className="min-h-28 w-full rounded-md border border-slate-200 p-3 text-sm leading-6" placeholder="输入不少于 5 个字的回答" value={answer} onChange={(event) => setAnswer(event.target.value)} /><div className="flex flex-wrap gap-2"><Button disabled={busy || answer.trim().length < 5 || active.turnCount >= 6} onClick={send}>提交第 {active.turnCount + 1} 轮</Button><Button secondary disabled={busy || active.turnCount < 3} onClick={complete}>完成并评分</Button></div><p className="text-xs text-slate-500">已完成 {active.turnCount}/6 轮，至少 3 轮后可评分。实际模式：{active.actualMode}</p></> : <div className="rounded-md bg-emerald-50 p-4 text-sm text-emerald-800">训练得分：{active.score} 分。画像候选已生成，可前往“记忆权限”确认。</div>}</div> : <p className="text-sm text-slate-500">选择场景并开始训练。</p>}
-      <div className="mt-6 space-y-3">{simulations.slice(0, 5).map((item) => <div key={item.id} className="rounded-md border border-slate-200 p-4"><div className="flex items-center justify-between"><div className="font-semibold text-slate-900">{item.scenarioTitle}</div><button className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-700" onClick={() => setActive(item)}>{item.status === "completed" ? `${item.score} 分` : `${item.turnCount} 轮`}</button></div></div>)}</div>
-    </Panel>
+  return <div style={{ display: "grid", gap: 20 }} className="grid-cols-[360px_1fr] max-lg:grid-cols-1">
+    <SurfaceCard title="训练场景"><div style={{ display: "flex", flexDirection: "column", gap: 12 }}>{scenarios.map((scenario) => <button key={scenario.key} disabled={busy || active?.status === "active"} onClick={() => setSelected(scenario)} style={{ width: "100%", borderRadius: "var(--cm-radius-sm)", border: selected.key === scenario.key ? "2px solid var(--cm-brand)" : "1px solid var(--cm-border-strong)", background: selected.key === scenario.key ? "var(--cm-surface-soft)" : "var(--cm-surface)", color: selected.key === scenario.key ? "var(--cm-brand)" : "var(--cm-text-strong)", padding: 16, textAlign: "left", cursor: "pointer", fontSize: 14, fontWeight: 600 }}><div>{scenario.title}</div><div style={{ marginTop: 8, fontSize: 12, opacity: 0.75 }}>{scenario.prompt}</div></button>)}</div><div style={{ marginTop: 16 }}><Button disabled={busy || active?.status === "active"} onClick={start}>开始新训练</Button></div></SurfaceCard>
+    <SurfaceCard title={active?.scenarioTitle ?? selected.title}>
+      {error ? <p style={{ marginBottom: 16, borderRadius: "var(--cm-radius-sm)", background: "var(--cm-danger-bg)", padding: "8px 12px", fontSize: 14, color: "var(--cm-danger)" }}>{error}</p> : null}
+      {active ? <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>{active.transcript.map((turn, index) => <div key={`${turn.role}-${index}`} style={{ borderRadius: "var(--cm-radius-sm)", padding: 12, fontSize: 14, lineHeight: 1.6, ...(turn.role === "user" ? { marginLeft: 32, background: "var(--cm-brand)", color: "#fff" } : { marginRight: 32, background: "var(--cm-canvas)", color: "var(--cm-text-strong)" }) }}>{turn.content}</div>)}{active.status === "active" ? <><textarea aria-label="训练回答" style={{ minHeight: 112, width: "100%", borderRadius: "var(--cm-radius-sm)", border: "1px solid var(--cm-border-strong)", padding: 12, fontSize: 14, color: "var(--cm-text-strong)", background: "var(--cm-surface)" }} placeholder="输入不少于 5 个字的回答" value={answer} onChange={(event) => setAnswer(event.target.value)} /><div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}><Button disabled={busy || answer.trim().length < 5 || active.turnCount >= 6} onClick={send}>提交第 {active.turnCount + 1} 轮</Button><Button variant="secondary" disabled={busy || active.turnCount < 3} onClick={complete}>完成并评分</Button></div><p style={{ fontSize: 12, color: "var(--cm-text-subtle)" }}>已完成 {active.turnCount}/6 轮，至少 3 轮后可评分。实际模式：{active.actualMode}</p></> : <div style={{ borderRadius: "var(--cm-radius-sm)", background: "var(--cm-success-bg)", padding: 16, fontSize: 14, color: "var(--cm-success)" }}>训练得分：{active.score} 分。画像候选已生成，可前往&ldquo;记忆权限&rdquo;确认。</div>}</div> : <p style={{ fontSize: 14, color: "var(--cm-text-muted)" }}>选择场景并开始训练。</p>}
+      <div style={{ marginTop: 24, display: "flex", flexDirection: "column", gap: 12 }}>{simulations.slice(0, 5).map((item) => <div key={item.id} style={{ borderRadius: "var(--cm-radius-sm)", border: "1px solid var(--cm-border)", padding: 16, display: "flex", alignItems: "center", justifyContent: "space-between" }}><div style={{ fontWeight: 600, color: "var(--cm-text-strong)", fontSize: 14 }}>{item.scenarioTitle}</div><button onClick={() => setActive(item)} style={{ borderRadius: 999, background: "var(--cm-canvas)", border: "none", padding: "4px 12px", fontSize: 14, color: "var(--cm-text-muted)", cursor: "pointer" }}>{item.status === "completed" ? `${item.score} 分` : `${item.turnCount} 轮`}</button></div>)}</div>
+    </SurfaceCard>
   </div>;
 }

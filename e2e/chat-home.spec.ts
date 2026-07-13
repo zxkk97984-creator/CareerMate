@@ -275,3 +275,65 @@ test("long conversation title is truncated in sidebar", async ({ page }) => {
     expect(titleText.length).toBeLessThan(40);
   }
 });
+
+/* ── Markdown 渲染 ── */
+
+test("AI assistant message renders Markdown bold as <strong>", async ({ page }) => {
+  await login(page);
+
+  // 发送消息触发 mock SSE 回答（含 **加粗** 标记）
+  await page.getByPlaceholder(/Enter 发送/).fill("讲讲AI产品经理");
+  await page.getByLabel("发送消息").click();
+  await expect(page.locator(".message-assistant")).toBeVisible({ timeout: 15000 });
+  // 等待流式完成
+  await expect(page.locator(".streaming-cursor")).toHaveCount(0, { timeout: 15000 });
+
+  // AI 回答中 <strong> 元素存在（Markdown ** 被正确渲染）
+  await expect(page.locator(".message-assistant strong").first()).toBeVisible();
+
+  // AI 回答中不应出现原始 ** 包裹符号
+  const assistantMsg = page.locator(".message-assistant .message-content").first();
+  const text = await assistantMsg.textContent();
+  // **CareerMate** 渲染后不应留下 ** 符号
+  expect(text).not.toContain("**CareerMate**");
+  expect(text).not.toContain("**AI 职业成长伙伴**");
+});
+
+test("Markdown rendering survives page reload", async ({ page }) => {
+  await login(page);
+
+  await page.getByPlaceholder(/Enter 发送/).fill("讲讲AI产品经理");
+  await page.getByLabel("发送消息").click();
+  await expect(page.locator(".message-assistant")).toBeVisible({ timeout: 15000 });
+  await expect(page.locator(".streaming-cursor")).toHaveCount(0, { timeout: 15000 });
+
+  // 刷新后消息仍在
+  await page.reload();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.locator(".conversation-list")).toBeVisible();
+
+  // 点击会话查看消息
+  await page.locator(".conversation-title-btn").first().click();
+  await expect(page.locator(".message-assistant")).toBeVisible({ timeout: 10000 });
+
+  // 刷新后 Markdown 仍正确渲染
+  await expect(page.locator(".message-assistant strong").first()).toBeVisible();
+});
+
+test("user message with ** is displayed as plain text", async ({ page }) => {
+  await login(page);
+
+  // 用户发送含 ** 的文本
+  const userInput = "我认为**关键技能**是数据分析";
+  await page.getByPlaceholder(/Enter 发送/).fill(userInput);
+  await page.getByLabel("发送消息").click();
+  await expect(page.locator(".message-assistant")).toBeVisible({ timeout: 15000 });
+  await expect(page.locator(".streaming-cursor")).toHaveCount(0, { timeout: 15000 });
+
+  // 用户消息应保留原始 ** 符号（不被渲染为 Markdown）
+  const userMsg = page.locator(".message-user .message-content").first();
+  // 用户消息使用 <p className="message-text"> 渲染，不含 <strong>
+  await expect(userMsg.locator("strong")).toHaveCount(0);
+  // 用户消息文本中可见原始 ** 符号
+  await expect(userMsg).toContainText("**关键技能**");
+});

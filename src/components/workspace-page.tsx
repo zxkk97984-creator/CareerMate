@@ -6,5 +6,12 @@ export async function WorkspacePage({ view }: { view: Parameters<typeof Workspac
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (view !== "onboarding" && !user.profile?.onboardingCompleted) redirect("/onboarding");
-  return <Workspace initialView={view} />;
+  // Admin 守卫：普通用户不可访问 Admin 页面
+  if (view === "admin" && user.role !== "admin") redirect("/");
+  return (
+    <Workspace
+      initialView={view}
+      isAdmin={user.role === "admin"}
+    />
+  );
 }
