@@ -28,6 +28,51 @@ describe("normalizeMarkdownContent", () => {
     expect(normalizeMarkdownContent(input)).toBe(input);
   });
 
+  it("不修改代码块中的 '**关键词： **' 模式", () => {
+    // 代码块中的 "**label: **" 不应被规范化
+    const input = "```json\n{\n  \"note\": \"**标签： ** 请勿修改\"\n}\n```";
+    expect(normalizeMarkdownContent(input)).toBe(input);
+  });
+
+  it("代码块前后的普通文本仍被规范化", () => {
+    // 代码块外需要修正，代码块内保持原样
+    const beforeBlock = "**注意： ** 以下是示例代码。\n\n";
+    const codeBlock = "```json\n{ \"note\": \"**标签： ** 内部不动\" }\n```\n\n";
+    const afterBlock = "**结论： ** 以上即为结果。";
+    const input = beforeBlock + codeBlock + afterBlock;
+    const result = normalizeMarkdownContent(input);
+
+    // 代码块外的加粗被修正
+    expect(result).toContain("**注意：** ");
+    expect(result).toContain("**结论：** ");
+    // 代码块内的内容原样保留
+    expect(result).toContain("**标签： ** 内部不动");
+  });
+
+  it("多个代码块各自被保护", () => {
+    const input = [
+      "**第一点： ** 说明。",
+      "",
+      "```js",
+      "console.log('**不要动： **');",
+      "```",
+      "",
+      "**第二点： ** 继续。",
+      "",
+      "```python",
+      "x = '**也别动： **'",
+      "```",
+    ].join("\n");
+    const result = normalizeMarkdownContent(input);
+
+    // 普通文本被修正
+    expect(result).toContain("**第一点：** ");
+    expect(result).toContain("**第二点：** ");
+    // 代码块内容不变
+    expect(result).toContain("console.log('**不要动： **');");
+    expect(result).toContain("x = '**也别动： **'");
+  });
+
   it("不修改普通星号（非加粗标记）", () => {
     expect(normalizeMarkdownContent("这是一个 * 星号分隔"))
       .toBe("这是一个 * 星号分隔");
