@@ -214,7 +214,9 @@ export async function createArtifactsForChat(
         const planId = await dependencies.saveAgentPlan({
           userId,
           plan,
-          targetRole: plan.currentMonth?.goal ?? "未指定",
+          targetRole: (structured as { targetRole?: string }).targetRole
+            ?? plan.years[0]?.goal?.slice(0, 40)
+            ?? "未指定岗位",
         });
         parts.push(planRefPart(planId.id, planId.version));
       }

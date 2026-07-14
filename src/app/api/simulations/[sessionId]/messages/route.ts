@@ -19,8 +19,13 @@ export async function POST(request: Request, context: { params: Promise<{ sessio
   if (session.turnCount >= 6) return fail("MAX_TURNS", "训练已达到最多轮次，请完成评分", 409);
   const scenarioKey = simulationScenarioSchema.safeParse(session.scenarioKey);
   if (!scenarioKey.success) return fail("INVALID_SESSION", "训练场景无效", 400);
-  const transcript = parseSimulationTranscript(session.transcript);
+  const previousTranscript = parseSimulationTranscript(session.transcript);
   const nextTurn = session.turnCount + 1;
+  // 先构造包含本轮用户回答的 transcript，再传给 Agent
+  const transcript: { role: "user" | "assistant"; content: string }[] = [
+    ...previousTranscript,
+    { role: "user", content: parsed.data.message },
+  ];
 
   const result = await generateSimulationTurn({
     userId: user.id,
@@ -30,12 +35,14 @@ export async function POST(request: Request, context: { params: Promise<{ sessio
     remoteConversationId: session.remoteConversationId ?? undefined,
   });
 
-  const assistantMessage = result.meta.actualMode === "api" && result.data.text.trim()
-    ? result.data.text.trim()
+  // 优先使用 Agent 结构化 simulation_turn.assistantMessage，其次 text，最后本地兜底
+  const structuredTurn = result.data.structured as { assistantMessage?: string } | undefined;
+  const agentMessage = structuredTurn?.assistantMessage?.trim() || result.data.text.trim();
+  const assistantMessage = agentMessage
+    ? agentMessage
     : nextSimulationPrompt(scenarioKey.data, nextTurn);
 
   const updatedTranscript = [...transcript,
-    { role: "user" as const, content: parsed.data.message },
     { role: "assistant" as const, content: assistantMessage, meta: result.meta },
   ];
   const winner = await getPrisma().simulationSession.updateMany({

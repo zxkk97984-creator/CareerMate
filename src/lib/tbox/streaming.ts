@@ -114,9 +114,9 @@ export async function streamChatWithTbox(
       for await (const event of parseUpstreamSse(response.body, { onActivity })) {
         if (event.type === "error") throw new TboxError("sse_error");
         if (event.type === "conversation") conversationId = event.conversationId;
-        // 桥接 NormalizedAiEvent → NormalizedStreamEvent
-        if (event.type === "text_delta") {
-          normalized.push({ event: "message", data: { type: "delta", content: event.text } });
+        // 桥接 NormalizedAiEvent → NormalizedStreamEvent（含 delta 和 final-only 文本）
+        if (event.type === "text_delta" || event.type === "text_final") {
+          if (event.text) normalized.push({ event: "message", data: { type: "delta", content: event.text } });
         }
         if (event.type === "done") {
           normalized.push({ event: "done", data: { conversationId } });

@@ -34,15 +34,22 @@ export async function POST(_request: Request, context: { params: Promise<{ sessi
   const parsedReport = structured ? simulationReportResultSchema.safeParse(structured) : null;
   const validReport = parsedReport?.success ? parsedReport.data : null;
 
+  // manual/mock 降级模式允许确定性评分；API 模式必须通过 Schema 校验
+  const isDegraded = report.meta.degraded;
+  const hasValidReport = validReport !== null;
+  // 非法报告（API 模式下 Schema 失败 / Markdown-only）不得产生正式评分
+  const score = hasValidReport ? (validReport!.score ?? 0) : null;
+  // API 模式降级时：不评分、不创建候选
+  const shouldCreateCandidate = hasValidReport && !isDegraded;
   const feedback = {
-    score: validReport?.score ?? 0,
+    score,
     strengths: validReport?.strengths ?? [],
     improvements: validReport?.improvements ?? [],
     abilityImpact: validReport?.abilityImpact ?? {},
     candidateUpdates: validReport?.candidateUpdates ?? [],
   };
 
-  // 只有通过 Schema 校验的合法报告才创建画像候选；Markdown-only 和降级报告不产生候选
+  // 只有通过 Schema 校验的合法报告才创建画像候选
   const scores = parseJson<Record<string, number>>(user.profile.abilityScores, {});
   let candidateId: string | null = null;
 
@@ -54,8 +61,7 @@ export async function POST(_request: Request, context: { params: Promise<{ sessi
       });
       if (claim.count !== 1) throw new CompletionConflict();
 
-      // 只有合法报告（Schema 通过 + 非降级）才创建候选
-      if (validReport && !report.meta.degraded) {
+      if (shouldCreateCandidate) {
         const primaryUpdate = feedback.candidateUpdates.find((u) => ALLOWED_CANDIDATE_FIELDS.has(u.field));
         if (primaryUpdate) {
           const field = primaryUpdate.field;
@@ -75,10 +81,11 @@ export async function POST(_request: Request, context: { params: Promise<{ sessi
         status: "completed", score: feedback.score, feedback: toJson(feedback), candidateId,
         actualMode: report.meta.actualMode,
       } });
-      const summaryBase = `训练得分 ${feedback.score}`;
-      const summaryExtra = validReport
-        ? (report.meta.degraded ? "；来源：降级评分（未生成候选）" : "；已生成画像更新候选")
-        : "；未通过 Schema 校验，未生成候选";
+      const hasScore = score !== null;
+      const summaryBase = hasScore ? `训练得分 ${score}` : "训练完成（未产生正式评分）";
+      const summaryExtra = hasValidReport
+        ? (isDegraded ? "；来源：降级评分" : "；已生成画像更新候选")
+        : "；未通过 Schema 校验，不产生候选";
       await tx.progressLog.create({ data: {
         userId: user.id, eventType: "simulation_completed", title: `完成模拟训练：${session.scenarioTitle}`,
         summary: summaryBase + summaryExtra,

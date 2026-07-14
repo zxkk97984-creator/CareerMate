@@ -70,7 +70,7 @@ export function createMockStructuredResult(question: string): unknown | undefine
 
   // 计划请求优先匹配（比每周时间更精确的意图）
   if (/(?:制定|生成|调整|重做|规划).{0,10}(?:计划|路径)|(?:三个月|3个月|90天|本周).{0,8}(?:计划|行动)/.test(userQuestion)) {
-    return { ...createMockPlanResult(), type: "career_plan" };
+    return { ...createMockPlanResult(), targetRole: "数据分析师" };
   }
 
   // 每周时间 → profile_assessment + candidateUpdates
@@ -109,7 +109,7 @@ export function createMockStructuredResult(question: string): unknown | undefine
       responsibilities: ["负责核心业务的数据驱动决策", "跨部门协作推动产品落地"],
       coreCompetencies: ["数据分析能力", "业务理解能力", "沟通表达能力"],
       entryPaths: ["相关专业毕业后进入行业", "通过培训或自学转行"],
-      marketSignals: ["岗位需求年增长约15%", "薪资水平中位数为行业前列"],
+      marketSignals: ["岗位需求在数字化领域持续增长", "薪资水平在技术岗位中具有竞争力"],
       learningSuggestions: ["系统学习行业基础知识", "参与实际项目积累经验", "关注头部企业招聘要求"],
       fitAnalysis: ["AI推断：现有信息不足，无法给出精准匹配结论。"],
       risksAndUncertainties: ["市场数据基于公开信息，未取得实时联网来源，不能视为已核验事实。"],

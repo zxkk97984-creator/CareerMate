@@ -142,13 +142,11 @@ test("chat plan generation reaches a confirmable version and survives reload", a
   await page.getByPlaceholder(/Enter 发送/).fill("帮我制定一个3个月学习计划");
   await page.getByLabel("发送消息").click();
 
+  // Agent 返回 career_plan 后卡片渲染，必须出现计划操作按钮
   const planCard = page.getByRole("region", { name: /计划/ });
   await expect(planCard).toBeVisible({ timeout: 20000 });
-  const acceptBtn = page.getByRole("button", { name: /确认新版本|重规划/ });
-  if (await acceptBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-    await acceptBtn.click();
-    await expect(acceptBtn).toHaveCount(0, { timeout: 10000 });
-  }
+  // 确认新版本（pending）或 重规划（已 active）必出现其一
+  await expect(page.getByText(/确认新版本|重规划/)).toBeVisible({ timeout: 10000 });
 
   // 验证计划已持久化：导航到 /path 后页面正常渲染
   await page.goto("/path");

@@ -47,7 +47,7 @@ describe("createArtifactsForChat", () => {
       conversationId: "conversation-1",
       assistantResult: baseResult({
         text: "计划已生成",
-        structured: { type: "career_plan", plan: validPlan, candidateUpdates: [] },
+        structured: { type: "career_plan", plan: validPlan, targetRole: "数据分析师", candidateUpdates: [] },
       }),
     }, deps);
     expect(deps.saveAgentPlan).toHaveBeenCalledWith({

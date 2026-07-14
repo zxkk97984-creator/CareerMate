@@ -167,10 +167,9 @@ export async function* parseUpstreamSse(
     // delta 文本（逐段推送）
     if (upstreamEvent === "conversation.message.delta") {
       // 检测 agentic_error 内联错误——平台工作流报错时在 delta 数据中嵌入
+      // 不得将上游内部错误内容直接推送给用户，只产出 warning 由降级逻辑处理
       if (data.type === "agentic_error") {
         yield { type: "warning", code: "AGENT_ERROR" };
-        const errMsg = stringValue(data.content) ?? "Agent 执行出错";
-        yield { type: "text_delta", text: errMsg };
         return;
       }
       const text = textFromMessage(data);

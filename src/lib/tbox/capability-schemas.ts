@@ -55,6 +55,7 @@ export const roleMatchResultSchema = z.object({
 export const careerPlanResultSchema = z.object({
   type: z.literal("career_plan"),
   plan: careerPlanSchema,
+  targetRole: z.string().trim().min(1).max(100).optional(),
   candidateUpdates: z.array(candidateUpdateSchema).max(12).default([]),
 }).strict();
 
