@@ -6,6 +6,7 @@ function dependencies(): ChatArtifactDependencies {
   return {
     createProfileCandidate: vi.fn(async () => "candidate-1"),
     saveAgentPlan: vi.fn(async () => ({ id: "plan-1", version: 3 })),
+    saveExplorationReport: vi.fn(async () => "report-1"),
     listPendingCandidateIds: vi.fn(async () => []),
   };
 }

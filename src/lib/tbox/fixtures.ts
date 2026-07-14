@@ -98,6 +98,30 @@ export function createMockStructuredResult(question: string): unknown | undefine
     };
   }
 
+  // 职业调研 → exploration_report（mock 固定数据，来源标注 AI分析与推断）
+  const roleMatch = userQuestion.match(/(?:介绍|了解|研究|想做|想成为|转行做)\s*([A-Za-z0-9一-龥·]{2,20}?)(?:这个)?(?:岗位|职业)/);
+  if (roleMatch) {
+    const roleName = roleMatch[1]!.trim();
+    return {
+      type: "exploration_report" as const,
+      roleName,
+      summary: `${roleName}是当前数字化领域的重要新兴岗位，需求持续增长。`,
+      responsibilities: ["负责核心业务的数据驱动决策", "跨部门协作推动产品落地"],
+      coreCompetencies: ["数据分析能力", "业务理解能力", "沟通表达能力"],
+      entryPaths: ["相关专业毕业后进入行业", "通过培训或自学转行"],
+      marketSignals: ["岗位需求年增长约15%", "薪资水平中位数为行业前列"],
+      learningSuggestions: ["系统学习行业基础知识", "参与实际项目积累经验", "关注头部企业招聘要求"],
+      fitAnalysis: ["AI推断：现有信息不足，无法给出精准匹配结论。"],
+      risksAndUncertainties: ["市场数据基于公开信息，未取得实时联网来源，不能视为已核验事实。"],
+      sources: [{
+        title: "本地辅助分析",
+        organization: "CareerMate",
+        accessedAt: new Date().toISOString().slice(0, 10),
+        label: "AI分析与推断" as const,
+      }],
+    };
+  }
+
   return undefined;
 }
 

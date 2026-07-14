@@ -7,6 +7,8 @@ import type { ChatMessagePart } from "./persistence";
 import {
   planRefPart,
   profileCandidateRefPart,
+  explorationReportRefPart,
+  citationsPart,
   errorPart,
 } from "./artifacts";
 
@@ -25,6 +27,12 @@ export interface ChatArtifactDependencies {
   createProfileCandidate(input: CandidateInput): Promise<string>;
   /** 直接保存 Agent 已验证的 plan 为 pending 状态（不触发二次生成） */
   saveAgentPlan(input: { userId: string; plan: CareerPlan; targetRole: string }): Promise<{ id: string; version: number }>;
+  /** 保存 Agent 生成的职业探索报告 */
+  saveExplorationReport(input: {
+    userId: string;
+    conversationId: string;
+    report: { roleName: string; summary: string; responsibilities: string[]; coreCompetencies: string[]; entryPaths: string[]; marketSignals: string[]; learningSuggestions: string[]; fitAnalysis: string[]; risksAndUncertainties: string[]; sources: Array<{ title: string; organization: string; url?: string; accessedAt?: string; label: string }> };
+  }): Promise<string>;
   listPendingCandidateIds(input: {
     userId: string;
     conversationId: string;
@@ -113,6 +121,22 @@ const productionDependencies: ChatArtifactDependencies = {
     return { id: created.id, version: created.version };
   },
 
+  async saveExplorationReport(input) {
+    const db = getPrisma();
+    const created = await db.careerExplorationReport.create({
+      data: {
+        userId: input.userId,
+        conversationId: input.conversationId,
+        roleName: input.report.roleName,
+        status: "exploratory",
+        content: toJson(input.report),
+        sources: toJson(input.report.sources),
+        executionMeta: toJson({ source: "agent-structured-result" }),
+      },
+    });
+    return created.id;
+  },
+
   async listPendingCandidateIds(input) {
     const rows = await getPrisma().profileUpdateCandidate.findMany({
       where: {
@@ -196,6 +220,40 @@ export async function createArtifactsForChat(
       }
     } catch {
       parts.push(errorPart("PLAN_CREATE_FAILED", "计划已生成但保存失败，可以稍后重试。"));
+    }
+  }
+
+  // exploration_report → 保存报告并生成引用卡片
+  if (structured.type === "exploration_report") {
+    try {
+      const reportId = await dependencies.saveExplorationReport({
+        userId,
+        conversationId,
+        report: {
+          roleName: structured.roleName,
+          summary: structured.summary,
+          responsibilities: structured.responsibilities,
+          coreCompetencies: structured.coreCompetencies,
+          entryPaths: structured.entryPaths,
+          marketSignals: structured.marketSignals,
+          learningSuggestions: structured.learningSuggestions,
+          fitAnalysis: structured.fitAnalysis,
+          risksAndUncertainties: structured.risksAndUncertainties,
+          sources: structured.sources,
+        },
+      });
+      parts.push(explorationReportRefPart(reportId));
+      if (structured.sources.length > 0) {
+        parts.push(citationsPart(structured.sources.map((s) => ({
+          title: s.title,
+          source: s.organization,
+          url: s.url,
+          accessedAt: s.accessedAt,
+          label: s.label as "已核验职业库" | "实时联网调研" | "AI分析与推断",
+        }))));
+      }
+    } catch {
+      parts.push(errorPart("REPORT_CREATE_FAILED", "职业探索报告保存失败，可以稍后重试。"));
     }
   }
 

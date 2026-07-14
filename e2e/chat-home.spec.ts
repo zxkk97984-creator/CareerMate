@@ -183,10 +183,7 @@ test("candidate card stays pending when confirmation API fails", async ({ page }
   await expect(candidate.getByRole("button", { name: "确认" })).toBeVisible();
 });
 
-// TODO: 职业探索报告在新架构中由 Agent 结构化结果驱动。
-// Mock 模式下需添加 exploration_report 类型的结构化 fixture 方可恢复此测试。
-// 当前跳过，待平台侧配置 Agent 探索工作流后重新激活。
-test.skip("fallback career research is never labeled as live web research", async ({ page }) => {
+test("fallback career research is never labeled as live web research", async ({ page }) => {
   await login(page);
   await page.getByPlaceholder(/Enter 发送/).fill("请介绍用户研究员这个岗位");
   await page.getByLabel("发送消息").click();

@@ -109,6 +109,27 @@ export const resumeReviewResultSchema = z.object({
   fabricatedFacts: z.literal(false),
 }).strict();
 
+/** 职业探索报告 */
+export const explorationReportResultSchema = z.object({
+  type: z.literal("exploration_report"),
+  roleName: z.string().trim().min(1).max(80),
+  summary: z.string().trim().min(1).max(2_000),
+  responsibilities: z.array(z.string().trim().min(1)).max(20).default([]),
+  coreCompetencies: z.array(z.string().trim().min(1)).max(20).default([]),
+  entryPaths: z.array(z.string().trim().min(1)).max(10).default([]),
+  marketSignals: z.array(z.string().trim().min(1)).max(10).default([]),
+  learningSuggestions: z.array(z.string().trim().min(1)).max(10).default([]),
+  fitAnalysis: z.array(z.string().trim().min(1)).max(10).default([]),
+  risksAndUncertainties: z.array(z.string().trim().min(1)).max(10).default([]),
+  sources: z.array(z.object({
+    title: z.string().trim().min(1).max(240),
+    organization: z.string().trim().min(1).max(240),
+    url: z.string().url().optional(),
+    accessedAt: z.string().trim().min(1).max(40).optional(),
+    label: z.enum(["已核验职业库", "实时联网调研", "AI分析与推断"]),
+  }).strict()).max(20).default([]),
+}).strict();
+
 // ── 联合类型 ─────────────────────────────────────────
 
 export const tboxStructuredResultSchema = z.discriminatedUnion("type", [
@@ -119,6 +140,7 @@ export const tboxStructuredResultSchema = z.discriminatedUnion("type", [
   simulationTurnResultSchema,
   simulationReportResultSchema,
   resumeReviewResultSchema,
+  explorationReportResultSchema,
 ]);
 
 export type TboxStructuredResult = z.infer<typeof tboxStructuredResultSchema>;
@@ -129,3 +151,4 @@ export type LearningRouteResult = z.infer<typeof learningRouteResultSchema>;
 export type SimulationTurnResult = z.infer<typeof simulationTurnResultSchema>;
 export type SimulationReportResult = z.infer<typeof simulationReportResultSchema>;
 export type ResumeReviewResult = z.infer<typeof resumeReviewResultSchema>;
+export type ExplorationReportResult = z.infer<typeof explorationReportResultSchema>;
