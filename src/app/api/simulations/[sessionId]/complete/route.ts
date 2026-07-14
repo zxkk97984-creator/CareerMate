@@ -33,20 +33,34 @@ export async function POST(_request: Request, context: { params: Promise<{ sessi
   const structured = report.data.structured;
   const parsedReport = structured ? simulationReportResultSchema.safeParse(structured) : null;
   const validReport = parsedReport?.success ? parsedReport.data : null;
+  if (!validReport) {
+    return fail(
+      "SIMULATION_REPORT_INVALID",
+      "训练报告未通过结构校验，请重试评分",
+      422,
+      { warnings: report.data.warnings, executionMeta: report.meta },
+    );
+  }
+  if (validReport.scenarioKey !== session.scenarioKey) {
+    return fail(
+      "SIMULATION_REPORT_SCENARIO_MISMATCH",
+      "训练报告与当前场景不匹配，请重试评分",
+      422,
+      { executionMeta: report.meta },
+    );
+  }
 
   // manual/mock 降级模式允许确定性评分；API 模式必须通过 Schema 校验
   const isDegraded = report.meta.degraded;
-  const hasValidReport = validReport !== null;
-  // 非法报告（API 模式下 Schema 失败 / Markdown-only）不得产生正式评分
-  const score = hasValidReport ? (validReport!.score ?? 0) : null;
-  // API 模式降级时：不评分、不创建候选
-  const shouldCreateCandidate = hasValidReport && !isDegraded;
+  const score = validReport.score;
+  // 降级报告可以保存确定性评分，但不能据此创建画像候选
+  const shouldCreateCandidate = !isDegraded;
   const feedback = {
     score,
-    strengths: validReport?.strengths ?? [],
-    improvements: validReport?.improvements ?? [],
-    abilityImpact: validReport?.abilityImpact ?? {},
-    candidateUpdates: validReport?.candidateUpdates ?? [],
+    strengths: validReport.strengths,
+    improvements: validReport.improvements,
+    abilityImpact: validReport.abilityImpact,
+    candidateUpdates: validReport.candidateUpdates,
   };
 
   // 只有通过 Schema 校验的合法报告才创建画像候选
@@ -80,12 +94,14 @@ export async function POST(_request: Request, context: { params: Promise<{ sessi
       const completed = await tx.simulationSession.update({ where: { id: session.id }, data: {
         status: "completed", score: feedback.score, feedback: toJson(feedback), candidateId,
         actualMode: report.meta.actualMode,
+        remoteConversationId: report.data.conversationId ?? session.remoteConversationId,
       } });
-      const hasScore = score !== null;
-      const summaryBase = hasScore ? `训练得分 ${score}` : "训练完成（未产生正式评分）";
-      const summaryExtra = hasValidReport
-        ? (isDegraded ? "；来源：降级评分" : "；已生成画像更新候选")
-        : "；未通过 Schema 校验，不产生候选";
+      const summaryBase = `训练得分 ${score}`;
+      const summaryExtra = isDegraded
+        ? "；来源：降级评分；未生成画像更新候选"
+        : candidateId
+          ? "；已生成画像更新候选"
+          : "；未生成画像更新候选";
       await tx.progressLog.create({ data: {
         userId: user.id, eventType: "simulation_completed", title: `完成模拟训练：${session.scenarioTitle}`,
         summary: summaryBase + summaryExtra,

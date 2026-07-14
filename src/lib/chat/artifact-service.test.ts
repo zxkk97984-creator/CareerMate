@@ -1,6 +1,14 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createArtifactsForChat, type ChatArtifactDependencies } from "./artifact-service";
 import type { NormalizedAssistantResult } from "@/lib/tbox/types";
+
+const prismaMocks = vi.hoisted(() => ({
+  userProfile: { findUnique: vi.fn() },
+  careerPlan: { findFirst: vi.fn(), create: vi.fn() },
+  profileUpdateCandidate: { findMany: vi.fn() },
+}));
+
+vi.mock("@/lib/prisma", () => ({ getPrisma: () => prismaMocks }));
 
 function dependencies(): ChatArtifactDependencies {
   return {
@@ -29,6 +37,10 @@ const validPlan = {
 };
 
 describe("createArtifactsForChat", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("does not create a plan card from user keywords without a validated agent result", async () => {
     const deps = dependencies();
     const parts = await createArtifactsForChat({
@@ -53,9 +65,87 @@ describe("createArtifactsForChat", () => {
     expect(deps.saveAgentPlan).toHaveBeenCalledWith({
       userId: "user-1",
       plan: validPlan,
-      targetRole: expect.any(String) as string,
+      declaredTargetRole: "数据分析师",
     });
     expect(parts).toContainEqual({ type: "plan_ref", planId: "plan-1", version: 3 });
+  });
+
+  it("does not use a year milestone as the plan target role", async () => {
+    const deps = dependencies();
+    await createArtifactsForChat({
+      userId: "user-1",
+      conversationId: "conversation-1",
+      assistantResult: baseResult({
+        text: "计划已生成",
+        structured: { type: "career_plan", plan: validPlan, candidateUpdates: [] },
+      }),
+    }, deps);
+
+    expect(deps.saveAgentPlan).toHaveBeenCalledWith({
+      userId: "user-1",
+      plan: validPlan,
+      declaredTargetRole: undefined,
+    });
+  });
+
+  it("persists the confirmed profile role key when the Agent label matches", async () => {
+    prismaMocks.userProfile.findUnique.mockResolvedValue({
+      targetRole: "ai_product_manager",
+      targetRoleLabel: "AI 产品经理",
+    });
+    prismaMocks.careerPlan.findFirst.mockResolvedValue({ version: 2 });
+    prismaMocks.careerPlan.create.mockResolvedValue({ id: "plan-3", version: 3 });
+    prismaMocks.profileUpdateCandidate.findMany.mockResolvedValue([]);
+
+    await createArtifactsForChat({
+      userId: "user-1",
+      conversationId: "conversation-1",
+      assistantResult: baseResult({
+        text: "计划已生成",
+        structured: {
+          type: "career_plan",
+          plan: validPlan,
+          targetRole: "AI 产品经理",
+          candidateUpdates: [],
+        },
+      }),
+    });
+
+    expect(prismaMocks.userProfile.findUnique).toHaveBeenCalledWith({
+      where: { userId: "user-1" },
+      select: { targetRole: true, targetRoleLabel: true },
+    });
+    expect(prismaMocks.careerPlan.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ targetRole: "ai_product_manager" }),
+    });
+  });
+
+  it("rejects a plan whose declared role conflicts with the confirmed profile", async () => {
+    prismaMocks.userProfile.findUnique.mockResolvedValue({
+      targetRole: "ai_product_manager",
+      targetRoleLabel: "AI 产品经理",
+    });
+    prismaMocks.profileUpdateCandidate.findMany.mockResolvedValue([]);
+
+    const parts = await createArtifactsForChat({
+      userId: "user-1",
+      conversationId: "conversation-1",
+      assistantResult: baseResult({
+        text: "计划已生成",
+        structured: {
+          type: "career_plan",
+          plan: validPlan,
+          targetRole: "数据分析师",
+          candidateUpdates: [],
+        },
+      }),
+    });
+
+    expect(prismaMocks.careerPlan.create).not.toHaveBeenCalled();
+    expect(parts).toContainEqual(expect.objectContaining({
+      type: "error",
+      code: "PLAN_TARGET_ROLE_MISMATCH",
+    }));
   });
 
   it("creates profile candidates from candidateUpdates", async () => {

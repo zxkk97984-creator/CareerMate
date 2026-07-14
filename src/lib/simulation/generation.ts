@@ -3,8 +3,11 @@ import { parseStructuredAssistantResult } from "@/lib/tbox/structured-result";
 import { getTboxConfig } from "@/lib/env";
 import { buildSimulationFeedback } from "@/lib/career";
 import type { AiResult, NormalizedAssistantResult } from "@/lib/tbox/types";
-import type { SimulationReportResult } from "@/lib/tbox/capability-schemas";
-import type { SimulationScenarioKey } from "../simulation";
+import {
+  simulationTurnResultSchema,
+  type SimulationReportResult,
+} from "@/lib/tbox/capability-schemas";
+import { containsSimulationTurnProtocol, type SimulationScenarioKey } from "../simulation";
 
 interface SimulationTranscriptTurn {
   role: "user" | "assistant";
@@ -24,15 +27,42 @@ export async function generateSimulationTurn(input: {
     role: turn.role,
     content: turn.content,
   }));
+  const expectedTurnIndex = history.filter((turn) => turn.role === "user").length;
 
   // API 模式：调用主 Agent
   if (config.mode === "api") {
-    return chatWithTbox({
+    const result = await chatWithTbox({
       question: `场景：${input.scenarioTitle}。请根据对话历史给出下一轮追问。`,
       userId: input.userId,
       conversationId: input.remoteConversationId,
       history,
     }, { config });
+    const parsed = parseStructuredAssistantResult(result.data);
+    const protocolText = containsSimulationTurnProtocol(parsed.text);
+    if (parsed.structured !== undefined) {
+      const structuredCameFromText = result.data.structured === undefined;
+      const turn = simulationTurnResultSchema.safeParse(parsed.structured);
+      if (
+        !turn.success
+        || turn.data.scenarioKey !== input.scenarioKey
+        || turn.data.turnIndex !== expectedTurnIndex
+      ) {
+        return {
+          data: {
+            ...parsed,
+            text: structuredCameFromText || protocolText ? "" : parsed.text,
+            structured: undefined,
+            warnings: [...new Set([...parsed.warnings, "SCHEMA_MISMATCH"])],
+          },
+          meta: result.meta,
+        };
+      }
+      return { data: { ...parsed, structured: turn.data }, meta: result.meta };
+    }
+    if (protocolText && parsed.warnings.includes("SCHEMA_MISMATCH")) {
+      return { data: { ...parsed, text: "" }, meta: result.meta };
+    }
+    return { data: parsed, meta: result.meta };
   }
 
   // manual/mock 降级（此处 config.mode 已排除 "api"）
@@ -76,6 +106,38 @@ export async function generateSimulationReport(input: {
       conversationId: input.remoteConversationId,
       history,
     }, { config });
+
+    if (result.meta.degraded) {
+      const userAnswers = input.transcript
+        .filter((turn) => turn.role === "user")
+        .map((turn) => turn.content)
+        .join("\n");
+      const feedback = buildSimulationFeedback({
+        scenarioKey: input.scenarioKey,
+        scenarioTitle: input.scenarioTitle,
+        userAnswer: userAnswers,
+      });
+      const structured: SimulationReportResult = {
+        type: "simulation_report",
+        scenarioKey: input.scenarioKey,
+        score: feedback.score,
+        strengths: feedback.strengths,
+        improvements: feedback.improvements,
+        evidence: [],
+        abilityImpact: feedback.abilityImpact,
+        candidateUpdates: [],
+      };
+      return {
+        data: {
+          text: JSON.stringify(feedback),
+          structured,
+          conversationId: result.data.conversationId ?? input.remoteConversationId,
+          citations: result.data.citations,
+          warnings: [...new Set([...result.data.warnings, "degraded"])],
+        },
+        meta: result.meta,
+      };
+    }
 
     // 尝试解析结构化结果
     const parsed = parseStructuredAssistantResult(result.data);

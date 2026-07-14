@@ -1,4 +1,4 @@
-import { TboxError } from "./errors";
+import { TboxError, type TboxErrorCode } from "./errors";
 import type { ChatInput, Clock, TboxDependencies } from "./types";
 
 const systemClock: Clock = {
@@ -19,6 +19,7 @@ async function timedResponse<T>(
   deps: TboxDependencies,
   consume: (response: Response, onActivity: () => void) => Promise<T>,
   idleTimeout = false,
+  notFoundCode?: TboxErrorCode,
 ): Promise<T> {
   const { fetchImpl, clock } = dependencies(deps);
   const controller = new AbortController();
@@ -42,17 +43,25 @@ async function timedResponse<T>(
   try {
     const response = await fetchImpl(url, { ...init, signal: controller.signal });
     responseReceived = true;
-    if (!response.ok) throw new TboxError("http_error");
+    if (!response.ok) {
+      const code =
+        response.status === 401 || response.status === 403
+          ? "API_AUTH_FAILED"
+          : response.status === 404
+            ? notFoundCode ?? "PROVIDER_ERROR"
+            : "PROVIDER_ERROR";
+      throw new TboxError("http_error", code);
+    }
     if (idleTimeout) armTimeout();
     return await consume(response, idleTimeout ? armTimeout : () => undefined);
   } catch (error) {
-    if (deps.signal?.aborted) throw new TboxError("aborted");
+    if (deps.signal?.aborted) throw new TboxError("aborted", "ABORTED");
     if (timedOut || (controller.signal.aborted && error instanceof Error && error.name === "AbortError")) {
-      throw new TboxError("timeout");
+      throw new TboxError("timeout", "TIMEOUT");
     }
     if (error instanceof TboxError) throw error;
-    if (!responseReceived) throw new TboxError("http_error");
-    throw error;
+    if (!responseReceived) throw new TboxError("http_error", "PROVIDER_ERROR");
+    throw new TboxError("provider_error", "PROVIDER_ERROR");
   } finally {
     if (timer !== undefined) clock.clearTimeout(timer);
     deps.signal?.removeEventListener("abort", abortFromCaller);
@@ -65,7 +74,7 @@ function authorizationHeaders(apiKey: string) {
 
 function ensureChatConfig(deps: TboxDependencies) {
   if (!deps.config.apiKey || !deps.config.agentId || !deps.config.chatEndpoint) {
-    throw new TboxError("missing_config");
+    throw new TboxError("missing_config", "API_CONFIG_MISSING");
   }
 }
 
@@ -97,6 +106,7 @@ export async function consumeChatResponse<T>(
     deps,
     consume,
     stream,
+    "AGENT_NOT_PUBLISHED",
   );
 }
 
@@ -117,7 +127,7 @@ export async function requestRetrieval(
   deps: TboxDependencies,
 ) {
   if (!deps.config.apiKey || !deps.config.retrieveEndpoint) {
-    throw new TboxError("missing_config");
+    throw new TboxError("missing_config", "API_CONFIG_MISSING");
   }
   return timedResponse(
     new URL(deps.config.retrieveEndpoint),

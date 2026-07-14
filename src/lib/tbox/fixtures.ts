@@ -34,9 +34,9 @@ function createMockPlanResult() {
     type: "career_plan" as const,
     plan: {
       years: [
-        { yearIndex: 1 as const, goal: "建立数据分析与AI工具基础能力", expectedOutputs: ["完成3个数据分析小项目", "掌握Python数据分析工具链"] },
-        { yearIndex: 2 as const, goal: "深化业务理解与产品思维", expectedOutputs: ["主导1个完整的分析产品"] },
-        { yearIndex: 3 as const, goal: "成为技术骨干，具备跨部门协作和项目领导力", expectedOutputs: ["带领数据分析小组完成季度目标"] },
+        { yearIndex: 1 as const, goal: "澄清目标岗位要求并建立基础学习节奏", expectedOutputs: ["完成目标岗位能力要求清单", "完成现有能力与差距自评"] },
+        { yearIndex: 2 as const, goal: "围绕目标岗位积累可展示的实践成果", expectedOutputs: ["完成至少一个可展示的岗位相关成果"] },
+        { yearIndex: 3 as const, goal: "通过真实协作与求职准备验证岗位适配度", expectedOutputs: ["完成岗位适配复盘与下一阶段计划"] },
       ],
       quarters: Array.from({ length: 12 }, (_, i) => ({
         quarterIndex: i + 1,
@@ -55,7 +55,7 @@ function createMockPlanResult() {
         evaluationMetrics: [`达标指标 ${i + 1}`],
       })),
       currentMonth: { monthIndex: 1, goal: "从今天开始行动", learningTasks: [{ id: "start-1", title: "确定本周学习目标", type: "learn" as const, status: "not_started" as const }], practiceOutputs: ["本周学习笔记"], evaluationMetrics: ["完成度评估"] },
-      assumptions: ["每周可投入 8 小时学习", "具备基本计算机操作能力"],
+      assumptions: ["执行前需确认每周可投入时长", "执行前需确认现有基础与工具条件"],
       riskNotes: ["学习进度可能受工作/学业周期性压力影响", "部分在线资源可能失效"],
     },
     candidateUpdates: [] as Array<{ field: string; newValue: unknown; confidence: number; reason: string; evidenceExcerpt: string; impactSummary: string; requiresConfirmation: true }>,
@@ -70,7 +70,7 @@ export function createMockStructuredResult(question: string): unknown | undefine
 
   // 计划请求优先匹配（比每周时间更精确的意图）
   if (/(?:制定|生成|调整|重做|规划).{0,10}(?:计划|路径)|(?:三个月|3个月|90天|本周).{0,8}(?:计划|行动)/.test(userQuestion)) {
-    return { ...createMockPlanResult(), targetRole: "数据分析师" };
+    return createMockPlanResult();
   }
 
   // 每周时间 → profile_assessment + candidateUpdates
@@ -105,16 +105,16 @@ export function createMockStructuredResult(question: string): unknown | undefine
     return {
       type: "exploration_report" as const,
       roleName,
-      summary: `${roleName}是当前数字化领域的重要新兴岗位，需求持续增长。`,
-      responsibilities: ["负责核心业务的数据驱动决策", "跨部门协作推动产品落地"],
-      coreCompetencies: ["数据分析能力", "业务理解能力", "沟通表达能力"],
-      entryPaths: ["相关专业毕业后进入行业", "通过培训或自学转行"],
-      marketSignals: ["岗位需求在数字化领域持续增长", "薪资水平在技术岗位中具有竞争力"],
-      learningSuggestions: ["系统学习行业基础知识", "参与实际项目积累经验", "关注头部企业招聘要求"],
+      summary: `当前处于本地辅助模式，先为“${roleName}”建立职业探索框架；市场事实需要在真实联网检索成功后补充。`,
+      responsibilities: [],
+      coreCompetencies: [],
+      entryPaths: [],
+      marketSignals: [],
+      learningSuggestions: ["联网后核对典型岗位职责", "收集目标组织的真实招聘要求", "再根据已核验信息制定学习计划"],
       fitAnalysis: ["AI推断：现有信息不足，无法给出精准匹配结论。"],
-      risksAndUncertainties: ["市场数据基于公开信息，未取得实时联网来源，不能视为已核验事实。"],
+      risksAndUncertainties: ["当前离线结果未检索或核验任何外部岗位与市场资料。"],
       sources: [{
-        title: "本地辅助分析",
+        title: "本地辅助模式说明",
         organization: "CareerMate",
         accessedAt: new Date().toISOString().slice(0, 10),
         label: "AI分析与推断" as const,

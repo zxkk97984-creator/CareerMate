@@ -23,10 +23,20 @@ interface CandidateInput {
   impactSummary: string;
 }
 
+class PlanTargetRoleMismatch extends Error {}
+
+function normalizeRole(value: string) {
+  return value.trim().toLocaleLowerCase().replace(/\s+/g, "");
+}
+
 export interface ChatArtifactDependencies {
   createProfileCandidate(input: CandidateInput): Promise<string>;
   /** 直接保存 Agent 已验证的 plan 为 pending 状态（不触发二次生成） */
-  saveAgentPlan(input: { userId: string; plan: CareerPlan; targetRole: string }): Promise<{ id: string; version: number }>;
+  saveAgentPlan(input: {
+    userId: string;
+    plan: CareerPlan;
+    declaredTargetRole?: string;
+  }): Promise<{ id: string; version: number }>;
   /** 保存 Agent 生成的职业探索报告 */
   saveExplorationReport(input: {
     userId: string;
@@ -95,6 +105,21 @@ const productionDependencies: ChatArtifactDependencies = {
 
   async saveAgentPlan(input) {
     const db = getPrisma();
+    const profile = await db.userProfile.findUnique({
+      where: { userId: input.userId },
+      select: { targetRole: true, targetRoleLabel: true },
+    });
+    const targetRole = profile?.targetRole.trim();
+    if (!targetRole) throw new Error("PROFILE_TARGET_ROLE_NOT_FOUND");
+    const declaredTargetRole = input.declaredTargetRole?.trim();
+    if (declaredTargetRole) {
+      const allowedTargets = [targetRole, profile?.targetRoleLabel]
+        .filter((value): value is string => Boolean(value?.trim()))
+        .map(normalizeRole);
+      if (!allowedTargets.includes(normalizeRole(declaredTargetRole))) {
+        throw new PlanTargetRoleMismatch();
+      }
+    }
     // 获取当前最高版本号
     const latest = await db.careerPlan.findFirst({
       where: { userId: input.userId },
@@ -106,7 +131,7 @@ const productionDependencies: ChatArtifactDependencies = {
     const created = await db.careerPlan.create({
       data: {
         userId: input.userId,
-        targetRole: input.targetRole,
+        targetRole,
         version,
         status: "pending",
         years: toJson(input.plan.years),
@@ -214,14 +239,14 @@ export async function createArtifactsForChat(
         const planId = await dependencies.saveAgentPlan({
           userId,
           plan,
-          targetRole: (structured as { targetRole?: string }).targetRole
-            ?? plan.years[0]?.goal?.slice(0, 40)
-            ?? "未指定岗位",
+          declaredTargetRole: (structured as { targetRole?: string }).targetRole,
         });
         parts.push(planRefPart(planId.id, planId.version));
       }
-    } catch {
-      parts.push(errorPart("PLAN_CREATE_FAILED", "计划已生成但保存失败，可以稍后重试。"));
+    } catch (error) {
+      parts.push(error instanceof PlanTargetRoleMismatch
+        ? errorPart("PLAN_TARGET_ROLE_MISMATCH", "Agent 计划目标与已确认画像不一致，本次未保存计划。")
+        : errorPart("PLAN_CREATE_FAILED", "计划已生成但保存失败，可以稍后重试。"));
     }
   }
 

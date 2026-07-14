@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { streamChatWithTbox } from "./streaming";
+import { streamChatWithTbox, streamChatWithTboxProgressive } from "./streaming";
 import type { TboxConfig } from "./types";
 
 const config: TboxConfig = {
@@ -62,6 +62,169 @@ describe("stream chat orchestration", () => {
       { event: "message", data: { type: "delta", content: "hello" } },
       { event: "done", data: { conversationId: "conversation-1" } },
     ]);
+  });
+
+  it("preserves a final-only answer in the compatibility stream", async () => {
+    const result = await streamChatWithTbox(
+      { question: "hello", userId: "user-1" },
+      {
+        config,
+        fetchImpl: vi.fn(async () =>
+          sseResponse(
+            'event: conversation.chat.completed\ndata: {"data":{"messages":[{"type":"answer","content_type":"text","content":"final answer"}]}}\n\n',
+          ),
+        ),
+      },
+    );
+
+    expect(result.data.events).toEqual([
+      { event: "message", data: { type: "delta", content: "final answer" } },
+      { event: "done", data: { conversationId: null } },
+    ]);
+  });
+
+  it("does not duplicate a completion final that echoes streamed deltas", async () => {
+    const result = await streamChatWithTbox(
+      { question: "hello", userId: "user-1" },
+      {
+        config,
+        fetchImpl: vi.fn(async () =>
+          sseResponse(
+            'event: conversation.message.delta\ndata: {"data":{"type":"answer","content_type":"text","content":"complete answer"}}\n\n' +
+              'event: conversation.chat.completed\ndata: {"data":{"messages":[{"type":"answer","content_type":"text","content":"complete answer"}]}}\n\n',
+          ),
+        ),
+      },
+    );
+
+    expect(result.data.events).toEqual([
+      { event: "message", data: { type: "delta", content: "complete answer" } },
+      { event: "done", data: { conversationId: null } },
+    ]);
+  });
+
+  it("preserves PROVIDER_ERROR as the fallback reason after chat failure", async () => {
+    const privateMarker = "private-provider-payload";
+    const result = await streamChatWithTbox(
+      { question: "hello", userId: "user-1" },
+      {
+        config,
+        fetchImpl: vi.fn(async () =>
+          sseResponse(
+            `event: conversation.chat.failed\ndata: ${JSON.stringify({
+              event: "conversation.chat.failed",
+              data: { message: privateMarker },
+            })}\n\n`,
+          ),
+        ),
+        manualChat: async () => "safe fallback",
+      },
+    );
+
+    expect(result.meta).toMatchObject({
+      actualMode: "manual",
+      degraded: true,
+      fallbackReason: "provider_error",
+    });
+    expect(JSON.stringify(result)).not.toContain(privateMarker);
+  });
+
+  it("degrades after agentic_error completes without text or structured output", async () => {
+    const privateMarker = "private-agent-diagnostic";
+    const manualChat = vi.fn(async () => "safe fallback");
+    const result = await streamChatWithTbox(
+      { question: "hello", userId: "user-1" },
+      {
+        config,
+        fetchImpl: vi.fn(async () =>
+          sseResponse(
+            `event: conversation.message.delta\ndata: ${JSON.stringify({
+              event: "conversation.message.delta",
+              data: { type: "agentic_error", content: privateMarker },
+            })}\n\nevent: done\ndata: [DONE]\n\n`,
+          ),
+        ),
+        manualChat,
+      },
+    );
+
+    expect(result.meta).toMatchObject({
+      actualMode: "manual",
+      degraded: true,
+      fallbackReason: "invalid_response",
+    });
+    expect(result.data.events).toEqual([
+      { event: "message", data: { type: "delta", content: "safe fallback" } },
+      { event: "done", data: { conversationId: null } },
+    ]);
+    expect(manualChat).toHaveBeenCalledOnce();
+    expect(JSON.stringify(result)).not.toContain(privateMarker);
+  });
+
+  it("does not append a fallback after progressive API text was already emitted", async () => {
+    const emitted: unknown[] = [];
+    const privateMarker = "private-provider-payload";
+
+    const pending = streamChatWithTboxProgressive(
+      { question: "hello", userId: "user-1" },
+      {
+        config,
+        fetchImpl: vi.fn(async () =>
+          sseResponse(
+            'event: conversation.message.delta\ndata: {"data":{"type":"answer","content_type":"text","content":"partial API answer"}}\n\n' +
+              `event: conversation.chat.failed\ndata: ${JSON.stringify({
+                event: "conversation.chat.failed",
+                data: { message: privateMarker },
+              })}\n\n`,
+          ),
+        ),
+        manualChat: async () => "safe fallback",
+      },
+      (event) => emitted.push(event),
+    );
+
+    await expect(pending).rejects.toMatchObject({
+      reason: "provider_error",
+      code: "PROVIDER_ERROR",
+    });
+    expect(emitted).toEqual([
+      expect.objectContaining({
+        event: "message",
+        data: { type: "delta", content: "partial API answer" },
+      }),
+    ]);
+    expect(JSON.stringify(emitted)).not.toContain(privateMarker);
+    expect(JSON.stringify(emitted)).not.toContain("safe fallback");
+  });
+
+  it("rejects progressive EOF after text when no done event was received", async () => {
+    const emitted: unknown[] = [];
+    const manualChat = vi.fn(async () => "safe fallback");
+    const pending = streamChatWithTboxProgressive(
+      { question: "hello", userId: "user-1" },
+      {
+        config,
+        fetchImpl: vi.fn(async () =>
+          sseResponse(
+            'event: conversation.message.delta\ndata: {"data":{"type":"answer","content_type":"text","content":"partial API answer"}}\n\n',
+          ),
+        ),
+        manualChat,
+      },
+      (event) => emitted.push(event),
+    );
+
+    await expect(pending).rejects.toMatchObject({
+      reason: "sse_error",
+      code: "SSE_PARSE_FAILED",
+    });
+    expect(emitted).toEqual([
+      expect.objectContaining({
+        event: "message",
+        data: { type: "delta", content: "partial API answer" },
+      }),
+    ]);
+    expect(manualChat).not.toHaveBeenCalled();
   });
 
   it("falls back to manual events after malformed upstream SSE", async () => {
@@ -135,6 +298,9 @@ describe("stream chat orchestration", () => {
             );
             setTimeout(() => controller.enqueue(encoder.encode("event: conversation.chat.created\ndata: {\"data\":{}}\n\n")), 5);
             setTimeout(() => controller.enqueue(encoder.encode("event: conversation.chat.in_progress\ndata: {\"data\":{}}\n\n")), 13);
+            setTimeout(() => controller.enqueue(encoder.encode(
+              'event: conversation.message.delta\ndata: {"data":{"type":"answer","content_type":"text","content":"answer"}}\n\n',
+            )), 17);
             setTimeout(() => controller.enqueue(encoder.encode("event: done\ndata: [DONE]\n\n")), 21);
           },
         }),
@@ -172,7 +338,7 @@ describe("stream chat orchestration", () => {
       { config, fetchImpl, manualChat, signal: requestController.signal },
     );
     requestController.abort();
-    await expect(pending).rejects.toMatchObject({ reason: "aborted" });
+    await expect(pending).rejects.toMatchObject({ reason: "aborted", code: "ABORTED" });
     expect(manualChat).not.toHaveBeenCalled();
   });
 
@@ -190,7 +356,7 @@ describe("stream chat orchestration", () => {
           signal: requestController.signal,
         },
       ),
-    ).rejects.toMatchObject({ reason: "aborted" });
+    ).rejects.toMatchObject({ reason: "aborted", code: "ABORTED" });
     expect(manualChat).not.toHaveBeenCalled();
   });
 

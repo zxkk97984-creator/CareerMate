@@ -82,6 +82,42 @@ describe("upstream SSE normalization", () => {
     expect(JSON.stringify(events)).not.toContain(privateMarker);
   });
 
+  it("never forwards agentic_error content as assistant text", async () => {
+    const privateMarker = "private-agent-diagnostic";
+    const events = await collect(
+      chunkedStream([
+        `event: conversation.message.delta\ndata: ${JSON.stringify({
+          event: "conversation.message.delta",
+          data: { type: "agentic_error", content: privateMarker },
+        })}\n\n`,
+      ]),
+    );
+
+    expect(events).toEqual([{ type: "warning", code: "AGENT_ERROR" }]);
+    expect(JSON.stringify(events)).not.toContain(privateMarker);
+  });
+
+  it("normalizes conversation.chat.failed without exposing provider payload", async () => {
+    const privateMarker = "private-provider-payload";
+    const events = await collect(
+      chunkedStream([
+        `event: conversation.chat.failed\ndata: ${JSON.stringify({
+          event: "conversation.chat.failed",
+          data: { message: privateMarker },
+        })}\n\n`,
+      ]),
+    );
+
+    expect(events).toEqual([
+      {
+        type: "error",
+        code: "PROVIDER_ERROR",
+        message: "百宝箱 Agent 执行失败，请稍后重试。",
+      },
+    ]);
+    expect(JSON.stringify(events)).not.toContain(privateMarker);
+  });
+
   // ── Task 1/4: 新协议基线测试（现在应该通过）──────────
 
   it("preserves plain-text data as a final answer", async () => {

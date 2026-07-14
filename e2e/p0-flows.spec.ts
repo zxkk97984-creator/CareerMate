@@ -46,7 +46,7 @@ test("chat-first persistent conversation continues across page visits", async ({
   await expect(page.locator(".message-wrapper")).toHaveCount(0);
 });
 
-test("user completes a three-round simulation and receives one candidate", async ({ page }) => {
+test("user completes a three-round simulation and receives a score", async ({ page }) => {
   await login(page);
   // GrowthProfileDrawer 和 sidebar-footer 中都有"模拟训练"链接，取侧栏中的（footer-link 类）
   await page.locator(".footer-link").filter({ hasText: "模拟训练" }).click();
@@ -60,6 +60,7 @@ test("user completes a three-round simulation and receives one candidate", async
   await expect(page.getByText("已完成 3/6 轮")).toBeVisible();
   await page.getByRole("button", { name: "完成并评分" }).click();
   await expect(page.getByText(/训练得分：\d+ 分/)).toBeVisible();
+  await expect(page.getByText("本次未生成画像更新候选。")).toBeVisible();
 });
 
 test("new account completes multi-message onboarding", async ({ page }) => {

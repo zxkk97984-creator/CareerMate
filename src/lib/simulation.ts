@@ -64,6 +64,33 @@ export function nextSimulationPrompt(key: SimulationScenarioKey, turnCount: numb
   return prompts[Math.min(Math.max(turnCount - 1, 0), prompts.length - 1)]!;
 }
 
+export function containsSimulationTurnProtocol(text: string) {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+
+  const candidates = [trimmed];
+  for (const match of trimmed.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)) {
+    if (match[1]?.trim()) candidates.push(match[1].trim());
+  }
+  const objectStart = trimmed.indexOf("{");
+  const objectEnd = trimmed.lastIndexOf("}");
+  if (objectStart >= 0 && objectEnd > objectStart) {
+    candidates.push(trimmed.slice(objectStart, objectEnd + 1));
+  }
+
+  return candidates.some((candidate) => {
+    try {
+      const parsed = JSON.parse(candidate) as { type?: unknown } | null;
+      return parsed !== null
+        && typeof parsed === "object"
+        && !Array.isArray(parsed)
+        && parsed.type === "simulation_turn";
+    } catch {
+      return false;
+    }
+  });
+}
+
 export function canCompleteSimulation(turnCount: number) {
   return turnCount >= 3 && turnCount <= 6;
 }

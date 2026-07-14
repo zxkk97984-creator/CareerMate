@@ -54,7 +54,13 @@ function localResult(chunks: string[], conversationId?: string): NormalizedAssis
 }
 
 function throwIfAborted(signal?: AbortSignal) {
-  if (signal?.aborted) throw new TboxError("aborted");
+  if (signal?.aborted) throw new TboxError("aborted", "ABORTED");
+}
+
+function upstreamStreamError(code: string) {
+  return code === "SSE_PARSE_FAILED"
+    ? new TboxError("sse_error", "SSE_PARSE_FAILED")
+    : new TboxError("provider_error", "PROVIDER_ERROR");
 }
 
 async function manualEvents(input: ChatInput, deps: StreamDependencies) {
@@ -110,27 +116,30 @@ export async function streamChatWithTbox(
     const events = await consumeChatResponse(input, true, deps, async (response, onActivity) => {
       if (!response.body) throw new TboxError("sse_error");
       const normalized: NormalizedStreamEvent[] = [];
-      let conversationId: string | null = null;
+      const acc = createAssistantResultAccumulator();
+      let completed = false;
       for await (const event of parseUpstreamSse(response.body, { onActivity })) {
-        if (event.type === "error") throw new TboxError("sse_error");
-        if (event.type === "conversation") conversationId = event.conversationId;
-        // 桥接 NormalizedAiEvent → NormalizedStreamEvent（含 delta 和 final-only 文本）
-        if (event.type === "text_delta" || event.type === "text_final") {
-          if (event.text) normalized.push({ event: "message", data: { type: "delta", content: event.text } });
-        }
-        if (event.type === "done") {
-          normalized.push({ event: "done", data: { conversationId } });
-        }
+        if (event.type === "error") throw upstreamStreamError(event.code);
+        if (event.type === "done") completed = true;
+        const delta = acc.consume(event);
+        if (delta) normalized.push({ event: "message", data: { type: "delta", content: delta } });
       }
-      if (!normalized.some((e) => e.event === "done")) {
+      if (!completed) {
         throw new TboxError("sse_error");
       }
+      const final = acc.finalize();
+      if (!final.text && final.structured === undefined) {
+        throw new TboxError("invalid_response", "EMPTY_RESPONSE");
+      }
+      normalized.push({ event: "done", data: { conversationId: final.conversationId ?? null } });
       return normalized;
     });
     return { data: { events }, meta: meta(requested, "api", null, "tbox-api") };
   } catch (error) {
     reason = failureReason(error);
-    if (reason === "aborted" || deps.signal?.aborted) throw new TboxError("aborted");
+    if (reason === "aborted" || deps.signal?.aborted) {
+      throw new TboxError("aborted", "ABORTED");
+    }
   }
   throwIfAborted(deps.signal);
   const events = await manualEvents(input, deps);
@@ -196,27 +205,28 @@ export async function streamChatWithTboxProgressive(
 
   // api 模式：渐进式消费上游 SSE，经过 accumulator
   let reason: TboxFailureReason;
+  let apiTextEmitted = false;
   try {
     const result = await consumeChatResponse(input, true, deps, async (response, onActivity) => {
       if (!response.body) throw new TboxError("sse_error");
       const acc = createAssistantResultAccumulator();
       const apiMetaObj = meta(requested, "api", null, "tbox-api");
-      let aborted = false;
-
+      let completed = false;
       for await (const event of parseUpstreamSse(response.body, { onActivity })) {
         if (event.type === "error") {
-          aborted = true;
-          throw new TboxError("sse_error");
+          throw upstreamStreamError(event.code);
         }
+        if (event.type === "done") completed = true;
 
         // 消费事件，获取需转发的增量文本
         const delta = acc.consume(event);
         if (delta) {
+          apiTextEmitted = true;
           onEvent({ event: "message", data: { type: "delta", content: delta }, meta: apiMetaObj });
         }
       }
 
-      if (aborted) throw new TboxError("sse_error");
+      if (!completed) throw new TboxError("sse_error", "SSE_PARSE_FAILED");
 
       const final = acc.finalize();
       if (!final.text && !final.structured) throw new TboxError("sse_error");
@@ -232,7 +242,12 @@ export async function streamChatWithTboxProgressive(
     return { data: result, meta: meta(requested, "api", null, "tbox-api") };
   } catch (error) {
     reason = failureReason(error);
-    if (reason === "aborted" || deps.signal?.aborted) throw new TboxError("aborted");
+    if (reason === "aborted" || deps.signal?.aborted) {
+      throw new TboxError("aborted", "ABORTED");
+    }
+    if (apiTextEmitted) {
+      throw error instanceof TboxError ? error : new TboxError(reason);
+    }
   }
 
   // api 失败后降级到 manual/mock

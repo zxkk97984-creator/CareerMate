@@ -145,15 +145,38 @@ test("chat plan generation reaches a confirmable version and survives reload", a
   // Agent 返回 career_plan 后卡片渲染，必须出现计划操作按钮
   const planCard = page.getByRole("region", { name: /计划/ });
   await expect(planCard).toBeVisible({ timeout: 20000 });
-  // 确认新版本（pending）或 重规划（已 active）必出现其一
-  await expect(page.getByText(/确认新版本|重规划/)).toBeVisible({ timeout: 10000 });
+  const acceptButton = planCard.getByRole("button", { name: "确认新版本" });
+  await expect(acceptButton).toBeVisible({ timeout: 10000 });
+  const acceptResponsePromise = page.waitForResponse((response) =>
+    response.request().method() === "POST" && response.url().endsWith("/accept-replan"),
+  );
+  await acceptButton.click();
+  const acceptResponse = await acceptResponsePromise;
+  const accepted = await acceptResponse.json() as {
+    ok: boolean;
+    data: { new: { id: string; status: string } };
+  };
+  expect(acceptResponse.ok()).toBe(true);
+  expect(accepted).toMatchObject({ ok: true, data: { new: { status: "active" } } });
+  await expect(acceptButton).toHaveCount(0);
 
-  // 验证计划已持久化：导航到 /path 后页面正常渲染
+  // 验证刚生成并确认的计划已持久化，而非只命中种子中的旧 active 计划
   await page.goto("/path");
   await expect(page.getByRole("heading", { name: "3 年职业路径" })).toBeVisible({ timeout: 10000 });
   // 刷新后仍能正常加载
   await page.reload();
   await expect(page.getByRole("heading", { name: "3 年职业路径" })).toBeVisible({ timeout: 10000 });
+  const current = await page.evaluate(async () => {
+    const response = await fetch("/api/plans/current");
+    return response.json();
+  }) as {
+    ok: boolean;
+    data: { plan: { id: string; status: string } | null };
+  };
+  expect(current).toMatchObject({
+    ok: true,
+    data: { plan: { id: accepted.data.new.id, status: "active" } },
+  });
 });
 
 test("candidate card stays pending when confirmation API fails", async ({ page }) => {

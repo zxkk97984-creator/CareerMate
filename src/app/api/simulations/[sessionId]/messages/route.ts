@@ -3,7 +3,8 @@ import { fail, ok } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
 import { getPrisma } from "@/lib/prisma";
 import { generateSimulationTurn } from "@/lib/simulation/generation";
-import { nextSimulationPrompt, parseSimulationTranscript, simulationDto, simulationScenarioSchema } from "@/lib/simulation";
+import { containsSimulationTurnProtocol, nextSimulationPrompt, parseSimulationTranscript, simulationDto, simulationScenarioSchema } from "@/lib/simulation";
+import { simulationTurnResultSchema } from "@/lib/tbox/capability-schemas";
 
 const bodySchema = z.object({ message: z.string().trim().min(5).max(4_000) }).strict();
 
@@ -36,21 +37,40 @@ export async function POST(request: Request, context: { params: Promise<{ sessio
   });
 
   // 优先使用 Agent 结构化 simulation_turn.assistantMessage，其次 text，最后本地兜底
-  const structuredTurn = result.data.structured as { assistantMessage?: string } | undefined;
-  const agentMessage = structuredTurn?.assistantMessage?.trim() || result.data.text.trim();
-  const assistantMessage = agentMessage
-    ? agentMessage
-    : nextSimulationPrompt(scenarioKey.data, nextTurn);
+  const structuredTurn = simulationTurnResultSchema.safeParse(result.data.structured);
+  const structuredMessage = structuredTurn.success
+    && structuredTurn.data.scenarioKey === scenarioKey.data
+    && structuredTurn.data.turnIndex === nextTurn
+    ? structuredTurn.data.assistantMessage.trim()
+    : "";
+  const protocolText = containsSimulationTurnProtocol(result.data.text);
+  const agentMessage = structuredMessage || (protocolText ? "" : result.data.text.trim());
+  const fallbackMessage = nextSimulationPrompt(scenarioKey.data, nextTurn);
+  const schemaMismatch = result.data.warnings.includes("SCHEMA_MISMATCH");
+  const usedLocalFallback = result.meta.degraded || !agentMessage;
+  const executionMeta = usedLocalFallback
+    ? {
+      requestedMode: result.meta.requestedMode,
+      actualMode: "mock" as const,
+      degraded: true,
+      fallbackReason: result.meta.fallbackReason
+        ?? (schemaMismatch ? "validation_error" : "invalid_response"),
+      source: "local-simulation-fallback",
+    }
+    : result.meta;
+  const assistantMessage = usedLocalFallback
+    ? fallbackMessage
+    : agentMessage;
 
   const updatedTranscript = [...transcript,
-    { role: "assistant" as const, content: assistantMessage, meta: result.meta },
+    { role: "assistant" as const, content: assistantMessage, meta: executionMeta },
   ];
   const winner = await getPrisma().simulationSession.updateMany({
     where: { id: session.id, userId: user.id, status: "active", updatedAt: session.updatedAt, turnCount: session.turnCount },
-    data: { transcript: JSON.stringify(updatedTranscript), turnCount: nextTurn, requestedMode: result.meta.requestedMode, actualMode: result.meta.actualMode, remoteConversationId: result.data.conversationId ?? session.remoteConversationId },
+    data: { transcript: JSON.stringify(updatedTranscript), turnCount: nextTurn, requestedMode: executionMeta.requestedMode, actualMode: executionMeta.actualMode, remoteConversationId: result.data.conversationId ?? session.remoteConversationId },
   });
   if (winner.count !== 1) return fail("SESSION_CONFLICT", "训练会话已更新，请刷新后重试", 409);
   const persisted = await getPrisma().simulationSession.findUnique({ where: { id: session.id } });
   if (!persisted) return fail("NOT_FOUND", "训练会话不存在", 404);
-  return ok({ session: simulationDto(persisted), assistantMessage }, result.meta as unknown as Record<string, unknown>);
+  return ok({ session: simulationDto(persisted), assistantMessage }, executionMeta as unknown as Record<string, unknown>);
 }
