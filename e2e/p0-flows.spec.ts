@@ -87,7 +87,7 @@ test("admin generates and approves a validated role draft", async ({ page }) => 
   await page.getByLabel("岗位名称").fill("AI 客户成功");
   await page.getByLabel("岗位分类").fill("客户服务");
   await page.getByLabel("岗位来源").fill("管理员访谈记录");
-  await page.getByRole("button", { name: "生成草稿" }).click();
+  await page.getByRole("button", { name: "创建人工模板草稿" }).click();
   const draft = page.locator("div.rounded-md.border", { hasText: "AI 客户成功" }).first();
   await expect(draft.getByText(/结构校验：通过/)).toBeVisible();
   await draft.getByRole("button", { name: "通过" }).click();

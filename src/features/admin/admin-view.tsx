@@ -104,7 +104,7 @@ export function AdminView({ drafts, templates, refresh, setNotice }: AdminViewPr
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      <SurfaceCard title="岗位草稿审核" action={<Button onClick={createDraft}>生成草稿</Button>}>
+      <SurfaceCard title="岗位草稿审核" action={<Button onClick={createDraft}>创建人工模板草稿</Button>}>
         <div style={{ marginBottom: 20, display: "grid", gap: 12 }} className="grid-cols-3 max-md:grid-cols-1">
           <input aria-label="岗位名称" style={inputStyle} value={roleName} onChange={(e) => setRoleName(e.target.value)} />
           <input aria-label="岗位分类" style={inputStyle} value={category} onChange={(e) => setCategory(e.target.value)} />

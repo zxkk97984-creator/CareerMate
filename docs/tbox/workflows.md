@@ -1,5 +1,26 @@
 # 百宝箱工作流配置
 
+> 更新日期：2026-07-14
+> 主 Agent 统一编排入口：`agent_id` 由服务端环境变量 `TBOX_AGENT_ID` 指定，不再分别调用子工作流 ID。
+> 子工作流由主 Agent 在平台侧内部选择，Next.js 不传子工作流 ID。
+
+## 0. 结构化输出协议（7 类能力）
+
+主 Agent 结束节点通过 `variables.result` 返回以下七类结构化 envelope 之一。`type` 字段必须与下表完全一致。
+
+| 能力 | `resultType` | 关键字段 | Zod Schema |
+|------|-------------|---------|------------|
+| 技能评估 | `profile_assessment` | `targetRole`, `scores`(6维), `strengths`, `gaps`, `evidence`, `assumptions`, `needsConfirmation: true`, `candidateUpdates` | `profileAssessmentSchema` |
+| 画像匹配 | `role_match` | `matches[3]`: `role`, `score`, `reasons`, `gaps`, `assumptions` | `roleMatchResultSchema` |
+| 职业计划 | `career_plan` | `plan`(复用 `careerPlanSchema`), `candidateUpdates` | `careerPlanResultSchema` |
+| 学习路线 | `learning_route` | `targetRole`, `weeklyHours`, `phases[]`: 阶段/周任务/资源/风险 | `learningRouteResultSchema` |
+| 模拟训练(轮) | `simulation_turn` | `scenarioKey`, `assistantMessage`, `turnIndex`, `shouldComplete` | `simulationTurnResultSchema` |
+| 模拟训练(报告) | `simulation_report` | `scenarioKey`, `score`, `strengths`, `improvements`, `evidence`, `abilityImpact`, `candidateUpdates` | `simulationReportResultSchema` |
+| 简历优化 | `resume_review` | `summary`, `issues[]`, `suggestions[]`, `rewrites[]`, `fabricatedFacts: false` | `resumeReviewResultSchema` |
+
+**直接回复节点**只输出用户可见 Markdown，不得包含结构化 JSON。
+**结束节点**只返回变量消息 `result`（使用对应能力 envelope），不得再次输出与直接回复相同的用户可见文本。
+
 ## 一、职业探索工作流
 
 **触发条件：** 用户询问职业信息、比较职业、确定目标
