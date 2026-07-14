@@ -17,6 +17,15 @@ function responseData(input: unknown) {
   return { root, data: record(root.result) ?? record(root.data) ?? root };
 }
 
+function extractStructured(data: Record<string, unknown>): unknown | undefined {
+  // variables.result 优先
+  const variables = record(data.variables);
+  if (variables && variables.result !== undefined) return variables.result;
+  // 直接 result 字段
+  if (data.result !== undefined) return data.result;
+  return undefined;
+}
+
 export function normalizeNonStreamChatResponse(input: unknown): NormalizedAssistantResult {
   const { root, data } = responseData(input);
   const conversationId =
@@ -26,25 +35,40 @@ export function normalizeNonStreamChatResponse(input: unknown): NormalizedAssist
     nonEmptyString(root.conversationId) ??
     nonEmptyString(root.converstionId) ??
     nonEmptyString(root.conversation_id) ?? undefined;
+
   const messages = Array.isArray(data.messages)
     ? data.messages
     : Array.isArray(root.messages)
       ? root.messages
       : [];
-  const text = messages
-    .map(record)
-    .filter((message): message is Record<string, unknown> => Boolean(message))
-    .filter((message) => message.type === "answer" && message.content_type === "text")
-    .map((message) => nonEmptyString(message.content))
-    .filter((content): content is string => Boolean(content))
-    .join("\n");
 
+  // 收集并去重 answer/text
   const warnings: string[] = [];
-  // 连续相同 answer 只保留一次
-  // （已在 collect 上层处理，这里仅标记）
+  const parts: string[] = [];
+  let lastContent: string | undefined;
+  for (const raw of messages) {
+    const msg = record(raw);
+    if (!msg) continue;
+    if (msg.type === "answer" && msg.content_type === "text") {
+      const content = nonEmptyString(msg.content);
+      if (!content) continue;
+      if (content === lastContent) {
+        warnings.push("DUPLICATE_RESPONSE");
+        continue;
+      }
+      lastContent = content;
+      parts.push(content);
+    }
+  }
+  const text = parts.join("\n");
 
-  if (!text) throw new TboxError("invalid_response");
-  return { text, conversationId, citations: [], warnings };
+  // 提取结构化结果
+  const structured = extractStructured(data);
+
+  // 文本和结构化结果都没有时才异常
+  if (!text && structured === undefined) throw new TboxError("invalid_response");
+
+  return { text, structured, conversationId, citations: [], warnings };
 }
 
 export function normalizeRetrievalResponse(input: unknown): RetrievalItem[] {

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { careerPlanSchema } from "./schemas";
 
 // ── 公共能力维度 ─────────────────────────────────────
 
@@ -50,11 +51,10 @@ export const roleMatchResultSchema = z.object({
 
 /** 职业计划（复用现有 careerPlanSchema） */
 // 在 schemas.ts 中已定义 careerPlanSchema，这里做 envelope
+/** 职业计划 —— 直接嵌入正式 careerPlanSchema，拒绝空对象和非法结构 */
 export const careerPlanResultSchema = z.object({
   type: z.literal("career_plan"),
-  // plan 字段在运行时由 careerPlanSchema 校验，这里先用宽松接收
-  // 原因：careerPlanSchema 有 exactSequence superRefine 不适合直接嵌入
-  plan: z.record(z.unknown()),
+  plan: careerPlanSchema,
   candidateUpdates: z.array(candidateUpdateSchema).max(12).default([]),
 }).strict();
 

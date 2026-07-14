@@ -34,21 +34,17 @@ export async function POST(_request: Request, context: { params: Promise<{ sessi
   const parsedReport = structured ? simulationReportResultSchema.safeParse(structured) : null;
   const validReport = parsedReport?.success ? parsedReport.data : null;
 
-  const score = validReport?.score ?? 0;
   const feedback = {
-    score,
+    score: validReport?.score ?? 0,
     strengths: validReport?.strengths ?? [],
     improvements: validReport?.improvements ?? [],
     abilityImpact: validReport?.abilityImpact ?? {},
     candidateUpdates: validReport?.candidateUpdates ?? [],
   };
 
-  // 从候选更新中提取第一个合法字段（白名单检查）
+  // 只有通过 Schema 校验的合法报告才创建画像候选；Markdown-only 和降级报告不产生候选
   const scores = parseJson<Record<string, number>>(user.profile.abilityScores, {});
-  const primaryUpdate = feedback.candidateUpdates.find((u) => ALLOWED_CANDIDATE_FIELDS.has(u.field));
-  const field = primaryUpdate?.field ?? "abilityScores.communication";
-  const newValue = primaryUpdate?.newValue ?? score;
-  const oldValue = field.startsWith("abilityScores.") ? scores[field.split(".")[1]!] ?? null : null;
+  let candidateId: string | null = null;
 
   try {
     const result = await getPrisma().$transaction(async (tx) => {
@@ -57,25 +53,40 @@ export async function POST(_request: Request, context: { params: Promise<{ sessi
         data: { status: "completing" },
       });
       if (claim.count !== 1) throw new CompletionConflict();
-      const candidate = await tx.profileUpdateCandidate.create({ data: {
-        userId: user.id, source: "simulation", field, oldValue: toJson(oldValue),
-        newValue: toJson(newValue), confidence: primaryUpdate?.confidence ?? 0.7,
-        reason: primaryUpdate?.reason ?? "模拟训练自动评估",
-        evidenceExcerpt: primaryUpdate?.evidenceExcerpt ?? "",
-        impactSummary: primaryUpdate?.impactSummary ?? "",
-      } });
+
+      // 只有合法报告（Schema 通过 + 非降级）才创建候选
+      if (validReport && !report.meta.degraded) {
+        const primaryUpdate = feedback.candidateUpdates.find((u) => ALLOWED_CANDIDATE_FIELDS.has(u.field));
+        if (primaryUpdate) {
+          const field = primaryUpdate.field;
+          const oldValue = field.startsWith("abilityScores.") ? scores[field.split(".")[1]!] ?? null : null;
+          const candidate = await tx.profileUpdateCandidate.create({ data: {
+            userId: user.id, source: "simulation", field, oldValue: toJson(oldValue),
+            newValue: toJson(primaryUpdate.newValue), confidence: primaryUpdate.confidence,
+            reason: primaryUpdate.reason,
+            evidenceExcerpt: primaryUpdate.evidenceExcerpt ?? "",
+            impactSummary: primaryUpdate.impactSummary ?? "",
+          } });
+          candidateId = candidate.id;
+        }
+      }
+
       const completed = await tx.simulationSession.update({ where: { id: session.id }, data: {
-        status: "completed", score, feedback: toJson(feedback), candidateId: candidate.id,
+        status: "completed", score: feedback.score, feedback: toJson(feedback), candidateId,
         actualMode: report.meta.actualMode,
       } });
+      const summaryBase = `训练得分 ${feedback.score}`;
+      const summaryExtra = validReport
+        ? (report.meta.degraded ? "；来源：降级评分（未生成候选）" : "；已生成画像更新候选")
+        : "；未通过 Schema 校验，未生成候选";
       await tx.progressLog.create({ data: {
         userId: user.id, eventType: "simulation_completed", title: `完成模拟训练：${session.scenarioTitle}`,
-        summary: `训练得分 ${score}，已生成画像更新候选。来源：${report.meta.degraded ? "降级评分" : "Agent 结构化报告"}`,
-        metadata: toJson({ simulationId: session.id, candidateId: candidate.id, executionMeta: report.meta }),
+        summary: summaryBase + summaryExtra,
+        metadata: toJson({ simulationId: session.id, candidateId, executionMeta: report.meta }),
       } });
-      return { completed, candidate };
+      return { completed, candidateId };
     });
-    return ok({ session: simulationDto(result.completed), feedback, candidateId: result.candidate.id, alreadyCompleted: false }, report.meta as unknown as Record<string, unknown>);
+    return ok({ session: simulationDto(result.completed), feedback, candidateId: result.candidateId, alreadyCompleted: false }, report.meta as unknown as Record<string, unknown>);
   } catch (error) {
     if (error instanceof CompletionConflict) {
       const latest = await getPrisma().simulationSession.findFirst({ where: { id: session.id, userId: user.id } });

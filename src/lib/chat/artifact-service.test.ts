@@ -5,7 +5,7 @@ import type { NormalizedAssistantResult } from "@/lib/tbox/types";
 function dependencies(): ChatArtifactDependencies {
   return {
     createProfileCandidate: vi.fn(async () => "candidate-1"),
-    createPendingPlan: vi.fn(async () => ({ id: "plan-1", version: 3 })),
+    saveAgentPlan: vi.fn(async () => ({ id: "plan-1", version: 3 })),
     listPendingCandidateIds: vi.fn(async () => []),
   };
 }
@@ -19,6 +19,14 @@ function baseResult(overrides?: Partial<NormalizedAssistantResult>): NormalizedA
   };
 }
 
+const validPlan = {
+  years: [{ yearIndex: 1, goal: "基础", expectedOutputs: ["项目1"] }, { yearIndex: 2, goal: "进阶", expectedOutputs: ["项目2"] }, { yearIndex: 3, goal: "专业", expectedOutputs: ["项目3"] }],
+  quarters: Array.from({ length: 12 }, (_, i) => ({ quarterIndex: i + 1, goal: `阶段${i + 1}`, milestone: `里程碑${i + 1}`, evaluation: `评估${i + 1}` })),
+  months: Array.from({ length: 36 }, (_, i) => ({ monthIndex: i + 1, goal: `目标${i + 1}`, learningTasks: [{ id: `t${i}`, title: `任务${i}`, type: "learn" as const, status: "not_started" as const }], practiceOutputs: [`输出${i}`], evaluationMetrics: [`指标${i}`] })),
+  assumptions: ["假设1"],
+  riskNotes: ["风险1"],
+};
+
 describe("createArtifactsForChat", () => {
   it("does not create a plan card from user keywords without a validated agent result", async () => {
     const deps = dependencies();
@@ -28,7 +36,7 @@ describe("createArtifactsForChat", () => {
       assistantResult: baseResult({ text: "我们可以先讨论你的目标。" }),
     }, deps);
     expect(parts).toEqual([]);
-    expect(deps.createPendingPlan).not.toHaveBeenCalled();
+    expect(deps.saveAgentPlan).not.toHaveBeenCalled();
   });
 
   it("creates a pending plan from a validated career_plan result", async () => {
@@ -38,10 +46,14 @@ describe("createArtifactsForChat", () => {
       conversationId: "conversation-1",
       assistantResult: baseResult({
         text: "计划已生成",
-        structured: { type: "career_plan", plan: {}, candidateUpdates: [] },
+        structured: { type: "career_plan", plan: validPlan, candidateUpdates: [] },
       }),
     }, deps);
-    expect(deps.createPendingPlan).toHaveBeenCalledWith("user-1", "conversation-1");
+    expect(deps.saveAgentPlan).toHaveBeenCalledWith({
+      userId: "user-1",
+      plan: validPlan,
+      targetRole: expect.any(String) as string,
+    });
     expect(parts).toContainEqual({ type: "plan_ref", planId: "plan-1", version: 3 });
   });
 

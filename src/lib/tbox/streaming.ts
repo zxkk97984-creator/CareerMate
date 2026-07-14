@@ -1,5 +1,5 @@
 import { failureReason, TboxError, type TboxFailureReason } from "./errors";
-import { createManualChatAnswer, createMockChatChunks } from "./fixtures";
+import { createManualChatAnswer, createMockChatChunks, createMockStructuredResult } from "./fixtures";
 import { consumeChatResponse } from "./client";
 import { parseUpstreamSse } from "./sse";
 import { createAssistantResultAccumulator } from "./result";
@@ -166,12 +166,13 @@ export async function streamChatWithTboxProgressive(
   // mock 模式
   if (requested === "mock") {
     const chunks = createMockChatChunks(input.question);
+    const mockStructured = createMockStructuredResult(input.question);
     const metaObj = meta(requested, "mock", null, "local-mock");
     for (const chunk of chunks) {
       onEvent({ event: "message", data: { type: "delta", content: chunk }, meta: metaObj });
     }
     onEvent({ event: "done", data: { conversationId: input.conversationId ?? null }, meta: metaObj });
-    return { data: localResult(chunks, input.conversationId), meta: metaObj };
+    return { data: { ...localResult(chunks, input.conversationId), structured: mockStructured }, meta: metaObj };
   }
 
   // manual 模式

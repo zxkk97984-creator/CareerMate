@@ -1,9 +1,8 @@
 import { z } from "zod";
 import { fail, ok } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
-import { getTboxConfig } from "@/lib/env";
 import { getPrisma } from "@/lib/prisma";
-import { chatWithTbox } from "@/lib/tbox/adapter";
+import { generateSimulationTurn } from "@/lib/simulation/generation";
 import { nextSimulationPrompt, parseSimulationTranscript, simulationDto, simulationScenarioSchema } from "@/lib/simulation";
 
 const bodySchema = z.object({ message: z.string().trim().min(5).max(4_000) }).strict();
@@ -21,17 +20,20 @@ export async function POST(request: Request, context: { params: Promise<{ sessio
   const scenarioKey = simulationScenarioSchema.safeParse(session.scenarioKey);
   if (!scenarioKey.success) return fail("INVALID_SESSION", "训练场景无效", 400);
   const transcript = parseSimulationTranscript(session.transcript);
-  const config = getTboxConfig();
-  const result = await chatWithTbox({
-    question: `你正在进行${session.scenarioTitle}训练。根据回答追问一个具体问题：${parsed.data.message}`,
-    userId: user.id,
-    ...(session.remoteConversationId ? { conversationId: session.remoteConversationId } : {}),
-    history: transcript,
-  }, { config });
   const nextTurn = session.turnCount + 1;
+
+  const result = await generateSimulationTurn({
+    userId: user.id,
+    scenarioKey: scenarioKey.data,
+    scenarioTitle: session.scenarioTitle,
+    transcript,
+    remoteConversationId: session.remoteConversationId ?? undefined,
+  });
+
   const assistantMessage = result.meta.actualMode === "api" && result.data.text.trim()
     ? result.data.text.trim()
     : nextSimulationPrompt(scenarioKey.data, nextTurn);
+
   const updatedTranscript = [...transcript,
     { role: "user" as const, content: parsed.data.message },
     { role: "assistant" as const, content: assistantMessage, meta: result.meta },

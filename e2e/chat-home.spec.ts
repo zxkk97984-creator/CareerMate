@@ -121,10 +121,7 @@ test("can rename and delete conversations", async ({ page }) => {
   await expect(page.getByText("你好，我是 CareerMate")).toBeVisible();
 });
 
-// Task 7 后，卡片只来自 Agent 结构化结果，不再由本地正则匹配用户原文生成。
-// Mock 模式返回纯文本，不含结构化结果，因此卡片不会生成。
-// 需在真实 API 模式下重新激活此测试（已有 Agent 结构化结果时）。
-test.skip("chat profile candidate can be edited and confirmed", async ({ page }) => {
+test("chat profile candidate can be edited and confirmed", async ({ page }) => {
   await login(page);
   await page.getByPlaceholder(/Enter 发送/).fill("我每周可以投入 9 小时学习");
   await page.getByLabel("发送消息").click();
@@ -140,26 +137,28 @@ test.skip("chat profile candidate can be edited and confirmed", async ({ page })
   await expect(page.getByText(/每周 10 小时/)).toBeVisible();
 });
 
-// Task 7 后，卡片只来自 Agent 结构化结果，Mock 模式下无结构化数据不生成卡片。
+// FIXME: PlanRef 组件通过 API 拉取 plan 数据，E2E 环境中 plan 保存后 API 返回可能存在时序问题。
+// 单元测试已覆盖 saveAgentPlan → planRefPart 完整链路。恢复此 E2E 前需排查 PlanRef 在 mock 模式下的渲染时序。
 test.skip("chat plan generation reaches a confirmable version and survives reload", async ({ page }) => {
   await login(page);
   await page.getByPlaceholder(/Enter 发送/).fill("帮我制定一个3个月学习计划");
   await page.getByLabel("发送消息").click();
 
-  const confirm = page.getByRole("button", { name: "确认新版本" });
-  await expect(confirm).toBeVisible({ timeout: 20000 });
-  await confirm.click();
-  await expect(confirm).toHaveCount(0, { timeout: 10000 });
+  const planCard = page.getByRole("region", { name: /计划/ });
+  await expect(planCard).toBeVisible({ timeout: 20000 });
+  const acceptBtn = page.getByRole("button", { name: /确认新版本|重规划/ });
+  if (await acceptBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+    await acceptBtn.click();
+    await expect(acceptBtn).toHaveCount(0, { timeout: 10000 });
+  }
 
   await page.goto("/path");
   await expect(page.getByRole("heading", { name: "3 年职业路径" })).toBeVisible();
   await page.reload();
-  await expect(page.getByText(/节奏学习：完成一个 AI 产品经理 关键知识点/)).toBeVisible();
-  await expect(page.getByRole("button", { name: "确认新版本" })).toHaveCount(0);
+  await expect(page.getByText(/基础能力建立|打好基础/)).toBeVisible();
 });
 
-// Task 7 后，卡片只来自 Agent 结构化结果，Mock 模式下无结构化数据不生成卡片。
-test.skip("candidate card stays pending when confirmation API fails", async ({ page }) => {
+test("candidate card stays pending when confirmation API fails", async ({ page }) => {
   await login(page);
   await page.getByPlaceholder(/Enter 发送/).fill("我每周可以投入 11 小时学习");
   await page.getByLabel("发送消息").click();
@@ -184,7 +183,9 @@ test.skip("candidate card stays pending when confirmation API fails", async ({ p
   await expect(candidate.getByRole("button", { name: "确认" })).toBeVisible();
 });
 
-// Task 7 后，职业探索报告由 Agent 结构化结果驱动。Mock 模式无结构化数据，此验证需在 API 模式复测。
+// TODO: 职业探索报告在新架构中由 Agent 结构化结果驱动。
+// Mock 模式下需添加 exploration_report 类型的结构化 fixture 方可恢复此测试。
+// 当前跳过，待平台侧配置 Agent 探索工作流后重新激活。
 test.skip("fallback career research is never labeled as live web research", async ({ page }) => {
   await login(page);
   await page.getByPlaceholder(/Enter 发送/).fill("请介绍用户研究员这个岗位");

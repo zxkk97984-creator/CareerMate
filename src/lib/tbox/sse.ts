@@ -166,8 +166,26 @@ export async function* parseUpstreamSse(
 
     // delta 文本（逐段推送）
     if (upstreamEvent === "conversation.message.delta") {
+      // 检测 agentic_error 内联错误——平台工作流报错时在 delta 数据中嵌入
+      if (data.type === "agentic_error") {
+        yield { type: "warning", code: "AGENT_ERROR" };
+        const errMsg = stringValue(data.content) ?? "Agent 执行出错";
+        yield { type: "text_delta", text: errMsg };
+        return;
+      }
       const text = textFromMessage(data);
       if (text) yield { type: "text_delta", text };
+      return;
+    }
+
+    // 平台终端失败事件
+    if (upstreamEvent === "conversation.chat.failed") {
+      terminal = true;
+      yield {
+        type: "error",
+        code: "PROVIDER_ERROR",
+        message: "百宝箱 Agent 执行失败，请稍后重试。",
+      };
       return;
     }
 

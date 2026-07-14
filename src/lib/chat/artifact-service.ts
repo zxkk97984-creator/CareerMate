@@ -1,6 +1,6 @@
 import { getPrisma } from "@/lib/prisma";
 import { toJson } from "@/lib/json";
-import { createPlanGenerationService } from "@/lib/plans/generation-service";
+import type { CareerPlan } from "@/lib/tbox/schemas";
 import type { NormalizedAssistantResult } from "@/lib/tbox/types";
 import type { TboxStructuredResult } from "@/lib/tbox/capability-schemas";
 import type { ChatMessagePart } from "./persistence";
@@ -23,7 +23,8 @@ interface CandidateInput {
 
 export interface ChatArtifactDependencies {
   createProfileCandidate(input: CandidateInput): Promise<string>;
-  createPendingPlan(userId: string, conversationId?: string): Promise<{ id: string; version: number }>;
+  /** 直接保存 Agent 已验证的 plan 为 pending 状态（不触发二次生成） */
+  saveAgentPlan(input: { userId: string; plan: CareerPlan; targetRole: string }): Promise<{ id: string; version: number }>;
   listPendingCandidateIds(input: {
     userId: string;
     conversationId: string;
@@ -84,12 +85,32 @@ const productionDependencies: ChatArtifactDependencies = {
     return candidate.id;
   },
 
-  async createPendingPlan(userId, conversationId) {
-    const { plan } = await createPlanGenerationService().ensureGenerationPlan({
-      userId,
-      conversationId,
+  async saveAgentPlan(input) {
+    const db = getPrisma();
+    // 获取当前最高版本号
+    const latest = await db.careerPlan.findFirst({
+      where: { userId: input.userId },
+      orderBy: { version: "desc" },
+      select: { version: true },
     });
-    return { id: plan.id, version: plan.version };
+    const version = (latest?.version ?? 0) + 1;
+    // 将 Agent 已验证的 career_plan 直接保存为 pending 状态
+    const created = await db.careerPlan.create({
+      data: {
+        userId: input.userId,
+        targetRole: input.targetRole,
+        version,
+        status: "pending",
+        years: toJson(input.plan.years),
+        quarters: toJson(input.plan.quarters),
+        months: toJson(input.plan.months),
+        currentMonthIndex: input.plan.currentMonth?.monthIndex ?? 1,
+        assumptions: toJson(input.plan.assumptions),
+        riskNotes: toJson(input.plan.riskNotes),
+        generationMeta: toJson({ source: "agent-structured-result" }),
+      },
+    });
+    return { id: created.id, version: created.version };
   },
 
   async listPendingCandidateIds(input) {
@@ -159,13 +180,22 @@ export async function createArtifactsForChat(
     }
   }
 
-  // career_plan → 创建 pending plan
+  // career_plan → 直接保存 Agent 已验证的计划（pending 状态，不触发二次生成）
   if (structured.type === "career_plan") {
     try {
-      const plan = await dependencies.createPendingPlan(userId, conversationId);
-      parts.push(planRefPart(plan.id, plan.version));
+      const plan = structured.plan as CareerPlan;
+      if (!plan.years || !plan.quarters || !plan.months) {
+        parts.push(errorPart("PLAN_INVALID", "Agent 返回的计划结构不完整，请重试。"));
+      } else {
+        const planId = await dependencies.saveAgentPlan({
+          userId,
+          plan,
+          targetRole: plan.currentMonth?.goal ?? "未指定",
+        });
+        parts.push(planRefPart(planId.id, planId.version));
+      }
     } catch {
-      parts.push(errorPart("PLAN_CREATE_FAILED", "计划卡片未生成，可以稍后重试。"));
+      parts.push(errorPart("PLAN_CREATE_FAILED", "计划已生成但保存失败，可以稍后重试。"));
     }
   }
 

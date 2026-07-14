@@ -23,6 +23,84 @@ export function createMockChatChunks(_question: string) {
   ];
 }
 
+/**
+ * 为 mock 模式生成通过 Schema 的结构化结果。
+ * 根据用户问题中的关键词返回不同类型的能力 envelope。
+ * 这是模型无关的确定性 fixture，确保 E2E 测试在 mock 模式下仍可验证卡片生成流程。
+ */
+/** 最小合法 career_plan fixture（通过 careerPlanSchema 校验） */
+function createMockPlanResult() {
+  return {
+    type: "career_plan" as const,
+    plan: {
+      years: [
+        { yearIndex: 1 as const, goal: "建立数据分析与AI工具基础能力", expectedOutputs: ["完成3个数据分析小项目", "掌握Python数据分析工具链"] },
+        { yearIndex: 2 as const, goal: "深化业务理解与产品思维", expectedOutputs: ["主导1个完整的分析产品"] },
+        { yearIndex: 3 as const, goal: "成为技术骨干，具备跨部门协作和项目领导力", expectedOutputs: ["带领数据分析小组完成季度目标"] },
+      ],
+      quarters: Array.from({ length: 12 }, (_, i) => ({
+        quarterIndex: i + 1,
+        goal: i < 4 ? "基础能力建立" : i < 8 ? "作品集强化" : "真实场景演练",
+        milestone: `完成第${i + 1}季度的核心学习任务`,
+        evaluation: `季度${i + 1}自评与导师反馈`,
+      })),
+      months: Array.from({ length: 36 }, (_, i) => ({
+        monthIndex: i + 1,
+        goal: i < 6 ? "打好基础" : i < 18 ? "完成进阶项目" : "职业冲刺",
+        learningTasks: [
+          { id: `task-${i}-1`, title: `学习核心技能 ${i + 1}`, type: "learn" as const, status: "not_started" as const },
+          { id: `task-${i}-2`, title: `实践项目 ${i + 1}`, type: "practice" as const, status: "not_started" as const },
+        ],
+        practiceOutputs: [`月度输出 ${i + 1}`],
+        evaluationMetrics: [`达标指标 ${i + 1}`],
+      })),
+      currentMonth: { monthIndex: 1, goal: "从今天开始行动", learningTasks: [{ id: "start-1", title: "确定本周学习目标", type: "learn" as const, status: "not_started" as const }], practiceOutputs: ["本周学习笔记"], evaluationMetrics: ["完成度评估"] },
+      assumptions: ["每周可投入 8 小时学习", "具备基本计算机操作能力"],
+      riskNotes: ["学习进度可能受工作/学业周期性压力影响", "部分在线资源可能失效"],
+    },
+    candidateUpdates: [] as Array<{ field: string; newValue: unknown; confidence: number; reason: string; evidenceExcerpt: string; impactSummary: string; requiresConfirmation: true }>,
+  };
+}
+
+export function createMockStructuredResult(question: string): unknown | undefined {
+  // 从增强 prompt 中提取用户原始消息（避免画像上下文干扰关键词匹配）
+  const userQuestion = question.includes("用户原始问题：")
+    ? question.split("用户原始问题：").pop()?.trim() ?? question
+    : question;
+
+  // 计划请求优先匹配（比每周时间更精确的意图）
+  if (/(?:制定|生成|调整|重做|规划).{0,10}(?:计划|路径)|(?:三个月|3个月|90天|本周).{0,8}(?:计划|行动)/.test(userQuestion)) {
+    return { ...createMockPlanResult(), type: "career_plan" };
+  }
+
+  // 每周时间 → profile_assessment + candidateUpdates
+  if (/每周.*?(\d+)\s*(个)?小时/.test(userQuestion)) {
+    const match = userQuestion.match(/每周.*?(\d+)\s*(个)?小时/);
+    const hours = match ? Number(match[1]) : 8;
+    return {
+      type: "profile_assessment",
+      targetRole: "data_analyst",
+      scores: { aiTooling: 60, roleFoundation: 60, dataAnalysis: 70, businessProduct: 50, communication: 55, projectPractice: 45 },
+      strengths: ["学习意愿明确", "时间规划清晰"],
+      gaps: ["缺少产品思维训练", "协作经验不足"],
+      evidence: [`用户说明每周可投入 ${hours} 小时学习`],
+      assumptions: ["用户具备基础计算机操作能力"],
+      needsConfirmation: true,
+      candidateUpdates: [{
+        field: "weeklyAvailableHours",
+        newValue: hours,
+        confidence: 0.99,
+        reason: "用户在对话中明确说明了每周可投入时间。",
+        evidenceExcerpt: userQuestion,
+        impactSummary: "确认后，后续计划会按新的每周可投入时间调整任务强度。",
+        requiresConfirmation: true,
+      }],
+    };
+  }
+
+  return undefined;
+}
+
 export function createManualChatAnswer(question: string) {
   return createMockChatChunks(question).join("\n");
 }
