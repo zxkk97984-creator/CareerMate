@@ -16,7 +16,7 @@ export type TboxHistoryMode = "provider" | "context_only";
 export type TboxContextTransport = "business_data" | "question_prefix";
 
 /** 百宝箱结构化输出模式 */
-export type TboxStructuredMode = "terminal" | "followup";
+export type TboxStructuredMode = "disabled" | "terminal" | "followup";
 
 export interface TboxConfig {
   mode: AiMode;
@@ -29,10 +29,12 @@ export interface TboxConfig {
   historyMode: TboxHistoryMode;
   contextTransport: TboxContextTransport;
   structuredMode: TboxStructuredMode;
+  reuseRemoteConversationId: boolean;
   chatEndpoint: string;
   retrieveEndpoint: string;
   streamTimeoutMs: number;
   webServiceUrl?: string;
+  probeAgentId?: string;
   datasetIds: Record<DatasetKey, string>;
 }
 
@@ -47,6 +49,8 @@ export interface ChatInput {
   conversationId?: string;
   history?: unknown;
   context?: unknown;
+  /** per-turn 搜索策略，只有 "required" 且全局开关开启时才实际发送 search_engine=true */
+  searchPolicy?: "off" | "allowed" | "required";
 }
 
 export interface NormalizedChat {

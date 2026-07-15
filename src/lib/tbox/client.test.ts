@@ -12,9 +12,11 @@ const baseConfig: TboxConfig = {
   historyMode: "provider",
   contextTransport: "business_data",
   structuredMode: "terminal",
+  reuseRemoteConversationId: false,
   chatEndpoint: "https://o.tbox.cn/openapi/v1/chat/create",
   retrieveEndpoint: "https://api.tbox.cn/api/datasets/retrieve",
   streamTimeoutMs: 90_000,
+  probeAgentId: undefined,
   datasetIds: {
     roleCompetency: "",
     learningResources: "",
@@ -44,9 +46,11 @@ describe("tbox client request contract", () => {
           historyMode: "provider",
           contextTransport: "business_data",
           structuredMode: "terminal",
+          reuseRemoteConversationId: false,
           chatEndpoint: "https://o.tbox.cn/openapi/v1/chat/create",
           retrieveEndpoint: "https://api.tbox.cn/api/datasets/retrieve",
           streamTimeoutMs: 90_000,
+          probeAgentId: undefined,
           datasetIds: {
             roleCompetency: "",
             learningResources: "",

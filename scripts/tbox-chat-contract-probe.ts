@@ -1,24 +1,28 @@
 /**
- * 百宝箱在线契约探针（脱敏版本 v2）
+ * 百宝箱在线契约探针 v3（Phase 0 修正版）
  *
- * 用法：npm run tbox:probe
- * 环境：需要 TBOX_MODE=api 和有效的 .env.local 配置
+ * 用法：
+ *   npm run tbox:probe -- --yes                     # 使用 TBOX_AGENT_ID
+ *   npm run tbox:probe -- --yes --allow-production-agent  # 明确允许生产 Agent
  *
  * 安全约束：
- * - 输出只包含 SafeProbeResult 数组，不含密钥、完整请求体、原始错误消息
+ * - 输出只包含 SafeProbeResult 数组
  * - 异常经 safeErrorNote() 统一脱敏
- * - 在线模式需显式确认（--yes 参数）
- * - 使用 probe-{timestamp} 一次性 user_id，代号 CM-HISTORY-731
+ * - 在线模式需 --yes 确认门
+ * - 生产 Agent 需额外 --allow-production-agent
+ * - 支持 TBOX_PROBE_AGENT_ID 独立探针 Agent
+ * - 每场景使用独立 probe user ID 和随机 sentinel
  */
 
 import { loadEnvConfig } from "@next/env";
 import { consumeChatResponse } from "../src/lib/tbox/client";
+import { TboxError } from "../src/lib/tbox/errors";
 import { parseUpstreamSse } from "../src/lib/tbox/sse";
 import { createAssistantResultAccumulator } from "../src/lib/tbox/result";
 import { getTboxConfig } from "../src/lib/env";
 import {
-  HISTORY_CODE,
   safeErrorNote,
+  classifyError,
   judgeBasicSse,
   judgeConversationId,
   judgeHistory,
@@ -33,6 +37,7 @@ import type {
   ProbeObservation,
   CitationObservation,
   ContextSizeObservation,
+  BusinessDataSentinels,
 } from "../src/lib/tbox/probe-judge";
 import type { SafeProbeResult } from "../src/lib/tbox/client";
 
@@ -40,9 +45,15 @@ import type { SafeProbeResult } from "../src/lib/tbox/client";
 
 loadEnvConfig(process.cwd());
 
-// ── 固定一次性测试数据 ──────────────────────────
+// ── 随机工具 ─────────────────────────────────────
 
-const PROBE_USER_ID = `probe-${Date.now()}`;
+function randomSentinel(): string {
+  return `S${Math.random().toString(36).slice(2, 10).toUpperCase()}`;
+}
+
+function probeUserId(scenario: string): string {
+  return `probe-${scenario}-${Date.now()}-${randomSentinel()}`;
+}
 
 // ── 核心流式调用 ─────────────────────────────────
 
@@ -51,26 +62,31 @@ interface RawProbeOutput {
   text: string;
   structured?: unknown;
   eventNames: string[];
+  toolNames: string[];
   citations: CitationObservation[];
 }
 
-async function callTboxApi(question: string, opts?: {
-  conversationId?: string;
-  history?: Array<{ role: "user" | "assistant"; content: string }>;
-  businessData?: Record<string, unknown>;
-  searchEngine?: boolean;
-}): Promise<RawProbeOutput> {
+async function callTboxApi(
+  scenario: string,
+  question: string,
+  opts?: {
+    conversationId?: string;
+    history?: Array<{ role: "user" | "assistant"; content: string }>;
+    businessData?: Record<string, unknown>;
+    searchPolicy?: "off" | "allowed" | "required";
+  },
+): Promise<RawProbeOutput> {
   const config = getTboxConfig();
 
   const result = await consumeChatResponse(
     {
       question,
-      userId: PROBE_USER_ID,
+      userId: probeUserId(scenario),
       conversationId: opts?.conversationId,
       history: opts?.history,
       context: opts?.businessData,
-      searchEngine: opts?.searchEngine ?? config.searchEngine,
-    } as Parameters<typeof consumeChatResponse>[0],
+      searchPolicy: opts?.searchPolicy,
+    },
     true,
     { config, fetchImpl: fetch },
     async (response, onActivity) => {
@@ -78,10 +94,13 @@ async function callTboxApi(question: string, opts?: {
 
       const acc = createAssistantResultAccumulator();
       const eventNames: string[] = [];
+      const toolNames: string[] = [];
       let completed = false;
 
       for await (const event of parseUpstreamSse(response.body, { onActivity })) {
         eventNames.push(event.type);
+        if (event.type === "tool_start" && event.name) toolNames.push(event.name);
+        if (event.type === "tool_end" && event.name) toolNames.push(event.name);
         if (event.type === "done") completed = true;
         acc.consume(event);
       }
@@ -89,17 +108,18 @@ async function callTboxApi(question: string, opts?: {
       if (!completed) throw new Error("SSE 流未正常终止");
 
       const final = acc.finalize();
-      return { eventNames, final };
+      return { eventNames, toolNames, final };
     },
   );
 
-  const { eventNames, final: assistantResult } = result;
+  const { eventNames, toolNames, final: assistantResult } = result;
 
   return {
     conversationId: assistantResult.conversationId,
     text: assistantResult.text,
     structured: assistantResult.structured,
     eventNames,
+    toolNames,
     citations: (assistantResult.citations as CitationObservation[]) ?? [],
   };
 }
@@ -109,18 +129,14 @@ function toObservation(raw: RawProbeOutput, overrides?: Partial<ProbeObservation
     text: raw.text,
     conversationId: raw.conversationId,
     eventNames: raw.eventNames,
+    toolNames: raw.toolNames,
     citations: raw.citations,
     structured: raw.structured,
     ...overrides,
   };
 }
 
-function safeResult(
-  name: string,
-  obs: ProbeObservation,
-  pass: boolean,
-  note: string,
-): SafeProbeResult {
+function safeResult(name: string, obs: ProbeObservation, pass: boolean, note: string): SafeProbeResult {
   return {
     name,
     status: pass ? "pass" : "fail",
@@ -135,26 +151,32 @@ function safeResult(
   };
 }
 
-function safeFailResult(name: string, err: unknown, partialObs?: ProbeObservation): SafeProbeResult {
+function safeFailResult(name: string, err: unknown): SafeProbeResult {
+  const obs: ProbeObservation = { text: "", eventNames: [], toolNames: [], citations: [] };
+  if (err instanceof TboxError) {
+    obs.httpStatus = err.httpStatus;
+    obs.errorCode = err.platformCode ?? err.code;
+    obs.errorCategory = err.category;
+  }
   return {
     name,
     status: "fail",
     httpOk: false,
     actualMode: "api",
-    eventNames: partialObs?.eventNames ?? [],
-    hasConversationId: Boolean(partialObs?.conversationId),
-    hasText: Boolean(partialObs?.text),
+    eventNames: [],
+    hasConversationId: false,
+    hasText: false,
     hasStructuredResult: false,
-    citationCount: partialObs?.citations?.length ?? 0,
+    citationCount: 0,
     note: safeErrorNote(err),
   };
 }
 
-// ── 9 个探针场景（含 followup_structured）─────────
+// ── 9 个探针场景 ─────────────────────────────────
 
 async function probeBasicSse(): Promise<SafeProbeResult> {
   try {
-    const raw = await callTboxApi("请用一句话介绍 CareerMate，并返回一个简单的 Markdown 列表。");
+    const raw = await callTboxApi("basic_sse", "请用一句话介绍 CareerMate，并返回一个简单的 Markdown 列表。");
     const obs = toObservation(raw);
     const j = judgeBasicSse(obs);
     return safeResult("basic_sse", obs, j.pass, j.note);
@@ -165,22 +187,18 @@ async function probeBasicSse(): Promise<SafeProbeResult> {
 
 async function probeConversationId(): Promise<SafeProbeResult> {
   try {
-    // 第一轮：告知代号
-    const r1 = await callTboxApi(
-      `请记住本次测试代号：${HISTORY_CODE}。请在后续回复中引用此代号。`,
-    );
+    const scenarioCode = randomSentinel();
+    const r1 = await callTboxApi("conversation_id", `请记住本次测试代号：${scenarioCode}。请在后续回复中引用此代号。`);
 
     if (!r1.conversationId) {
       return safeResult("conversation_id", toObservation(r1), false, "首轮未返回 conversation_id");
     }
 
-    // 第二轮：不携带代号，依赖远端记忆
-    const r2 = await callTboxApi("刚才我告诉你的测试代号是什么？", {
+    // R2/R3 不携带代号，独立回忆
+    const r2 = await callTboxApi("conversation_id", "刚才我告诉你的测试代号是什么？", {
       conversationId: r1.conversationId,
     });
-
-    // 第三轮：不携带代号，独立回忆（修复假阳性：R3 不再携带 HISTORY_CODE）
-    const r3 = await callTboxApi("请再次确认我最初给你的测试代号，并说明这是第几轮对话。", {
+    const r3 = await callTboxApi("conversation_id", "请再次确认我最初给你的测试代号，并说明这是第几轮对话。", {
       conversationId: r1.conversationId,
     });
 
@@ -209,14 +227,15 @@ async function probeConversationId(): Promise<SafeProbeResult> {
 
 async function probeHistory(): Promise<SafeProbeResult> {
   try {
-    const raw = await callTboxApi("请复述我之前告诉你的测试代号。", {
+    const scenarioCode = randomSentinel();
+    const raw = await callTboxApi("history", "请复述我之前告诉你的测试代号。", {
       history: [
-        { role: "user", content: `请记住一次性测试代号 ${HISTORY_CODE}，只用于本次契约测试。` },
-        { role: "assistant", content: `已记住测试代号：${HISTORY_CODE}。` },
+        { role: "user", content: `请记住一次性测试代号 ${scenarioCode}，只用于本次契约测试。` },
+        { role: "assistant", content: `已记住测试代号：${scenarioCode}。` },
       ],
     });
     const obs = toObservation(raw);
-    const j = judgeHistory(obs);
+    const j = judgeHistory(obs, scenarioCode);
     return safeResult("history", obs, j.pass, j.note);
   } catch (err) {
     return safeFailResult("history", err);
@@ -225,21 +244,22 @@ async function probeHistory(): Promise<SafeProbeResult> {
 
 async function probeBusinessData(): Promise<SafeProbeResult> {
   try {
-    const raw = await callTboxApi(
-      "根据你的了解，我的目标岗位、每周学习时间和学习偏好分别是什么？",
-      {
-        businessData: {
-          profile: {
-            targetRole: "database_administrator",
-            targetRoleLabel: "数据库管理员（DBA）",
-            weeklyAvailableHours: 10,
-            learningPreference: ["practice"],
-          },
-        },
+    const sentinels: BusinessDataSentinels = {
+      sentinel1: randomSentinel(),
+      sentinel2: randomSentinel(),
+      sentinel3: randomSentinel(),
+    };
+
+    const raw = await callTboxApi("business_data", "请精确复述以下三个代码。只需输出三个代码，用逗号分隔。", {
+      businessData: {
+        code1: sentinels.sentinel1,
+        code2: sentinels.sentinel2,
+        code3: sentinels.sentinel3,
       },
-    );
+    });
+
     const obs = toObservation(raw);
-    const j = judgeBusinessData(obs);
+    const j = judgeBusinessData(obs, sentinels);
     return safeResult("business_data", obs, j.pass, j.note);
   } catch (err) {
     return safeFailResult("business_data", err);
@@ -248,8 +268,8 @@ async function probeBusinessData(): Promise<SafeProbeResult> {
 
 async function probeTextAndResult(): Promise<SafeProbeResult> {
   try {
-    const raw = await callTboxApi(
-      "请用一句话介绍 CareerMate，同时在结构化输出中返回一个 agent_response 对象（含 schemaVersion 和 intent 字段）。",
+    const raw = await callTboxApi("text_and_result",
+      "请用一句话介绍 CareerMate，同时在结构化输出中返回一个 agent_response JSON 对象：schemaVersion=1, intent=general, task.kind=general, task.status=idle，questions=[], operations=[], sourceRefs=[]。",
     );
     const obs = toObservation(raw);
     const j = judgeTextAndResult(obs);
@@ -261,9 +281,8 @@ async function probeTextAndResult(): Promise<SafeProbeResult> {
 
 async function probeFollowupStructured(): Promise<SafeProbeResult> {
   try {
-    // 使用同一个百宝箱 Agent，显式要求仅返回结构化 JSON
-    const raw = await callTboxApi(
-      "请仅返回一个 agent_response JSON 对象，schemaVersion=1，intent=general，operations 和 questions 为空数组。不要包含任何 Markdown 或自然语言文本。",
+    const raw = await callTboxApi("followup_structured",
+      "请仅返回一个 agent_response JSON：schemaVersion=1, intent=general, task.kind=general, task.status=idle, questions=[], operations=[], sourceRefs=[]。",
     );
     const obs = toObservation(raw);
     const j = judgeFollowupStructured(obs);
@@ -275,9 +294,9 @@ async function probeFollowupStructured(): Promise<SafeProbeResult> {
 
 async function probeSearchAndCitation(): Promise<SafeProbeResult> {
   try {
-    const raw = await callTboxApi(
-      "请调研 DBA（数据库管理员）当前常见的职责、入门技能和岗位变化趋势。区分外部事实与 AI 推断。",
-      { searchEngine: true },
+    const raw = await callTboxApi("search_and_citation",
+      "请联网搜索：DBA 数据库管理员当前常见的职责和入门技能。请引用具体来源网址。",
+      { searchPolicy: "required" },
     );
     const obs = toObservation(raw);
     const j = judgeSearchAndCitation(obs);
@@ -289,14 +308,13 @@ async function probeSearchAndCitation(): Promise<SafeProbeResult> {
 
 async function probeInvalidConversation(): Promise<SafeProbeResult> {
   try {
-    await callTboxApi("你好", {
+    await callTboxApi("invalid_conversation", "你好", {
       conversationId: "fake-nonexistent-conversation-id-999999",
     });
 
-    // 如果没有抛异常，说明百宝箱容忍了无效 ID——这是假阳性
     return {
       name: "invalid_conversation",
-      status: "fail", // 修复：不再是 pass
+      status: "fail",
       httpOk: true,
       actualMode: "api",
       eventNames: [],
@@ -304,43 +322,41 @@ async function probeInvalidConversation(): Promise<SafeProbeResult> {
       hasText: true,
       hasStructuredResult: false,
       citationCount: 0,
-      note: "伪造远端 ID 被容忍（200 OK），未返回会话无效错误——无法确认恢复信号",
+      note: "伪造远端 ID 被容忍（200 OK），无法确认会话无效错误形态",
     };
   } catch (err) {
-    // 尝试从 TboxError 中提取 HTTP 状态和错误码
-    const msg = String(err instanceof Error ? err.message : err);
-    const httpStatusMatch = msg.match(/status\s*(\d{3})/i);
-    const httpStatus = httpStatusMatch ? Number(httpStatusMatch[1]) : undefined;
-    const codeMatch = msg.match(/code[:\s]+"?(\w+)"?/i);
-    const errorCode = codeMatch ? codeMatch[1] : undefined;
-
-    const obs: ProbeObservation = {
-      text: "",
-      eventNames: [],
-      citations: [],
-      httpStatus,
-      errorCode,
-    };
-
+    const obs: ProbeObservation = { text: "", eventNames: [], toolNames: [], citations: [] };
+    if (err instanceof TboxError) {
+      obs.httpStatus = err.httpStatus;
+      obs.errorCode = err.platformCode ?? err.code;
+      obs.errorCategory = err.category;
+    }
     const j = judgeInvalidConversation(obs);
     return safeResult("invalid_conversation", obs, j.pass, j.note);
   }
 }
 
 async function probeContextSize(): Promise<SafeProbeResult> {
-  const paddingSizes = [2000, 4000, 8000, 12000, 16000];
+  const paddingSizes = [4000, 8000, 12000, 16000];
   const observations: ContextSizeObservation[] = [];
 
   for (const size of paddingSizes) {
+    const sentinel = randomSentinel();
     try {
-      const padding = "X".repeat(size);
-      await callTboxApi("请用一句话回复：收到。", {
-        businessData: { padding },
-      });
-      observations.push({ size, success: true });
-    } catch {
-      observations.push({ size, success: false });
-      break;
+      const padding = "Z".repeat(size);
+      const raw = await callTboxApi("context_size",
+        `请只回复以下代码：${sentinel}`,
+        {
+          businessData: { padding },
+        },
+      );
+      const recalled = raw.text.includes(sentinel);
+      observations.push({ size, success: true, inconclusive: false, sentinel, sentinelRecalled: recalled });
+    } catch (err) {
+      const kind = classifyError(err);
+      const isInconclusive = kind === "provider_error" || kind === "auth_failed" || kind === "timeout" || kind === "network_error";
+      observations.push({ size, success: false, inconclusive: isInconclusive, sentinel, sentinelRecalled: false });
+      if (!isInconclusive) break;
     }
   }
 
@@ -361,16 +377,29 @@ async function probeContextSize(): Promise<SafeProbeResult> {
 
 // ── 确认门 ────────────────────────────────────────
 
-function showConfirmationGate() {
+function showConfirmationGate(config: ReturnType<typeof getTboxConfig>) {
+  const agentId = config.probeAgentId || config.agentId;
+  const isProductionAgent = !config.probeAgentId;
+
   console.error("╔══════════════════════════════════════════════╗");
-  console.error("║  百宝箱在线契约探针 — 确认门                ║");
+  console.error("║  百宝箱在线契约探针 v3 — 确认门             ║");
   console.error("╠══════════════════════════════════════════════╣");
-  console.error("║  即将向百宝箱 API 发起 10+ 次真实请求        ║");
+  console.error(`║  Agent ID: ${agentId.slice(0, 12)}...`);
+  if (isProductionAgent) {
+    console.error("║  ⚠ 使用生产 Agent，会产生远端测试会话       ║");
+    console.error("║  ⚠ 会占用配额，影响调用统计                 ║");
+    console.error("║  建议设置 TBOX_PROBE_AGENT_ID 使用独立 Agent  ║");
+  }
+  console.error("║  将发起 10+ 次真实 API 请求                  ║");
   console.error("║  使用一次性探针用户 ID，不影响生产数据        ║");
-  console.error("║  所有输出经脱敏处理，不含密钥或完整请求体     ║");
+  console.error("║  所有输出经脱敏处理                          ║");
   console.error("╚══════════════════════════════════════════════╝");
   console.error("");
-  console.error("请确认运行在线探针：npm run tbox:probe -- --yes");
+  if (isProductionAgent) {
+    console.error("请确认：npm run tbox:probe -- --yes --allow-production-agent");
+  } else {
+    console.error("请确认：npm run tbox:probe -- --yes");
+  }
   console.error("");
 }
 
@@ -379,14 +408,21 @@ function showConfirmationGate() {
 async function main() {
   const config = getTboxConfig();
 
-  // 确认门：在线模式需要 --yes
   const hasYes = process.argv.includes("--yes") || process.argv.includes("-y");
+  const hasAllowProduction = process.argv.includes("--allow-production-agent");
+  const isProductionAgent = !config.probeAgentId;
+
   if (config.mode === "api" && !hasYes) {
-    showConfirmationGate();
+    showConfirmationGate(config);
     process.exit(0);
   }
 
-  // 非 api 模式全部标记 blocked
+  if (config.mode === "api" && isProductionAgent && !hasAllowProduction) {
+    console.error("错误：使用生产 Agent 需要额外参数 --allow-production-agent");
+    console.error("或设置 TBOX_PROBE_AGENT_ID 环境变量使用独立探针 Agent。");
+    process.exit(1);
+  }
+
   if (config.mode !== "api") {
     const blockedResults: SafeProbeResult[] = [
       "basic_sse", "conversation_id", "history", "business_data",
@@ -402,60 +438,58 @@ async function main() {
       hasText: false,
       hasStructuredResult: false,
       citationCount: 0,
-      note: `TBOX_MODE=${config.mode}，非 api 模式无法执行真实探针`,
+      note: `TBOX_MODE=${config.mode}`,
     }));
-
-    console.log(JSON.stringify({
-      results: blockedResults,
-      meta: { mode: config.mode, timestamp: new Date().toISOString() },
-    }, null, 2));
+    console.log(JSON.stringify({ results: blockedResults, meta: { mode: config.mode } }, null, 2));
     return;
   }
 
-  console.error("🔍 百宝箱契约探针 v2 开始运行...\n");
-  console.error(`   Agent ID: ${config.agentId.slice(0, 8)}...`);
+  const agentId = config.probeAgentId || config.agentId;
+  console.error("🔍 百宝箱契约探针 v3 开始运行...\n");
+  console.error(`   Agent ID: ${agentId.slice(0, 12)}...`);
   console.error(`   搜索开关: ${config.searchEngine}`);
-  console.error(`   探针用户: ${PROBE_USER_ID}\n`);
+  console.error(`   探针模式: ${isProductionAgent ? "生产 Agent（--allow-production-agent）" : "独立探针 Agent"}\n`);
 
   const results: SafeProbeResult[] = [];
 
   console.error("1/9 basic_sse...");
   results.push(await probeBasicSse());
 
-  console.error("2/9 conversation_id（连续三轮，R2/R3 独立回忆）...");
+  console.error("2/9 conversation_id...");
   results.push(await probeConversationId());
 
-  console.error("3/9 history（仅通过 history 传代号）...");
+  console.error("3/9 history...");
   results.push(await probeHistory());
 
-  console.error("4/9 business_data（DBA+10h+实践，防泄露）...");
+  console.error("4/9 business_data（三随机 sentinel）...");
   results.push(await probeBusinessData());
 
-  console.error("5/9 text_and_result（正文+合法 agent_response）...");
+  console.error("5/9 text_and_result（正式 AgentResponse Schema）...");
   results.push(await probeTextAndResult());
 
-  console.error("6/9 followup_structured（同一 Agent 的 followup 结构化）...");
+  console.error("6/9 followup_structured...");
   results.push(await probeFollowupStructured());
 
-  console.error("7/9 search_and_citation（工具+citation+有效URL）...");
+  console.error("7/9 search_and_citation（搜索工具+citation+URL）...");
   results.push(await probeSearchAndCitation());
 
-  console.error("8/9 invalid_conversation（伪造 ID 的精确认定）...");
+  console.error("8/9 invalid_conversation...");
   results.push(await probeInvalidConversation());
 
-  console.error("9/9 context_size（lastSuccess/firstFailure）...");
+  console.error("9/9 context_size（question_prefix+sentinel）...");
   results.push(await probeContextSize());
 
-  // 脱敏 JSON 到 stdout
+  const actualSearchEngine = config.searchEngine;
   console.log(JSON.stringify({
     results,
     meta: {
       mode: config.mode,
-      searchEngine: config.searchEngine,
+      searchEngine: actualSearchEngine,
       historyMode: config.historyMode,
       contextTransport: config.contextTransport,
       structuredMode: config.structuredMode,
-      agentIdPrefix: config.agentId.slice(0, 8),
+      reuseRemoteConversationId: config.reuseRemoteConversationId,
+      agentIdPrefix: agentId.slice(0, 8),
       timestamp: new Date().toISOString(),
     },
   }, null, 2));
@@ -463,11 +497,10 @@ async function main() {
   const passCount = results.filter((r) => r.status === "pass").length;
   const failCount = results.filter((r) => r.status === "fail").length;
   const blockedCount = results.filter((r) => r.status === "blocked").length;
-  console.error(`\n📊 探针完成：${passCount} 通过 / ${failCount} 失败 / ${blockedCount} 阻塞`);
+  console.error(`\n📊 ${passCount} 通过 / ${failCount} 失败 / ${blockedCount} 阻塞`);
 }
 
 main().catch((err) => {
-  // 仅输出脱敏错误到 stderr
-  console.error(`探针脚本异常：${safeErrorNote(err)}`);
+  console.error(`探针异常：${safeErrorNote(err)}`);
   process.exit(1);
 });

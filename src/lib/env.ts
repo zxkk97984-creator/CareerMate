@@ -17,19 +17,23 @@ function readRetrievalMode() {
 }
 
 function readHistoryMode(): TboxHistoryMode {
-  const value = read("TBOX_HISTORY_MODE", "provider").trim().toLowerCase();
+  // 安全默认 context_only，只有真实隔离探针通过 history 后才改为 provider
+  const value = read("TBOX_HISTORY_MODE", "context_only").trim().toLowerCase();
   return value === "context_only" ? "context_only" : "provider";
 }
 
 function readContextTransport(): TboxContextTransport {
-  // 2026-07-15 探针：business_data 未生效，默认使用 question_prefix
+  // 安全默认 question_prefix（business_data 探针未通过）
   const value = read("TBOX_CONTEXT_TRANSPORT", "question_prefix").trim().toLowerCase();
   return value === "question_prefix" ? "question_prefix" : "business_data";
 }
 
 function readStructuredMode(): TboxStructuredMode {
-  const value = read("TBOX_STRUCTURED_MODE", "terminal").trim().toLowerCase();
-  return value === "followup" ? "followup" : "terminal";
+  // 安全默认 disabled（terminal 和 followup 探针均未通过）
+  const value = read("TBOX_STRUCTURED_MODE", "disabled").trim().toLowerCase();
+  if (value === "terminal") return "terminal";
+  if (value === "followup") return "followup";
+  return "disabled";
 }
 
 export function getTboxConfig(): TboxConfig {
@@ -49,11 +53,13 @@ export function getTboxConfig(): TboxConfig {
     historyMode: readHistoryMode(),
     contextTransport: readContextTransport(),
     structuredMode: readStructuredMode(),
+    reuseRemoteConversationId: readBoolean("TBOX_REUSE_REMOTE_CONVERSATION_ID", false),
     chatEndpoint: read("TBOX_CHAT_ENDPOINT", "https://o.tbox.cn/openapi/v1/chat/create"),
     retrieveEndpoint: read("TBOX_RETRIEVE_ENDPOINT", "https://api.tbox.cn/api/datasets/retrieve"),
     streamTimeoutMs:
       Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 90_000,
     webServiceUrl: read("TBOX_WEB_SERVICE_URL"),
+    probeAgentId: read("TBOX_PROBE_AGENT_ID") || undefined,
     datasetIds: {
       roleCompetency: read("TBOX_DATASET_ROLE_COMPETENCY"),
       learningResources: read("TBOX_DATASET_LEARNING_RESOURCES"),

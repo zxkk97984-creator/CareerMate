@@ -11,9 +11,11 @@ const config: TboxConfig = {
   historyMode: "provider",
   contextTransport: "business_data",
   structuredMode: "terminal",
+  reuseRemoteConversationId: false,
   chatEndpoint: "https://tbox.example/chat/create",
   retrieveEndpoint: "https://tbox.example/retrieve",
   streamTimeoutMs: 90_000,
+  probeAgentId: undefined,
   datasetIds: {
     roleCompetency: "dataset-role",
     learningResources: "dataset-learning",

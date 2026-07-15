@@ -35,11 +35,11 @@ describe("tbox environment config", () => {
     expect(config.retrievalMode).toBe("agent");
   });
 
-  it("defaults history mode to provider", async () => {
+  it("defaults history mode to context_only", async () => {
     vi.stubEnv("TBOX_HISTORY_MODE", "");
     const { getTboxConfig } = await import("./env");
     const config = getTboxConfig();
-    expect(config.historyMode).toBe("provider");
+    expect(config.historyMode).toBe("context_only");
   });
 
   it("reads history mode context_only", async () => {
@@ -63,11 +63,11 @@ describe("tbox environment config", () => {
     expect(config.contextTransport).toBe("question_prefix");
   });
 
-  it("defaults structured mode to terminal", async () => {
+  it("defaults structured mode to disabled", async () => {
     vi.stubEnv("TBOX_STRUCTURED_MODE", "");
     const { getTboxConfig } = await import("./env");
     const config = getTboxConfig();
-    expect(config.structuredMode).toBe("terminal");
+    expect(config.structuredMode).toBe("disabled");
   });
 
   it("reads structured mode followup", async () => {
@@ -77,10 +77,38 @@ describe("tbox environment config", () => {
     expect(config.structuredMode).toBe("followup");
   });
 
-  it("rejects invalid structured mode values and defaults to terminal", async () => {
+  it("rejects invalid structured mode values and defaults to disabled", async () => {
     vi.stubEnv("TBOX_STRUCTURED_MODE", "garbage");
     const { getTboxConfig } = await import("./env");
     const config = getTboxConfig();
-    expect(config.structuredMode).toBe("terminal");
+    expect(config.structuredMode).toBe("disabled");
+  });
+
+  it("defaults reuseRemoteConversationId to false", async () => {
+    vi.stubEnv("TBOX_REUSE_REMOTE_CONVERSATION_ID", "");
+    const { getTboxConfig } = await import("./env");
+    const config = getTboxConfig();
+    expect(config.reuseRemoteConversationId).toBe(false);
+  });
+
+  it("reads reuseRemoteConversationId true correctly", async () => {
+    vi.stubEnv("TBOX_REUSE_REMOTE_CONVERSATION_ID", "true");
+    const { getTboxConfig } = await import("./env");
+    const config = getTboxConfig();
+    expect(config.reuseRemoteConversationId).toBe(true);
+  });
+
+  it("defaults probeAgentId to undefined when unset", async () => {
+    vi.stubEnv("TBOX_PROBE_AGENT_ID", "");
+    const { getTboxConfig } = await import("./env");
+    const config = getTboxConfig();
+    expect(config.probeAgentId).toBeUndefined();
+  });
+
+  it("reads probeAgentId when set", async () => {
+    vi.stubEnv("TBOX_PROBE_AGENT_ID", "probe-agent-v1");
+    const { getTboxConfig } = await import("./env");
+    const config = getTboxConfig();
+    expect(config.probeAgentId).toBe("probe-agent-v1");
   });
 });

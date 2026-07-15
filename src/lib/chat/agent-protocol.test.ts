@@ -4,7 +4,6 @@ import {
   agentQuestionSchema,
   agentOperationSchema,
   agentSourceRefSchema,
-  quickActionSchema,
   AGENT_INTENTS,
 } from "./agent-protocol";
 

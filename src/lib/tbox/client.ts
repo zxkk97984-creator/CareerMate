@@ -6,11 +6,27 @@ const systemClock: Clock = {
   clearTimeout: (timer) => clearTimeout(timer),
 };
 
+/** 百宝箱 API 允许的主机名后缀 */
+const ALLOWED_ENDPOINT_SUFFIXES = [".tbox.cn", "tbox.cn"];
+
 function dependencies(deps: TboxDependencies) {
   return {
     fetchImpl: deps.fetchImpl ?? fetch,
     clock: deps.clock ?? systemClock,
   };
+}
+
+function validateEndpoint(url: URL, allowTestOverride?: boolean): void {
+  // 测试注入路径：显式 test-only 注入允许任意 endpoint
+  if (allowTestOverride) return;
+  if (url.protocol !== "https:") {
+    throw new TboxError("missing_config", "API_CONFIG_MISSING");
+  }
+  const hostname = url.hostname.toLowerCase();
+  const allowed = ALLOWED_ENDPOINT_SUFFIXES.some((suffix) => hostname.endsWith(suffix));
+  if (!allowed) {
+    throw new TboxError("missing_config", "API_CONFIG_MISSING");
+  }
 }
 
 async function timedResponse<T>(
@@ -44,13 +60,28 @@ async function timedResponse<T>(
     const response = await fetchImpl(url, { ...init, signal: controller.signal });
     responseReceived = true;
     if (!response.ok) {
+      // 尝试从响应体提取平台错误码
+      let platformCode: string | undefined;
+      try {
+        const errorBody = await response.clone().json();
+        platformCode =
+          typeof errorBody?.code === "string"
+            ? errorBody.code
+            : typeof errorBody?.error === "string"
+              ? errorBody.error
+              : undefined;
+      } catch { /* 忽略解析失败 */ }
+
       const code =
         response.status === 401 || response.status === 403
           ? "API_AUTH_FAILED"
           : response.status === 404
             ? notFoundCode ?? "PROVIDER_ERROR"
             : "PROVIDER_ERROR";
-      throw new TboxError("http_error", code);
+      throw new TboxError("http_error", code, {
+        httpStatus: response.status,
+        platformCode,
+      });
     }
     if (idleTimeout) armTimeout();
     return await consume(response, idleTimeout ? armTimeout : () => undefined);
@@ -78,6 +109,16 @@ function ensureChatConfig(deps: TboxDependencies) {
   }
 }
 
+/**
+ * 搜索是否启用：全局开关 AND per-turn searchPolicy === "required"
+ * per-turn 不能绕过全局关闭
+ */
+function resolveSearchEnabled(deps: TboxDependencies, input: ChatInput): boolean {
+  const globalOn = deps.config.searchEngine === true;
+  const perTurnRequired = (input as ChatInput & { searchPolicy?: string }).searchPolicy === "required";
+  return globalOn && perTurnRequired;
+}
+
 export async function consumeChatResponse<T>(
   input: ChatInput,
   stream: boolean,
@@ -86,12 +127,18 @@ export async function consumeChatResponse<T>(
 ): Promise<T> {
   ensureChatConfig(deps);
   const url = new URL(deps.config.chatEndpoint);
-  // conversation_id 放入请求体，不再放在 URL 查询参数中
+
+  // 端点安全校验（测试可注入绕过）
+  const isTestOverride = deps.fetchImpl !== undefined && deps.fetchImpl !== fetch;
+  validateEndpoint(url, isTestOverride);
+
+  const searchEnabled = resolveSearchEnabled(deps, input);
+
   const body: Record<string, unknown> = {
     agent_id: deps.config.agentId,
     question: input.question,
     user_id: input.userId,
-    search_engine: deps.config.searchEngine,
+    search_engine: searchEnabled,
     stream,
   };
   if (input.conversationId) body.conversation_id = input.conversationId;
@@ -129,8 +176,10 @@ export async function requestRetrieval(
   if (!deps.config.apiKey || !deps.config.retrieveEndpoint) {
     throw new TboxError("missing_config", "API_CONFIG_MISSING");
   }
+  const url = new URL(deps.config.retrieveEndpoint);
+  validateEndpoint(url, deps.fetchImpl !== undefined && deps.fetchImpl !== fetch);
   return timedResponse(
-    new URL(deps.config.retrieveEndpoint),
+    url,
     {
       method: "POST",
       headers: authorizationHeaders(deps.config.apiKey),
@@ -163,11 +212,9 @@ export function sanitizeProbeResult(
 ): SafeProbeResult {
   const { name, httpOk, actualMode, eventNames, hasConversationId, hasText, hasStructuredResult, citationCount } = raw;
 
-  // 非 api 模式一律标记为 blocked
   const effectiveStatus: SafeProbeResult["status"] =
     actualMode !== "api" ? "blocked" : raw.status;
 
-  // 对 blocked 补充说明
   let note = raw.note;
   if (actualMode !== "api" && !note.includes("manual") && !note.includes("mock")) {
     note = note ? `${note}（${actualMode} fallback）` : `${actualMode} fallback，非真实 API`;
