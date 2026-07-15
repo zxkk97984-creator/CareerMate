@@ -13,9 +13,10 @@ import { Menu, PanelRightClose, PanelRightOpen } from "lucide-react";
 interface ChatHomePageProps {
   userId: string;
   displayName: string;
+  openChatEntry?: boolean;
 }
 
-export function ChatHomePage({ displayName }: ChatHomePageProps) {
+export function ChatHomePage({ displayName, openChatEntry = true }: ChatHomePageProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
@@ -328,6 +329,7 @@ export function ChatHomePage({ displayName }: ChatHomePageProps) {
           messages={messages}
           activeConversationId={activeConversationId}
           onNewChat={handleNewChat}
+          openChatEntry={openChatEntry}
           onQuickAction={(actionId, value) => {
             // 快捷动作：发送 value 作为用户消息
             if (activeConversationId) {

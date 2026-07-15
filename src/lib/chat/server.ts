@@ -101,7 +101,7 @@ const productionDependencies: CareerChatDependencies = {
 };
 
 export async function prepareCareerChat(
-  input: { userId: string; question: string },
+  input: { userId: string; question: string; scope?: string },
   dependencyOverrides: Partial<CareerChatDependencies> = {},
 ): Promise<{
   enhancedQuestion: string;
@@ -119,6 +119,13 @@ export async function prepareCareerChat(
     plan: normalizedPlan(rawPlan),
     memories: rawMemories,
   });
+
+  // B7: scope 感知裁剪——general_minimal/privacy 不发送职业画像、计划和记忆
+  if (input.scope === "general_minimal" || input.scope === "privacy") {
+    context.profile = null;
+    context.currentPlan = null;
+    context.memories = [];
+  }
   const intent = classifyCareerChatIntent(input.question);
   // 默认 agent 模式：让主 Agent 自己选择知识库，不再预检索
   const retrievalMode = (await import("@/lib/env")).getTboxConfig().retrievalMode;

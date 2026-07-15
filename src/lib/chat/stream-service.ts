@@ -185,9 +185,9 @@ async function handleStatefulStream(
     userMessage: message,
   });
 
-  // 构建安全上下文（用于 question_prefix 模式）
+  // 构建安全上下文（用于 question_prefix 模式，传入 scope 以裁剪敏感数据）
   const prepared = await prepareCareerChat(
-    { userId, question: message },
+    { userId, question: message, scope: agentContext.scope },
   ).catch(() => ({
     enhancedQuestion: message,
     contextMeta: {
@@ -259,11 +259,7 @@ async function handleStatefulStream(
         // TBOX_STRUCTURED_MODE 控制：disabled 时零业务写入
         if (config.structuredMode !== "disabled") {
           agentResponse = agentResponseResult.response;
-
-          // 处理 Agent operations（仅可信 structured mode 下执行）
-          if (agentResponse?.operations && agentResponse.operations.length > 0) {
-            await processAgentOperations(userId, conversationId, turn.assistantMessageId, message, agentResponse.operations);
-          }
+          // Agent operations 延迟到 finalize 成功后执行（B12：避免 finalize 失败产生孤儿数据）
         }
 
         // 解析结构化结果（旧 capability parser——仅用于 artifact 卡片生成）
@@ -327,6 +323,12 @@ async function handleStatefulStream(
 
         // 非阻塞：检查是否需要触发摘要
         triggerSummaryIfNeeded(conversationId).catch(() => {});
+
+        // B12: Agent operations 在 finalize 成功后执行，避免最终化失败产生孤儿数据
+        if (agentResponse?.operations && agentResponse.operations.length > 0) {
+          processAgentOperations(userId, conversationId, turn.assistantMessageId, message, agentResponse.operations)
+            .catch(() => {}); // operations 失败不影响已完成的回复
+        }
 
         writeSseEvent(controller, "done", {
           messageId: turn.assistantMessageId,
