@@ -65,3 +65,37 @@
 - ✅ 计划生成可恢复：聊天先保存真实计划 ID 和生成状态，再由独立请求执行；失败可重试，刷新后状态保留
 - ✅ 多轮 remoteConversationId 延续：连续 3 轮对话均使用同一 `remoteConversationId`
 - 自动化测试数量以最新 `npm.cmd run verify` 和 `npm.cmd run test:e2e` 输出为准，不在文档中写死历史数字
+
+## 2026-07-15 开放聊天改造基线
+
+> 基线提交：`76a8365`
+> 分支：`Xiaoxiao/careermate-p0-init`
+> 工作树状态：仅 `docs/tbox/2026-07-15-开放式主聊天与混合记忆实施计划.md` 未跟踪
+
+### 本地自动化
+
+```bat
+npm.cmd run verify
+```
+
+- secret scan：通过（263 文件已检查）
+- lint：通过（max-warnings=0）
+- typecheck：通过（Next.js 16.2.10 + TS 5.9.2）
+- 单元/集成测试：73 个文件、441 个测试全部通过（Vitest 3.2.6）
+- 迁移冒烟测试：通过（fresh deploy/drift 和 legacy preservation/FKs）
+- 生产构建：通过（Turbopack，40 个静态页面）
+
+```bat
+npm.cmd run test:e2e
+```
+
+- Playwright 1.61.1：34 个测试全部通过（chromium，58.8s）
+- 覆盖：聊天首页、P0 流程、统一壳层
+
+### 真实百宝箱能力缺口
+
+- 真实百宝箱 history：**未验证**。当前请求未发送本地历史消息到百宝箱 `history` 字段。
+- 真实百宝箱 business_data：**字段可发送但语义未验证**。`business_data` 字段存在于请求体中，但未验证百宝箱是否会读取并使用其中的画像信息。
+- 真实百宝箱联网搜索/citation：**未验证**。当前 `TBOX_SEARCH_ENGINE` 默认为 false，未测试搜索工具调用和 citation 事件的真伪。
+- 当前产品请求：**依赖 conversation_id 维持多轮上下文**，未发送本地 history/context 作为权威状态源。
+- 结构化输出（variables.result）：**agent_response 结构未验证**。未知百宝箱是否能在同轮 SSE 流中同时返回正文和结构化 JSON。
