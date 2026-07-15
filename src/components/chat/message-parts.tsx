@@ -6,6 +6,8 @@ import { AlertCircle, UserCheck, Map, Compass, Link2 } from "lucide-react";
 import { ProfileCandidateCard } from "./profile-candidate-card";
 import { PlanSummaryCard } from "./plan-summary-card";
 import { ExplorationReportCard } from "./exploration-report-card";
+import { MemoryProposalCard } from "./memory-proposal-card";
+import { QuickActions } from "./quick-actions";
 import type { CareerPlanDto } from "@/lib/types";
 import type { ExplorationReport } from "@/lib/careers/exploration-schema";
 import { requireApiOk } from "@/lib/client-api";
@@ -267,6 +269,54 @@ function ExplorationReportRef({ reportId }: { reportId: string }) {
   );
 }
 
+function MemoryRef({ memoryId }: { memoryId: string }) {
+  const [data, setData] = useState<{ id: string; content: string; kind: string; sensitivity: string; status: string } | null>(null);
+
+  useEffect(() => {
+    fetch(`/api/memory/${encodeURIComponent(memoryId)}`)
+      .then((r) => r.json())
+      .then((body) => {
+        if (body.ok) setData(body.data ?? body);
+      })
+      .catch(() => {});
+  }, [memoryId]);
+
+  if (!data || data.status !== "pending") return null;
+
+  return (
+    <MemoryProposalCard
+      memoryId={data.id}
+      content={data.content}
+      kind={data.kind as "career_fact" | "preference" | "constraint" | "goal"}
+      sensitivity={data.sensitivity as "normal" | "sensitive"}
+      status="pending"
+      onAccept={async (id) => {
+        await fetch(`/api/memory/${encodeURIComponent(id)}/decision`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "accept" }),
+        });
+        setData((c) => c ? { ...c, status: "confirmed" } : c);
+      }}
+      onReject={async (id) => {
+        await fetch(`/api/memory/${encodeURIComponent(id)}/decision`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "reject" }),
+        });
+        setData((c) => c ? { ...c, status: "rejected" } : c);
+      }}
+      onEdit={async (id, newContent) => {
+        await fetch(`/api/memory/${encodeURIComponent(id)}/decision`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "edit", content: newContent }),
+        });
+      }}
+    />
+  );
+}
+
 function ErrorPart({ code, message }: { code: string; message: string }) {
   return (
     <div className="parts-error">
@@ -297,6 +347,22 @@ export function MessageParts({ parts }: MessagePartsProps) {
           case "error": {
             const e = part as ChatMessagePart & { type: "error" };
             return <ErrorPart key={index} code={e.code} message={e.message} />;
+          }
+          case "memory_ref": {
+            const m = part as ChatMessagePart & { type: "memory_ref" };
+            return <MemoryRef key={index} memoryId={m.memoryId} />;
+          }
+          case "quick_actions": {
+            const q = part as ChatMessagePart & { type: "quick_actions" };
+            return (
+              <QuickActions
+                key={index}
+                questionId={q.questionId}
+                actions={q.actions}
+                status={q.status}
+                onSelect={() => {}} // 由 chat-thread 外层控制
+              />
+            );
           }
           case "text":
             // text 部件已在 message-text 中渲染，这里不重复

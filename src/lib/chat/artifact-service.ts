@@ -4,6 +4,8 @@ import type { CareerPlan } from "@/lib/tbox/schemas";
 import type { NormalizedAssistantResult } from "@/lib/tbox/types";
 import type { TboxStructuredResult } from "@/lib/tbox/capability-schemas";
 import type { ChatMessagePart } from "./persistence";
+import type { AiCareerPlanV2 } from "@/lib/plans/schema-v2";
+import { isPlanV2WriteEnabled } from "@/lib/env";
 import {
   planRefPart,
   profileCandidateRefPart,
@@ -36,6 +38,7 @@ export interface ChatArtifactDependencies {
     userId: string;
     plan: CareerPlan;
     declaredTargetRole?: string;
+    planV2?: AiCareerPlanV2;
   }): Promise<{ id: string; version: number }>;
   /** 保存 Agent 生成的职业探索报告 */
   saveExplorationReport(input: {
@@ -109,7 +112,7 @@ const productionDependencies: ChatArtifactDependencies = {
       where: { userId: input.userId },
       select: { targetRole: true, targetRoleLabel: true },
     });
-    const targetRole = profile?.targetRole.trim();
+    const targetRole = profile?.targetRole?.trim();
     if (!targetRole) throw new Error("PROFILE_TARGET_ROLE_NOT_FOUND");
     const declaredTargetRole = input.declaredTargetRole?.trim();
     if (declaredTargetRole) {
@@ -120,14 +123,34 @@ const productionDependencies: ChatArtifactDependencies = {
         throw new PlanTargetRoleMismatch();
       }
     }
-    // 获取当前最高版本号
     const latest = await db.careerPlan.findFirst({
       where: { userId: input.userId },
       orderBy: { version: "desc" },
-      select: { version: true },
+      select: { version: true, id: true },
     });
     const version = (latest?.version ?? 0) + 1;
-    // 将 Agent 已验证的 career_plan 直接保存为 pending 状态
+
+    // Plan V2 写入路径
+    if (isPlanV2WriteEnabled() && input.planV2) {
+      const created = await db.careerPlan.create({
+        data: {
+          userId: input.userId,
+          targetRole: input.planV2.targetRole.key,
+          targetRoleLabel: input.planV2.targetRole.label,
+          version,
+          status: "pending",
+          schemaVersion: 2,
+          content: JSON.stringify(input.planV2),
+          parentPlanId: latest?.id ?? null,
+          assumptions: toJson(input.planV2.assumptions),
+          riskNotes: toJson(input.planV2.riskNotes),
+          generationMeta: toJson({ source: "agent-structured-result-v2" }),
+        },
+      });
+      return { id: created.id, version: created.version };
+    }
+
+    // Plan V1 兼容路径
     const created = await db.careerPlan.create({
       data: {
         userId: input.userId,

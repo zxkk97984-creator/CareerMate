@@ -310,6 +310,9 @@ async function handleStatefulStream(
           warnings: assistantResult.warnings ?? [],
         });
 
+        // 非阻塞：检查是否需要触发摘要
+        triggerSummaryIfNeeded(conversationId).catch(() => {});
+
         writeSseEvent(controller, "done", {
           messageId: turn.assistantMessageId,
           remoteConversationId,
@@ -654,5 +657,26 @@ async function processAgentOperations(
     } catch {
       // 单个 operation 失败不影响其他
     }
+  }
+}
+
+// ── 辅助：非阻塞触发摘要 ────────────────────────
+
+async function triggerSummaryIfNeeded(conversationId: string): Promise<void> {
+  try {
+    const { isConversationSummaryEnabled } = await import("@/lib/env");
+    if (!isConversationSummaryEnabled()) return;
+
+    const { createSummaryService } = await import("./summary-service");
+    const summarySvc = createSummaryService();
+    const { should } = await summarySvc.shouldSummarize(conversationId);
+
+    if (!should) return;
+
+    // 异步触发摘要生成（不阻塞当前请求）
+    // 完整实现需要调用百宝箱主 Agent，这里先标记待处理
+    console.log(`[summary] conversation=${conversationId} summary pending`);
+  } catch {
+    // 摘要触发失败不影响主流程
   }
 }
