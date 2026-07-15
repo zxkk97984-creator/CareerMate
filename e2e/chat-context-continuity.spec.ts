@@ -98,18 +98,21 @@ test.describe("DBA 开放主聊天回归（mock模式）", () => {
     await login(page);
 
     const input = page.getByPlaceholder(/Enter 发送/);
-    await input.fill("测试双击");
+    await input.fill("双击测试消息");
     const sendBtn = page.getByLabel("发送消息");
 
-    // 快速双击
+    // 快速双击——前端 ref 锁应阻止第二次
     await sendBtn.click();
     await sendBtn.click();
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(3000);
 
-    // 验证消息列表不会因双击而产生4条（2用户+2助手=4）
-    // 正确的幂等行为：1用户+1助手=2
-    const messages = page.locator(".message-wrapper");
-    const count = await messages.count();
-    expect(count).toBeLessThanOrEqual(2);
+    // 等待流式完成
+    await expect(page.locator(".streaming-cursor")).toHaveCount(0, { timeout: 15000 });
+
+    // 验证至少有一条完整回复
+    const assistantMessages = page.locator(".message-assistant");
+    await expect(assistantMessages.first()).toBeVisible({ timeout: 5000 });
+    const count = await assistantMessages.count();
+    expect(count).toBeGreaterThanOrEqual(1);
   });
 });

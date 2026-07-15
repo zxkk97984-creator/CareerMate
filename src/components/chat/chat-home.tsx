@@ -87,13 +87,15 @@ export function ChatHomePage({ displayName }: ChatHomePageProps) {
 
   /** 核心发送逻辑：给定会话 ID 和文本，执行 SSE 流式请求 */
   const doSend = useCallback(async (cid: string, text: string) => {
+    // 请求 ID 在流式检查前生成——避免双击生成两个不同 ID
+    if (!requestIdRef.current || !streamingRef.current) {
+      requestIdRef.current = crypto.randomUUID?.() ?? `req-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    }
     if (streamingRef.current) return; // 防止并发发送
     streamingRef.current = true;
     setIsStreaming(true);
 
-    // 生成稳定的请求 ID（首次发送时生成，流式期间保持不变）
-    const clientRequestId = crypto.randomUUID?.() ?? `req-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    requestIdRef.current = clientRequestId;
+    const clientRequestId = requestIdRef.current;
 
     // 添加用户消息到本地
     const userMsg: MessageItem = {
