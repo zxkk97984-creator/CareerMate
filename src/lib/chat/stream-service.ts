@@ -9,7 +9,7 @@ import { errorPart } from "./artifacts";
 import { createTurnService, TurnServiceError } from "./turn-service";
 import { buildAgentContext, trimRecentMessages } from "./context-builder";
 import { parseConversationState } from "./conversation-state";
-import { normalizeCitations } from "@/lib/tbox/citations";
+import { normalizeCitations, normalizeCitationsFromToolCalls, detectSearchToolCall } from "@/lib/tbox/citations";
 import { createProfileMutationService } from "@/lib/profile/profile-mutation-service";
 import { createMemoryProposalService } from "@/lib/memory/proposal-service";
 import type { TboxHistoryMessage } from "@/lib/tbox/types";
@@ -270,9 +270,15 @@ async function handleStatefulStream(
           assistantResult.warnings.push(...agentResponseResult.warnings);
         }
 
-        // 归一化 citations：搜索检测基于 per-turn searchPolicy（required 时启用搜索）
-        const hasSearchTool = searchPolicy === "required";
-        const citations = normalizeCitations(assistantResult.citations, hasSearchTool);
+        // 归一化 citations：从真实 toolCalls 中提取引用数据
+        const toolCalls = aiResponse.data.toolCalls ?? [];
+        const toolNames = new Set(toolCalls.map((tc) => tc.toolType));
+        const hasSearchTool = detectSearchToolCall(toolNames);
+        // 优先从 toolCalls 解析 citations，回退到旧 citation 事件
+        let citations = normalizeCitationsFromToolCalls(toolCalls);
+        if (citations.length === 0) {
+          citations = normalizeCitations(assistantResult.citations, hasSearchTool);
+        }
 
         // 创建 artifacts
         const parts = await createArtifactsForChat({

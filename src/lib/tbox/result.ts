@@ -1,4 +1,4 @@
-import type { NormalizedAiEvent, NormalizedAssistantResult } from "./types";
+import type { NormalizedAiEvent, NormalizedAssistantResult, ToolCallRecord } from "./types";
 
 export interface AssistantResultAccumulator {
   /** 消费一个归一化事件，返回需要转发给前端的增量文本（空字符串表示无需转发） */
@@ -9,8 +9,8 @@ export interface AssistantResultAccumulator {
 
 export function createAssistantResultAccumulator(): AssistantResultAccumulator {
   let text = "";
-  let structured: unknown;
   let conversationId: string | undefined;
+  const toolCalls: ToolCallRecord[] = [];
   const citations: unknown[] = [];
   const warnings: string[] = [];
   let lastFinal = "";
@@ -21,10 +21,59 @@ export function createAssistantResultAccumulator(): AssistantResultAccumulator {
 
   return {
     consume(event) {
-      if (event.type === "conversation") conversationId = event.conversationId;
-      if (event.type === "structured_result") structured = event.payload;
-      if (event.type === "citation") citations.push(event.payload);
-      if (event.type === "warning") addWarning(event.code);
+      if (event.type === "conversation") {
+        conversationId = event.conversationId;
+        return "";
+      }
+
+      // 工具调用开始——记录 toolType/toolId/toolDescription
+      if (event.type === "tool_start") {
+        toolCalls.push({
+          toolType: event.toolType ?? event.name ?? "unknown",
+          toolId: event.toolId ?? "",
+          toolDescription: event.toolDescription,
+          toolParameters: event.toolParameters,
+        });
+        return "";
+      }
+
+      // 工具调用结束——按 toolId 匹配，回填 resultSummary
+      if (event.type === "tool_end") {
+        const targetId = event.toolId;
+        if (targetId) {
+          const match = toolCalls.find((tc) => tc.toolId === targetId);
+          if (match) {
+            match.resultSummary = event.resultSummary;
+          } else {
+            toolCalls.push({
+              toolType: event.toolType ?? event.name ?? "unknown",
+              toolId: targetId,
+              toolDescription: event.toolDescription,
+              resultSummary: event.resultSummary,
+            });
+          }
+        }
+        // 从 resultSummary 提取 citation 数据
+        if (event.resultSummary) {
+          citations.push({ type: "tool_result", toolType: event.toolType, summary: event.resultSummary });
+        }
+        return "";
+      }
+
+      // agentic 内部事件——透传 payload 但不产生文本
+      if (event.type === "agentic_event") {
+        return "";
+      }
+
+      if (event.type === "citation") {
+        citations.push(event.payload);
+        return "";
+      }
+
+      if (event.type === "warning") {
+        addWarning(event.code);
+        return "";
+      }
 
       if (event.type === "text_delta") {
         text += event.text;
@@ -67,7 +116,7 @@ export function createAssistantResultAccumulator(): AssistantResultAccumulator {
     },
 
     finalize() {
-      return { text, structured, citations, conversationId, warnings };
+      return { text, structured: undefined, citations, conversationId, warnings, toolCalls };
     },
   };
 }

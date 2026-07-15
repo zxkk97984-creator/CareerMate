@@ -1,5 +1,5 @@
 import { failureReason, TboxError, type TboxFailureReason } from "./errors";
-import { createManualChatAnswer, createMockChatChunks, createMockStructuredResult } from "./fixtures";
+import { createManualChatAnswer, createMockChatChunks } from "./fixtures";
 import { consumeChatResponse } from "./client";
 import { parseUpstreamSse } from "./sse";
 import { createAssistantResultAccumulator } from "./result";
@@ -50,6 +50,7 @@ function localResult(chunks: string[], conversationId?: string): NormalizedAssis
     conversationId,
     citations: [],
     warnings: [],
+    toolCalls: [],
   };
 }
 
@@ -80,7 +81,7 @@ async function manualResult(input: ChatInput, deps: StreamDependencies) {
       ? await deps.manualChat(input)
       : createManualChatAnswer(input.question);
     return answer?.trim()
-      ? { text: answer.trim(), conversationId: input.conversationId, citations: [], warnings: [] }
+      ? { text: answer.trim(), conversationId: input.conversationId, citations: [], warnings: [], toolCalls: [] }
       : null;
   } catch {
     return null;
@@ -128,7 +129,7 @@ export async function streamChatWithTbox(
         throw new TboxError("sse_error");
       }
       const final = acc.finalize();
-      if (!final.text && final.structured === undefined) {
+      if (!final.text && (!final.toolCalls || final.toolCalls.length === 0)) {
         throw new TboxError("invalid_response", "EMPTY_RESPONSE");
       }
       normalized.push({ event: "done", data: { conversationId: final.conversationId ?? null } });
@@ -175,13 +176,12 @@ export async function streamChatWithTboxProgressive(
   // mock 模式
   if (requested === "mock") {
     const chunks = createMockChatChunks(input.question);
-    const mockStructured = createMockStructuredResult(input.question);
     const metaObj = meta(requested, "mock", null, "local-mock");
     for (const chunk of chunks) {
       onEvent({ event: "message", data: { type: "delta", content: chunk }, meta: metaObj });
     }
     onEvent({ event: "done", data: { conversationId: input.conversationId ?? null }, meta: metaObj });
-    return { data: { ...localResult(chunks, input.conversationId), structured: mockStructured }, meta: metaObj };
+    return { data: localResult(chunks, input.conversationId), meta: metaObj };
   }
 
   // manual 模式
@@ -229,7 +229,7 @@ export async function streamChatWithTboxProgressive(
       if (!completed) throw new TboxError("sse_error", "SSE_PARSE_FAILED");
 
       const final = acc.finalize();
-      if (!final.text && !final.structured) throw new TboxError("sse_error");
+      if (!final.text && (!final.toolCalls || final.toolCalls.length === 0)) throw new TboxError("sse_error");
 
       onEvent({
         event: "done",

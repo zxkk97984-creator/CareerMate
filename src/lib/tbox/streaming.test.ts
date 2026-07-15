@@ -69,14 +69,15 @@ describe("stream chat orchestration", () => {
     ]);
   });
 
-  it("preserves a final-only answer in the compatibility stream", async () => {
+  it("preserves answer text from delta events（真实 API 格式）", async () => {
     const result = await streamChatWithTbox(
       { question: "hello", userId: "user-1" },
       {
         config,
         fetchImpl: vi.fn(async () =>
           sseResponse(
-            'event: conversation.chat.completed\ndata: {"data":{"messages":[{"type":"answer","content_type":"text","content":"final answer"}]}}\n\n',
+            'event: conversation.message.delta\ndata: {"role":"assistant","content_type":"text","type":"answer","content":"final answer"}\n\n' +
+              'event: conversation.chat.completed\ndata: {"conversation_id":"remote-1","status":"completed"}\n\n',
           ),
         ),
       },
@@ -84,19 +85,19 @@ describe("stream chat orchestration", () => {
 
     expect(result.data.events).toEqual([
       { event: "message", data: { type: "delta", content: "final answer" } },
-      { event: "done", data: { conversationId: null } },
+      { event: "done", data: { conversationId: "remote-1" } },
     ]);
   });
 
-  it("does not duplicate a completion final that echoes streamed deltas", async () => {
+  it("does not duplicate text when delta and final are identical", async () => {
     const result = await streamChatWithTbox(
       { question: "hello", userId: "user-1" },
       {
         config,
         fetchImpl: vi.fn(async () =>
           sseResponse(
-            'event: conversation.message.delta\ndata: {"data":{"type":"answer","content_type":"text","content":"complete answer"}}\n\n' +
-              'event: conversation.chat.completed\ndata: {"data":{"messages":[{"type":"answer","content_type":"text","content":"complete answer"}]}}\n\n',
+            'event: conversation.message.delta\ndata: {"role":"assistant","content_type":"text","type":"answer","content":"complete answer"}\n\n' +
+              'event: conversation.chat.completed\ndata: {"conversation_id":"remote-1","status":"completed"}\n\n',
           ),
         ),
       },
@@ -104,7 +105,7 @@ describe("stream chat orchestration", () => {
 
     expect(result.data.events).toEqual([
       { event: "message", data: { type: "delta", content: "complete answer" } },
-      { event: "done", data: { conversationId: null } },
+      { event: "done", data: { conversationId: "remote-1" } },
     ]);
   });
 

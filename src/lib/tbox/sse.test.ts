@@ -129,34 +129,50 @@ describe("upstream SSE normalization", () => {
     expect(events[events.length - 1]).toEqual({ type: "done" });
   });
 
-  it("extracts a variable result from the completion payload", async () => {
+  it("completion event ends with done（真实 API 无 variables.result）", async () => {
     const events = await collect(chunkedStream([
-      'event: conversation.chat.completed\ndata: {"data":{"conversation_id":"remote-1","variables":{"result":{"type":"role_match","matches":[]}}}}\n\n',
+      'event: conversation.chat.completed\ndata: {"conversation_id":"remote-1","status":"completed"}\n\n',
     ]));
     expect(events).toContainEqual({ type: "conversation", conversationId: "remote-1" });
-    expect(events).toContainEqual({
-      type: "structured_result",
-      payload: { type: "role_match", matches: [] },
-    });
+    // 真实 API 的 completed 事件不包含 structured_result/variables.result
+    expect(events.filter((e) => (e as any).type === "structured_result")).toHaveLength(0);
     expect(events[events.length - 1]).toEqual({ type: "done" });
   });
 
-  it("does not fail on an unknown non-terminal event", async () => {
+  it("handles agentic_tool_start and agentic_tool_end events（真实 API 格式）", async () => {
     const events = await collect(chunkedStream([
-      'event: workflow.node.started\ndata: {"data":{"name":"技能评估Agent"}}\n\n',
-      'event: conversation.message.delta\ndata: {"data":{"type":"answer","content_type":"text","content":"继续回答"}}\n\n',
+      'event: conversation.message.delta\ndata: {"role":"assistant","content_type":"object_string","type":"agentic_tool_start","content":"{\\"toolType\\":\\"knowledge\\",\\"toolId\\":\\"call_123\\",\\"toolDescription\\":\\"查询知识库\\"}"}\n\n',
+      'event: conversation.message.delta\ndata: {"role":"assistant","content_type":"object_string","type":"agentic_tool_end","content":"{\\"toolType\\":\\"knowledge\\",\\"toolId\\":\\"call_123\\",\\"resultSummary\\":\\"[参考资料 1] (相关度: 0.80)\\\\nDBA技能要求\\",\\"toolDescription\\":\\"查询知识库\\"}"}\n\n',
+      'event: conversation.message.delta\ndata: {"role":"assistant","content_type":"text","type":"answer","content":"DBA需要掌握SQL"}\n\n',
       "event: done\ndata: [DONE]\n\n",
     ]));
-    expect(events).toContainEqual({ type: "text_delta", text: "继续回答" });
+    expect(events).toContainEqual({ type: "tool_start", name: "knowledge", toolType: "knowledge", toolId: "call_123", toolDescription: "查询知识库", toolParameters: undefined });
+    expect(events).toContainEqual({ type: "tool_end", name: "knowledge", toolType: "knowledge", toolId: "call_123", resultSummary: "[参考资料 1] (相关度: 0.80)\nDBA技能要求", toolDescription: "查询知识库" });
+    expect(events).toContainEqual({ type: "text_delta", text: "DBA需要掌握SQL" });
     expect(events[events.length - 1]).toEqual({ type: "done" });
   });
 
-  it("finalizes once when a completion event is the terminal event", async () => {
+  it("skips known agentic internal events without warning（agentic_analyze_start 等）", async () => {
     const events = await collect(chunkedStream([
-      'event: conversation.chat.completed\ndata: {"data":{"conversation_id":"remote-2","messages":[{"type":"answer","content_type":"text","content":"完成"}]}}\n\n',
+      'event: conversation.chat.created\ndata: {"conversation_id":"remote-3","status":"created"}\n\n',
+      'event: conversation.message.delta\ndata: {"role":"assistant","content_type":"object_string","type":"agentic_analyze_start","content":"{\\"state\\":\\"ANALYZING\\"}"}\n\n',
+      'event: conversation.message.delta\ndata: {"role":"assistant","content_type":"text","type":"answer","content":"好的"}\n\n',
+      "event: done\ndata: [DONE]\n\n",
+    ]));
+    // agentic 内部事件不应产生 warning
+    expect(events.filter((e) => e.type === "warning")).toHaveLength(0);
+    expect(events).toContainEqual({ type: "text_delta", text: "好的" });
+    expect(events[events.length - 1]).toEqual({ type: "done" });
+  });
+
+  it("completion event produces done without text_final（真实 API 不在 completed 中发送文本）", async () => {
+    const events = await collect(chunkedStream([
+      'event: conversation.message.delta\ndata: {"role":"assistant","content_type":"text","type":"answer","content":"完成"}\n\n',
+      'event: conversation.chat.completed\ndata: {"conversation_id":"remote-2","status":"completed"}\n\n',
     ]));
     expect(events.filter((event) => event.type === "done")).toHaveLength(1);
-    expect(events).toContainEqual({ type: "text_final", text: "完成" });
+    // 文本来自 delta，不是来自 completed 事件
+    expect(events).toContainEqual({ type: "text_delta", text: "完成" });
   });
 
   it("does not wait forever for an underlying cancel promise", async () => {

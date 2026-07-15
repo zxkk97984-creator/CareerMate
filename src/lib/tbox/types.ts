@@ -98,21 +98,33 @@ export type NormalizedAiEvent =
   | { type: "conversation"; conversationId: string }
   | { type: "text_delta"; text: string }
   | { type: "text_final"; text: string }
-  | { type: "tool_start"; name?: string }
-  | { type: "tool_end"; name?: string; payload?: unknown }
-  | { type: "structured_result"; payload: unknown }
+  | { type: "tool_start"; name?: string; toolType?: string; toolId?: string; toolDescription?: string; toolParameters?: unknown }
+  | { type: "tool_end"; name?: string; toolType?: string; toolId?: string; resultSummary?: string; toolDescription?: string }
+  | { type: "agentic_event"; subtype: string; payload?: unknown }
   | { type: "citation"; payload: unknown }
   | { type: "warning"; code: string }
   | { type: "error"; code: string; message: string }
   | { type: "done" };
 
+/** 单次工具调用记录 */
+export interface ToolCallRecord {
+  toolType: string;
+  toolId: string;
+  toolDescription?: string;
+  toolParameters?: unknown;
+  resultSummary?: string;
+}
+
 /** 累积后的最终助手结果 */
 export interface NormalizedAssistantResult {
   text: string;
+  /** 真实 API 不返回 structured_result 事件——此字段保留用于子工作流输出，但通常为 undefined */
   structured?: unknown;
   citations: unknown[];
   conversationId?: string;
   warnings: string[];
+  /** 真实 Agentic 工具调用记录（从 agentic_tool_start/end 事件累积） */
+  toolCalls?: ToolCallRecord[];
 }
 
 // ── 工作流与知识库配置类型 ─────────────────────────────
