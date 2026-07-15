@@ -45,6 +45,8 @@ model UserProfile {
   abilityScores        String   @default("{}")
   memoryEnabled        Boolean  @default(true)
   onboardingCompleted  Boolean  @default(false)
+  version              Int      @default(1)
+  introStatus          String   @default("not_started")
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
@@ -84,26 +86,32 @@ model OnboardingConversation {
 }
 
 model CareerPlan {
-  id                String   @id @default(cuid())
+  id                String    @id @default(cuid())
   userId            String
   targetRole        String
-  version           Int      @default(1)
-  status            String   @default("active")
-  years             String   @default("[]")
-  quarters          String   @default("[]")
-  months            String   @default("[]")
-  currentMonthIndex Int      @default(1)
-  assumptions       String   @default("[]")
-  riskNotes         String   @default("[]")
-  generationMeta    String   @default("{}")
+  version           Int       @default(1)
+  status            String    @default("active")
+  schemaVersion     Int       @default(1)
+  content           String    @default("{}")
+  targetRoleLabel   String?
+  parentPlanId      String?
+  activatedAt       DateTime?
+  years             String    @default("[]")
+  quarters          String    @default("[]")
+  months            String    @default("[]")
+  currentMonthIndex Int       @default(1)
+  assumptions       String    @default("[]")
+  riskNotes         String    @default("[]")
+  generationMeta    String    @default("{}")
   sourceReportId    String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   user         User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
   sourceReport CareerExplorationReport? @relation(fields: [sourceReportId], references: [id], onDelete: SetNull)
 
   @@index([sourceReportId])
+  @@index([parentPlanId])
 }
 
 model ProgressLog {
@@ -121,14 +129,21 @@ model ProgressLog {
 }
 
 model MemoryItem {
-  id          String   @id @default(cuid())
-  userId      String
-  content     String
-  source      String
-  sensitivity String   @default("normal")
-  status      String   @default("confirmed")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                   String    @id @default(cuid())
+  userId               String
+  content              String
+  source               String
+  sensitivity          String    @default("normal")
+  status               String    @default("confirmed")
+  kind                 String    @default("career_fact")
+  scope                String    @default("career")
+  confidence           Float?
+  reason               String    @default("")
+  sourceConversationId String?
+  sourceMessageId      String?
+  expiresAt            DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -149,6 +164,7 @@ model RoleTemplate {
   simulationScenarios  String   @default("[]")
   evaluationRules      String   @default("[]")
   sources              String   @default("[]")
+  aliases              String   @default("[]")
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 }
@@ -189,22 +205,25 @@ model SimulationSession {
 }
 
 model ProfileUpdateCandidate {
-  id                   String   @id @default(cuid())
+  id                   String    @id @default(cuid())
   userId               String
   source               String
   field                String
-  oldValue             String   @default("null")
-  newValue             String   @default("null")
+  oldValue             String    @default("null")
+  newValue             String    @default("null")
   confidence           Float
-  requiresConfirmation Boolean  @default(true)
+  requiresConfirmation Boolean   @default(true)
   reason               String
   sourceConversationId String?
-  evidenceExcerpt      String   @default("")
-  impactSummary        String   @default("")
-  abilityEvidenceId    String?  @unique
-  status               String   @default("pending")
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  evidenceExcerpt      String    @default("")
+  impactSummary        String    @default("")
+  abilityEvidenceId    String?   @unique
+  status               String    @default("pending")
+  patch                String    @default("{}")
+  baseProfileVersion   Int?
+  resolvedAt           DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   simulationSession  SimulationSession?
@@ -240,38 +259,70 @@ model ManualAiSample {
 }
 
 model ChatConversation {
-  id                   String   @id @default(cuid())
-  userId               String
-  title                String
-  status               String   @default("active")
-  remoteConversationId String?
-  lastMessageAt        DateTime @default(now())
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  id                     String   @id @default(cuid())
+  userId                 String
+  title                  String
+  status                 String   @default("active")
+  remoteConversationId   String?
+  state                  String   @default("{}")
+  contextVersion         Int      @default(1)
+  activeTurnId           String?
+  activeTurnStartedAt    DateTime?
+  summary                String   @default("")
+  lastSummarizedMessageId String?
+  remoteContextVersion   Int?
+  lastMessageAt          DateTime @default(now())
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 
   user             User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages         ChatMessage[]
   updateCandidates ProfileUpdateCandidate[]
   reports          CareerExplorationReport[]
+  questionLedger   QuestionLedger[]
 
   @@index([userId, status, lastMessageAt])
 }
 
 model ChatMessage {
-  id             String   @id @default(cuid())
-  conversationId String
-  role           String
-  content        String   @default("")
-  parts          String   @default("[]")
-  status         String   @default("completed")
-  executionMeta  String   @default("{}")
-  contextMeta    String   @default("{}")
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id              String   @id @default(cuid())
+  conversationId  String
+  role            String
+  content         String   @default("")
+  parts           String   @default("[]")
+  status          String   @default("completed")
+  executionMeta   String   @default("{}")
+  contextMeta     String   @default("{}")
+  turnId          String?
+  clientRequestId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   conversation ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
+  @@unique([conversationId, clientRequestId, role])
+  @@index([conversationId, turnId])
   @@index([conversationId, createdAt])
+}
+
+model QuestionLedger {
+  id                    String   @id @default(cuid())
+  conversationId        String
+  normalizedQuestionKey String
+  profileVersion        Int
+  questionText          String
+  profileField          String?
+  status                String
+  answerSummary         String   @default("")
+  askedAt               DateTime @default(now())
+  answeredAt            DateTime?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  conversation ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, normalizedQuestionKey, profileVersion])
+  @@index([conversationId, status])
 }
 
 model AbilityEvidence {
