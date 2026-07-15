@@ -1,5 +1,5 @@
 import { getPrisma } from "@/lib/prisma";
-import { parseJson, toJson } from "@/lib/json";
+import { toJson } from "@/lib/json";
 import type { AbilityKey, ProfileDto } from "@/lib/types";
 
 const roleFallbackWeights: Record<string, Record<AbilityKey, number>> = {
@@ -30,13 +30,23 @@ const roleFallbackWeights: Record<string, Record<AbilityKey, number>> = {
 };
 
 export async function calculateMatch(profile: ProfileDto) {
+  if (!profile.targetRole || !profile.targetRoleLabel) return null;
+
   const template = await getPrisma().roleTemplate.findUnique({
     where: { roleKey: profile.targetRole },
   });
-  const weights =
-    template?.abilityWeights ? parseJson<Record<AbilityKey, number>>(template.abilityWeights, roleFallbackWeights[profile.targetRole]) : roleFallbackWeights[profile.targetRole];
 
-  const score = Object.entries(weights ?? roleFallbackWeights.ai_product_manager).reduce((sum, [key, weight]) => {
+  // 从模板解析权重；无模板则从种子回退表获取；都没有则返回 null
+  let weights: Record<AbilityKey, number> | undefined;
+  if (template?.abilityWeights) {
+    try {
+      weights = JSON.parse(template.abilityWeights) as Record<AbilityKey, number>;
+    } catch { /* ignore */ }
+  }
+  const effectiveWeights = weights ?? roleFallbackWeights[profile.targetRole];
+  if (!effectiveWeights) return null;
+
+  const score = Object.entries(effectiveWeights).reduce((sum, [key, weight]) => {
     return sum + (profile.abilityScores[key as AbilityKey] ?? 0) * weight;
   }, 0);
 

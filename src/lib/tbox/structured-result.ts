@@ -1,4 +1,5 @@
 import { tboxStructuredResultSchema } from "./capability-schemas";
+import { agentResponseSchema, type AgentResponse } from "@/lib/chat/agent-protocol";
 import type { NormalizedAssistantResult } from "./types";
 
 /**
@@ -76,4 +77,33 @@ function extractJsonFromText(text: string): unknown | undefined {
   }
 
   return undefined;
+}
+
+/**
+ * 从终端结果解析正式的 AgentResponse。
+ *
+ * 与 parseStructuredAssistantResult 不同，此函数仅校验 AgentResponse 协议格式，
+ * 不处理旧的能力 Schema（profile_assessment 等）。
+ *
+ * 规则：
+ * - structured 不存在 → 零副作用，只返回 warnings
+ * - structured 存在但不符合 agentResponseSchema → SCHEMA_MISMATCH warning，零操作
+ * - 正文 JSON 代码块不可信 → 不从文本中提取 AgentResponse
+ */
+export function parseTerminalAgentResponse(
+  result: NormalizedAssistantResult,
+): { response?: AgentResponse; warnings: string[] } {
+  if (result.structured === undefined || result.structured === null) {
+    return { warnings: result.warnings ?? [] };
+  }
+
+  const parsed = agentResponseSchema.safeParse(result.structured);
+  if (parsed.success) {
+    return { response: parsed.data, warnings: result.warnings ?? [] };
+  }
+
+  return {
+    response: undefined,
+    warnings: [...(result.warnings ?? []), "AGENT_RESPONSE_SCHEMA_MISMATCH"],
+  };
 }

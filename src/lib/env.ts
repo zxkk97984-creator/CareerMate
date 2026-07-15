@@ -78,6 +78,18 @@ export function isStatefulChatTurns(): boolean {
   return readBoolean("STATEFUL_CHAT_TURNS", true);
 }
 
+export function isAgentOperationsEnabled(): boolean {
+  return readBoolean("AGENT_OPERATIONS_V1", false);
+}
+
+export function isPlanV2WriteEnabled(): boolean {
+  return readBoolean("PLAN_V2_WRITE", false);
+}
+
+export function isConversationSummaryEnabled(): boolean {
+  return readBoolean("CONVERSATION_SUMMARY", false);
+}
+
 export function getPluginToken() {
   return read("CAREERMATE_PLUGIN_TOKEN");
 }

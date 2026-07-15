@@ -43,11 +43,19 @@ export interface AiResult<T> {
   meta: AiExecutionMeta;
 }
 
+/** 百宝箱 history 消息格式 */
+export interface TboxHistoryMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
 export interface ChatInput {
   question: string;
   userId: string;
   conversationId?: string;
-  history?: unknown;
+  /** 最近对话历史（最多12条，8000字符） */
+  history?: TboxHistoryMessage[];
+  /** 结构化业务上下文（business_data 传输模式下使用） */
   context?: unknown;
   /** per-turn 搜索策略，只有 "required" 且全局开关开启时才实际发送 search_engine=true */
   searchPolicy?: "off" | "allowed" | "required";
