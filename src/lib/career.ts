@@ -63,9 +63,10 @@ export async function calculateMatch(profile: ProfileDto) {
 }
 
 export function buildCareerPlan(profile: ProfileDto) {
-  const roleName = profile.targetRoleLabel;
+  const roleName = profile.targetRoleLabel ?? "未设置目标岗位";
+  const hours = profile.weeklyAvailableHours ?? 5; // 未设置时默认 5 小时
   const intensity =
-    profile.weeklyAvailableHours <= 3 ? "轻量节奏" : profile.weeklyAvailableHours >= 8 ? "强化节奏" : "稳定节奏";
+    hours <= 3 ? "轻量节奏" : hours >= 8 ? "强化节奏" : "稳定节奏";
   const months = Array.from({ length: 36 }, (_, index) => {
     const stage = index < 6 ? "基础建立" : index < 18 ? "作品集强化" : index < 30 ? "真实场景演练" : "求职与长期成长";
     return {

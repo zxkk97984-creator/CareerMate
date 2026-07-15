@@ -82,6 +82,8 @@ export interface TboxDependencies {
   fetchImpl?: typeof fetch;
   clock?: Clock;
   signal?: AbortSignal;
+  /** 仅测试用：设为 true 可绕过端点白名单校验，生产代码永远不设置 */
+  allowTestEndpoint?: boolean;
 }
 
 export type NormalizedStreamEvent =

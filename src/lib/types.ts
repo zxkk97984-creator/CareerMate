@@ -34,11 +34,11 @@ export interface AiExecutionMeta {
 export interface ProfileDto {
   id: string;
   userId: string;
-  educationStage: string;
+  educationStage: string | null;
   major: string | null;
-  targetRole: string;
-  targetRoleLabel: string;
-  weeklyAvailableHours: number;
+  targetRole: string | null;
+  targetRoleLabel: string | null;
+  weeklyAvailableHours: number | null;
   learningPreference: string[];
   experienceSummary: string;
   interestTags: string[];
@@ -62,6 +62,7 @@ export function isPlanReadyProfile(profile: ProfileDto): profile is PlanReadyPro
   return Boolean(
     profile.targetRole?.trim() &&
     profile.targetRoleLabel?.trim() &&
+    profile.weeklyAvailableHours != null &&
     Number.isInteger(profile.weeklyAvailableHours) &&
     Number(profile.weeklyAvailableHours) > 0,
   );

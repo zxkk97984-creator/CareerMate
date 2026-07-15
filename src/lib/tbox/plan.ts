@@ -33,11 +33,11 @@ function planPrompt(profile: ProfileDto) {
     "对象必须包含 3 个 years、12 个 quarters、36 个 months，以及 assumptions 和 riskNotes。",
     "每个月必须包含 monthIndex、goal、learningTasks、practiceOutputs、evaluationMetrics。",
     `用户画像：${JSON.stringify({
-      educationStage: profile.educationStage,
-      major: profile.major,
-      targetRole: profile.targetRole,
-      targetRoleLabel: profile.targetRoleLabel,
-      weeklyAvailableHours: profile.weeklyAvailableHours,
+      educationStage: profile.educationStage ?? null,
+      major: profile.major ?? null,
+      targetRole: profile.targetRole ?? null,
+      targetRoleLabel: profile.targetRoleLabel ?? null,
+      weeklyAvailableHours: profile.weeklyAvailableHours ?? null,
       learningPreference: profile.learningPreference,
       experienceSummary: profile.experienceSummary,
       interestTags: profile.interestTags,
@@ -56,7 +56,7 @@ export async function generatePlanWithTbox(
     deps.loadManualSample ??
     (() =>
       getPrisma().manualAiSample.findFirst({
-        where: { scenario: `plan_generate_${profile.targetRole}` },
+        where: { scenario: `plan_generate_${profile.targetRole ?? "unknown"}` },
         select: { payload: true },
       }));
   let manualSource = "manual-fixture";

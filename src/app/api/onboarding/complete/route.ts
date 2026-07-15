@@ -79,7 +79,7 @@ export async function POST(request: Request) {
         userId: user.id,
         eventType: "onboarding_completed",
         title: "完成职业画像引导",
-        summary: `画像完整度 ${Math.round(completeness * 100)}%，目标岗位为 ${profile.targetRoleLabel}。`,
+        summary: `画像完整度 ${Math.round(completeness * 100)}%，目标岗位为 ${profile.targetRoleLabel ?? "未设置"}。`,
         metadata: toJson({ conversationId: conversation.id, completeness }),
       },
     });

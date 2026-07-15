@@ -1,3 +1,7 @@
+/**
+ * @deprecated 仅限管理员测试/诊断专用。产品聊天请使用 /api/chat/conversations/[id]/stream。
+ * 普通用户调用返回 403。
+ */
 import { fail, ok } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
 import { prepareCareerChat } from "@/lib/chat/server";
@@ -10,6 +14,7 @@ import { chatInputSchema } from "@/lib/tbox/schemas";
 export async function POST(request: Request) {
   const user = await requireCurrentUser().catch(() => null);
   if (!user) return fail("UNAUTHORIZED", "未登录或登录态过期", 401);
+  if (user.role !== "admin") return fail("FORBIDDEN", "该诊断接口仅限管理员使用", 403);
 
   const parsed = chatInputSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return fail("INVALID_INPUT", "对话参数不合法", 400);

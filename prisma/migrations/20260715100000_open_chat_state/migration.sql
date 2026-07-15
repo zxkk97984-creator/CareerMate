@@ -34,7 +34,7 @@ CREATE TABLE "QuestionLedger" (
     "askedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "answeredAt" DATETIME,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL,
     CONSTRAINT "QuestionLedger_conversationId_fkey" FOREIGN KEY ("conversationId") REFERENCES "ChatConversation"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 

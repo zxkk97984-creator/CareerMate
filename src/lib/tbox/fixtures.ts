@@ -130,7 +130,8 @@ export function createManualChatAnswer(question: string) {
 }
 
 export function getManualCareerPlanFixture(profile: ProfileDto) {
-  return manualPlanRoles.has(profile.targetRole) ? buildCareerPlan(profile) : null;
+  if (!profile.targetRole) return null;
+  return manualPlanRoles.has(profile.targetRole) ? buildCareerPlan(profile as any) : null;
 }
 
 export function getMockCareerPlanFixture(profile: ProfileDto) {

@@ -34,12 +34,18 @@ const contentPatterns = [
   },
 ];
 
-const allowedFiles = new Set([".env.example", "scripts/secret-scan.mjs"]);
+const allowedPatterns = [/^\.env\.example$/, /^scripts\/secret-scan\.mjs$/];
+
+const allowedContentFiles = new Set(["scripts/secret-scan.mjs"]);
 const failures = [];
 
 for (const file of trackedCandidates) {
   const normalized = file.replaceAll("\\", "/");
-  if (!allowedFiles.has(normalized) && blockedFilePatterns.some((pattern) => pattern.test(normalized))) {
+
+  // .env.example 允许路径通过，但内容仍需扫描真实 key
+  const isAllowedPath = allowedPatterns.some((p) => p.test(normalized));
+
+  if (!isAllowedPath && blockedFilePatterns.some((pattern) => pattern.test(normalized))) {
     failures.push(`Blocked file path: ${file}`);
     continue;
   }
@@ -56,7 +62,7 @@ for (const file of trackedCandidates) {
 
   const content = buffer.toString("utf8");
   for (const rule of contentPatterns) {
-    if (rule.pattern.test(content) && !allowedFiles.has(normalized)) {
+    if (rule.pattern.test(content) && !allowedContentFiles.has(normalized)) {
       failures.push(`${rule.name} detected in ${file}`);
     }
   }

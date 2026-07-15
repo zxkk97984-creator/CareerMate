@@ -44,6 +44,10 @@ export async function POST(request?: Request) {
   }
 
   const profile = profileDto(user.profile);
+  const targetRole = profile.targetRole;
+  if (!targetRole) {
+    return fail("PROFILE_INCOMPLETE", "尚未设置目标岗位，无法生成计划", 422);
+  }
   const generated = await generatePlanWithTbox(profile);
   const note = planGenerationNote(generated.meta);
 
@@ -58,7 +62,7 @@ export async function POST(request?: Request) {
       const created = await transaction.careerPlan.create({
         data: {
           userId: user.id,
-          targetRole: profile.targetRole,
+          targetRole: targetRole,
           version: (latest?.version ?? 0) + 1,
           status: "pending",
           ...serializePlan(generated.data),

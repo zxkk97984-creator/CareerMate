@@ -1,6 +1,6 @@
 /**
- * @deprecated 诊断/测试专用——非产品聊天入口。
- * 产品聊天请使用 /api/chat/conversations/[id]/stream。
+ * @deprecated 仅限管理员测试/诊断专用。产品聊天请使用 /api/chat/conversations/[id]/stream。
+ * 普通用户调用返回 403。
  */
 import { fail } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
@@ -35,6 +35,7 @@ function queryInput(request: Request) {
 async function handle(request: Request, rawInput: unknown) {
   const user = await requireCurrentUser().catch(() => null);
   if (!user) return fail("UNAUTHORIZED", "未登录或登录态过期", 401);
+  if (user.role !== "admin") return fail("FORBIDDEN", "该诊断接口仅限管理员使用", 403);
 
   const parsed = chatInputSchema.safeParse(rawInput);
   if (!parsed.success) return fail("INVALID_INPUT", "对话参数不合法", 400);

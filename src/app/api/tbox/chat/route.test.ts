@@ -19,7 +19,7 @@ import { POST } from "./route";
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.requireCurrentUser.mockResolvedValue({ id: "user-1" });
+  mocks.requireCurrentUser.mockResolvedValue({ id: "user-1", role: "admin" });
   mocks.prepareChat.mockResolvedValue({
     enhancedQuestion: "enhanced hello",
     contextMeta: {
@@ -81,6 +81,19 @@ describe("POST /api/tbox/chat", () => {
     expect(mocks.logCreate).toHaveBeenCalledWith({
       data: expect.objectContaining({ summary: "hello" }),
     });
+  });
+
+  it("rejects non-admin users with 403", async () => {
+    mocks.requireCurrentUser.mockResolvedValueOnce({ id: "user-2", role: "user" });
+    const response = await POST(
+      new Request("http://localhost/api/tbox/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: "hello" }),
+      }),
+    );
+    expect(response.status).toBe(403);
+    expect(mocks.chat).not.toHaveBeenCalled();
   });
 
   it("rejects invalid input before invoking the adapter", async () => {

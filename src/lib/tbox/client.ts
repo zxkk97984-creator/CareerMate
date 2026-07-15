@@ -6,25 +6,27 @@ const systemClock: Clock = {
   clearTimeout: (timer) => clearTimeout(timer),
 };
 
-/** 百宝箱 API 允许的主机名后缀 */
-const ALLOWED_ENDPOINT_SUFFIXES = [".tbox.cn", "tbox.cn"];
+/** 百宝箱 API 允许的主机名——精确匹配 tbox.cn 或以 .tbox.cn 结尾，防止 evil-tbox.cn 绕过 */
+function isAllowedTboxHostname(hostname: string): boolean {
+  return hostname === "tbox.cn" || hostname.endsWith(".tbox.cn");
+}
 
 function dependencies(deps: TboxDependencies) {
   return {
     fetchImpl: deps.fetchImpl ?? fetch,
     clock: deps.clock ?? systemClock,
+    allowTestEndpoint: deps.allowTestEndpoint ?? false,
   };
 }
 
-function validateEndpoint(url: URL, allowTestOverride?: boolean): void {
-  // 测试注入路径：显式 test-only 注入允许任意 endpoint
-  if (allowTestOverride) return;
+function validateEndpoint(url: URL, deps: TboxDependencies): void {
+  // 仅显式测试依赖允许绕过端点校验（生产代码永远不设置此标记）
+  if (deps.allowTestEndpoint) return;
   if (url.protocol !== "https:") {
     throw new TboxError("missing_config", "API_CONFIG_MISSING");
   }
   const hostname = url.hostname.toLowerCase();
-  const allowed = ALLOWED_ENDPOINT_SUFFIXES.some((suffix) => hostname.endsWith(suffix));
-  if (!allowed) {
+  if (!isAllowedTboxHostname(hostname)) {
     throw new TboxError("missing_config", "API_CONFIG_MISSING");
   }
 }
@@ -128,9 +130,8 @@ export async function consumeChatResponse<T>(
   ensureChatConfig(deps);
   const url = new URL(deps.config.chatEndpoint);
 
-  // 端点安全校验（测试可注入绕过）
-  const isTestOverride = deps.fetchImpl !== undefined && deps.fetchImpl !== fetch;
-  validateEndpoint(url, isTestOverride);
+  // 端点安全校验
+  validateEndpoint(url, deps);
 
   const searchEnabled = resolveSearchEnabled(deps, input);
 
@@ -177,7 +178,7 @@ export async function requestRetrieval(
     throw new TboxError("missing_config", "API_CONFIG_MISSING");
   }
   const url = new URL(deps.config.retrieveEndpoint);
-  validateEndpoint(url, deps.fetchImpl !== undefined && deps.fetchImpl !== fetch);
+  validateEndpoint(url, deps);
   return timedResponse(
     url,
     {

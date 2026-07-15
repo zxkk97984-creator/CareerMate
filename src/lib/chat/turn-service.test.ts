@@ -12,6 +12,7 @@ const mockTx = {
     findFirst: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
+    updateMany: vi.fn(),
     delete: vi.fn(),
   },
   questionLedger: {
@@ -30,7 +31,7 @@ vi.mock("@/lib/prisma", () => ({
   getPrisma: () => mockDb,
 }));
 
-import { createTurnService, TurnServiceError } from "./turn-service";
+import { createTurnService } from "./turn-service";
 
 // 辅助：创建基础会话数据
 function baseConv(overrides: Record<string, unknown> = {}) {
@@ -81,6 +82,8 @@ describe("createTurnService", () => {
 
     // 默认：$transaction 直接执行回调
     mockDb.$transaction.mockImplementation(async (cb: (tx: typeof mockTx) => unknown) => cb(mockTx));
+    // 默认 mock——避免未设置的 mock 抛出异常
+    mockTx.chatMessage.updateMany.mockResolvedValue({ count: 0 });
   });
 
   // ── begin ─────────────────────────────────────
@@ -149,7 +152,7 @@ describe("createTurnService", () => {
         conversationId: "conv-1",
         message: "你好",
         clientRequestId: "550e8400-e29b-41d4-a716-446655440000",
-      })).rejects.toThrow(TurnServiceError);
+      })).rejects.toMatchObject({ code: "TURN_IN_PROGRESS", status: 409 });
     });
 
     it("会话不存在 → NOT_FOUND", async () => {
@@ -160,7 +163,7 @@ describe("createTurnService", () => {
         conversationId: "conv-999",
         message: "你好",
         clientRequestId: "550e8400-e29b-41d4-a716-446655440000",
-      })).rejects.toThrow(TurnServiceError);
+      })).rejects.toMatchObject({ code: "NOT_FOUND", status: 404 });
     });
 
     it("并发轮次：锁已被占用 → 409", async () => {
@@ -173,7 +176,7 @@ describe("createTurnService", () => {
         conversationId: "conv-1",
         message: "你好",
         clientRequestId: "550e8400-e29b-41d4-a716-446655440000",
-      })).rejects.toThrow(TurnServiceError);
+      })).rejects.toMatchObject({ code: "TURN_IN_PROGRESS", status: 409 });
     });
 
     it("超时锁可被接管（超过2分钟）", async () => {
@@ -250,7 +253,7 @@ describe("createTurnService", () => {
         citations: [],
         executionMeta: {},
         warnings: [],
-      })).rejects.toThrow(TurnServiceError);
+      })).rejects.toMatchObject({ code: "TURN_STALE", status: 409 });
     });
 
     it("保存远端 conversation ID", async () => {

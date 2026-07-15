@@ -80,6 +80,9 @@ export function createPlanGenerationService(
         if (!profile) {
           throw new PlanGenerationError("用户画像不存在", "PROFILE_NOT_FOUND", 404);
         }
+        if (!profile.targetRole) {
+          throw new PlanGenerationError("尚未设置目标岗位，无法生成计划", "PROFILE_INCOMPLETE", 422);
+        }
         const latest = await transaction.careerPlan.findFirst({
           where: { userId: input.userId },
           orderBy: { version: "desc" },
@@ -149,6 +152,9 @@ export function createPlanGenerationService(
       const profile = await db.userProfile.findUnique({ where: { userId } });
       if (!profile) {
         throw new PlanGenerationError("用户画像不存在", "PROFILE_NOT_FOUND", 404);
+      }
+      if (!profile.targetRole) {
+        throw new PlanGenerationError("尚未设置目标岗位，无法生成计划", "PROFILE_INCOMPLETE", 422);
       }
       const previousMeta = metadata(current.generationMeta);
       const attempts = typeof previousMeta.attempts === "number" ? previousMeta.attempts + 1 : 1;

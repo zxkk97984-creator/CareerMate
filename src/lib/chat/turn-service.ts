@@ -33,6 +33,8 @@ export interface TurnBeginInput {
   message: string;
   clientRequestId: string;
   actionId?: string;
+  /** 当前 UserProfile.version，用于 QuestionLedger 记录 */
+  profileVersion?: number;
 }
 
 export interface TurnFinalizeInput {
@@ -78,21 +80,20 @@ function generateTurnId(): string {
 // ── 辅助：回答当前等待的问题 ─────────────────────
 
 async function answerAwaitingQuestion(
+  tx: any, // Prisma 事务客户端
   conversationId: string,
   state: ConversationState,
-  turnId: string,
   userMessage: string,
+  profileVersion: number,
 ): Promise<{ newState: ConversationState; updated: boolean }> {
-  const db = getPrisma();
   const awaiting = state.awaitingQuestion;
   if (!awaiting) return { newState: state, updated: false };
 
   const key = normalizeQuestionKey(awaiting.normalizedKey);
   if (!key) return { newState: state, updated: false };
 
-  // 更新 QuestionLedger：标记为 answered
-  const profileVersion = 1; // 从上下文获取，这里用默认值
-  await db.questionLedger.upsert({
+  // 使用传入的 tx（事务内），避免全局 getPrisma 导致 SQLite 锁冲突
+  await tx.questionLedger.upsert({
     where: {
       conversationId_normalizedQuestionKey_profileVersion: {
         conversationId,
@@ -149,7 +150,7 @@ export function createTurnService(): ChatTurnService {
         const conv = await tx.chatConversation.findFirst({
           where: { id: conversationId, userId, status: { not: "deleted" } },
         });
-        if (!conv) throw new TurnServiceError("NOT_FOUND", "会话不存在", 404);
+        if (!conv) throw new TurnServiceError("会话不存在", "NOT_FOUND", 404);
 
         // 2. 幂等检查：同一 clientRequestId 是否已有用户消息
         const existingUserMsg = await tx.chatMessage.findFirst({
@@ -163,30 +164,41 @@ export function createTurnService(): ChatTurnService {
           });
 
           if (existingAssistantMsg && existingAssistantMsg.status === "completed") {
-            // 已完成 → 重放
+            // 已完成 → 完整重放
+            let parsedParts: unknown[] = [];
+            try { parsedParts = JSON.parse(existingAssistantMsg.parts ?? "[]"); } catch { /* ignore */ }
+            let parsedExecution: Record<string, unknown> = {};
+            try { parsedExecution = JSON.parse(existingAssistantMsg.executionMeta ?? "{}"); } catch { /* ignore */ }
+
             return {
               kind: "replay" as const,
               turn: {
                 assistantText: existingAssistantMsg.content,
+                parts: parsedParts,
                 citations: [],
                 remoteConversationId: conv.remoteConversationId ?? undefined,
                 warnings: [],
-              } satisfies PersistedTurn,
+                executionMeta: parsedExecution,
+                userMessageId: existingUserMsg.id,
+                assistantMessageId: existingAssistantMsg.id,
+              } satisfies PersistedTurn & { parts?: unknown[]; executionMeta?: Record<string, unknown>; userMessageId?: string; assistantMessageId?: string },
             };
           }
 
           if (existingAssistantMsg && existingAssistantMsg.status === "streaming") {
             throw new TurnServiceError(
-              "TURN_IN_PROGRESS",
               "当前回复仍在生成，请稍候",
+              "TURN_IN_PROGRESS",
               409,
             );
           }
 
-          // 助手消息失败 → 允许重试，删除旧助手消息
+          // 助手消息失败 → 允许重试，删除旧 user+assistant 消息对避免唯一约束冲突
           if (existingAssistantMsg) {
             await tx.chatMessage.delete({ where: { id: existingAssistantMsg.id } });
           }
+          // 删除旧 user 消息，以便用同一个 clientRequestId 重新插入
+          await tx.chatMessage.delete({ where: { id: existingUserMsg.id } });
         }
 
         // 3. 原子认领锁：使用 updateMany
@@ -207,10 +219,19 @@ export function createTurnService(): ChatTurnService {
 
         if (claimResult.count === 0) {
           throw new TurnServiceError(
-            "TURN_IN_PROGRESS",
             "当前回复仍在生成，请稍候",
+            "TURN_IN_PROGRESS",
             409,
           );
+        }
+
+        // 超时锁接管：将旧 streaming 占位消息标记为 interrupted/failed
+        const oldActiveTurnId = conv.activeTurnId;
+        if (oldActiveTurnId && oldActiveTurnId !== "claiming") {
+          await tx.chatMessage.updateMany({
+            where: { conversationId, turnId: oldActiveTurnId, status: "streaming" },
+            data: { status: "interrupted", content: "" },
+          });
         }
 
         // 4. 生成 turnId 并创建消息
@@ -258,7 +279,7 @@ export function createTurnService(): ChatTurnService {
           state = { schemaVersion: 1, currentTask: { kind: "idle", status: "idle", answers: {} }, awaitingQuestion: null };
         }
 
-        const { newState } = await answerAwaitingQuestion(conversationId, state, turnId, message);
+        const { newState } = await answerAwaitingQuestion(tx, conversationId, state, message, input.profileVersion ?? 1);
 
         // 更新 state
         await tx.chatConversation.update({
@@ -307,8 +328,8 @@ export function createTurnService(): ChatTurnService {
 
         if (!conv || conv.activeTurnId !== turn.id) {
           throw new TurnServiceError(
-            "TURN_STALE",
             "轮次已过期或被覆盖",
+            "TURN_STALE",
             409,
           );
         }

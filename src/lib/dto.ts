@@ -20,11 +20,11 @@ export function userDto(user: { id: string; username: string; displayName: strin
 export function profileDto(profile: {
   id: string;
   userId: string;
-  educationStage: string;
+  educationStage: string | null;
   major: string | null;
-  targetRole: string;
-  targetRoleLabel: string;
-  weeklyAvailableHours: number;
+  targetRole: string | null;
+  targetRoleLabel: string | null;
+  weeklyAvailableHours: number | null;
   learningPreference: string;
   experienceSummary: string;
   interestTags: string;
@@ -37,11 +37,20 @@ export function profileDto(profile: {
   updatedAt: Date;
 }): ProfileDto {
   return {
-    ...profile,
+    id: profile.id,
+    userId: profile.userId,
+    educationStage: profile.educationStage || null,
+    major: profile.major || null,
+    targetRole: profile.targetRole || null,
+    targetRoleLabel: profile.targetRoleLabel || null,
+    weeklyAvailableHours: profile.weeklyAvailableHours ?? null,
     learningPreference: parseJson<string[]>(profile.learningPreference, []),
+    experienceSummary: profile.experienceSummary,
     interestTags: parseJson<string[]>(profile.interestTags, []),
     constraints: parseJson<string[]>(profile.constraints, []),
     abilityScores: parseJson<AbilityScores>(profile.abilityScores, {} as AbilityScores),
+    memoryEnabled: profile.memoryEnabled,
+    onboardingCompleted: profile.onboardingCompleted,
     version: profile.version ?? 1,
     introStatus: profile.introStatus ?? "not_started",
     updatedAt: profile.updatedAt.toISOString(),

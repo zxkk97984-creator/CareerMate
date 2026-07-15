@@ -172,6 +172,93 @@ describe("tbox client request contract", () => {
     expect(String(error)).not.toContain(privateMarker);
   });
 
+  // ── 端点白名单安全测试 ─────────────────────────────
+
+  it("rejects evil-tbox.cn (hostname suffix bypass attempt)", async () => {
+    await expect(
+      consumeChatResponse(
+        { question: "hello", userId: "user-1" },
+        false,
+        {
+          config: { ...baseConfig, chatEndpoint: "https://evil-tbox.cn/api/chat" },
+          fetchImpl: vi.fn(),
+        },
+        async () => undefined,
+      ),
+    ).rejects.toMatchObject({ reason: "missing_config", code: "API_CONFIG_MISSING" });
+  });
+
+  it("rejects tbox.cn.evil.com (subdomain spoofing attempt)", async () => {
+    await expect(
+      consumeChatResponse(
+        { question: "hello", userId: "user-1" },
+        false,
+        {
+          config: { ...baseConfig, chatEndpoint: "https://tbox.cn.evil.com/api/chat" },
+          fetchImpl: vi.fn(),
+        },
+        async () => undefined,
+      ),
+    ).rejects.toMatchObject({ reason: "missing_config", code: "API_CONFIG_MISSING" });
+  });
+
+  it("rejects non-https endpoints", async () => {
+    await expect(
+      consumeChatResponse(
+        { question: "hello", userId: "user-1" },
+        false,
+        {
+          config: { ...baseConfig, chatEndpoint: "http://o.tbox.cn/api/chat" },
+          fetchImpl: vi.fn(),
+        },
+        async () => undefined,
+      ),
+    ).rejects.toMatchObject({ reason: "missing_config", code: "API_CONFIG_MISSING" });
+  });
+
+  it("allows sub.tbox.cn (valid subdomain)", async () => {
+    const fetchFn = vi.fn(async () => new Response("{}", { status: 200 }));
+    await consumeChatResponse(
+      { question: "hello", userId: "user-1" },
+      false,
+      {
+        config: { ...baseConfig, chatEndpoint: "https://sub.tbox.cn/api/chat" },
+        fetchImpl: fetchFn as typeof fetch,
+      },
+      async () => undefined,
+    );
+    expect(fetchFn).toHaveBeenCalled();
+  });
+
+  it("bypasses endpoint validation only when allowTestEndpoint is explicitly true", async () => {
+    const fetchFn = vi.fn(async () => new Response("{}", { status: 200 }));
+    await consumeChatResponse(
+      { question: "hello", userId: "user-1" },
+      false,
+      {
+        config: { ...baseConfig, chatEndpoint: "https://not-tbox.example.com/api/chat" },
+        fetchImpl: fetchFn as typeof fetch,
+        allowTestEndpoint: true,
+      },
+      async () => undefined,
+    );
+    expect(fetchFn).toHaveBeenCalled();
+  });
+
+  it("rejects unknown endpoint without explicit allowTestEndpoint", async () => {
+    await expect(
+      consumeChatResponse(
+        { question: "hello", userId: "user-1" },
+        false,
+        {
+          config: { ...baseConfig, chatEndpoint: "https://not-tbox.example.com/api/chat" },
+          fetchImpl: vi.fn(),
+        },
+        async () => undefined,
+      ),
+    ).rejects.toMatchObject({ reason: "missing_config", code: "API_CONFIG_MISSING" });
+  });
+
   it("maps an internal request timeout to TIMEOUT", async () => {
     const fetchImpl = vi.fn(async (_url: URL | RequestInfo, init?: RequestInit) => {
       if (init?.signal?.aborted) throw new DOMException("private timeout detail", "AbortError");

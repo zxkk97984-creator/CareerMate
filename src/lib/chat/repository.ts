@@ -9,6 +9,9 @@ type ConversationRow = {
   userId: string;
   title: string;
   status: string;
+  state: string;
+  contextVersion: number;
+  summary: string;
   remoteConversationId: string | null;
   lastMessageAt: Date;
   createdAt: Date;

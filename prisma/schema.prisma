@@ -33,11 +33,11 @@ model User {
 model UserProfile {
   id                   String   @id @default(cuid())
   userId               String   @unique
-  educationStage       String
+  educationStage       String?
   major                String?
-  targetRole           String
-  targetRoleLabel      String
-  weeklyAvailableHours Int
+  targetRole           String?
+  targetRoleLabel      String?
+  weeklyAvailableHours Int?
   learningPreference   String   @default("[]")
   experienceSummary    String   @default("")
   interestTags         String   @default("[]")

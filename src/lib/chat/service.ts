@@ -172,6 +172,9 @@ export function createChatService(repo?: ChatRepository): ChatService {
       return {
         ...toConversationItem(row),
         remoteConversationId: row.remoteConversationId ?? null,
+        state: row.state ?? "{}",
+        contextVersion: row.contextVersion ?? 1,
+        summary: row.summary ?? "",
         updatedAt: row.updatedAt.toISOString(),
       };
     },
@@ -253,5 +256,8 @@ export function createChatService(repo?: ChatRepository): ChatService {
 // ── 补充 DTO 类型 ────────────────────────────────────────
 
 export type ConversationDetail = ConversationItem & {
+  state?: string;
+  contextVersion?: number;
+  summary?: string;
   updatedAt: string;
 };

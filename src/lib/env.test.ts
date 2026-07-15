@@ -49,6 +49,20 @@ describe("tbox environment config", () => {
     expect(config.historyMode).toBe("context_only");
   });
 
+  it("reads history mode provider", async () => {
+    vi.stubEnv("TBOX_HISTORY_MODE", "provider");
+    const { getTboxConfig } = await import("./env");
+    const config = getTboxConfig();
+    expect(config.historyMode).toBe("provider");
+  });
+
+  it("rejects invalid history mode and falls back to context_only (fail-closed)", async () => {
+    vi.stubEnv("TBOX_HISTORY_MODE", "garbage");
+    const { getTboxConfig } = await import("./env");
+    const config = getTboxConfig();
+    expect(config.historyMode).toBe("context_only");
+  });
+
   it("defaults context transport to question_prefix（2026-07-15 探针结果）", async () => {
     vi.stubEnv("TBOX_CONTEXT_TRANSPORT", "");
     const { getTboxConfig } = await import("./env");
@@ -58,6 +72,20 @@ describe("tbox environment config", () => {
 
   it("reads context transport question_prefix", async () => {
     vi.stubEnv("TBOX_CONTEXT_TRANSPORT", "question_prefix");
+    const { getTboxConfig } = await import("./env");
+    const config = getTboxConfig();
+    expect(config.contextTransport).toBe("question_prefix");
+  });
+
+  it("reads context transport business_data", async () => {
+    vi.stubEnv("TBOX_CONTEXT_TRANSPORT", "business_data");
+    const { getTboxConfig } = await import("./env");
+    const config = getTboxConfig();
+    expect(config.contextTransport).toBe("business_data");
+  });
+
+  it("rejects invalid context transport and falls back to question_prefix (fail-closed)", async () => {
+    vi.stubEnv("TBOX_CONTEXT_TRANSPORT", "garbage");
     const { getTboxConfig } = await import("./env");
     const config = getTboxConfig();
     expect(config.contextTransport).toBe("question_prefix");

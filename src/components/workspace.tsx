@@ -171,8 +171,8 @@ export function Workspace({ initialView, isAdmin = false }: { initialView: View;
         <div className="pt-12 md:pt-0 px-4 pb-5" style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", display: "flex", flexDirection: "column", gap: 20, maxWidth: "var(--cm-content-max)", margin: "0 auto", width: "100%" }}>
           {/* 页面标题 */}
           <PageHeader
-            title={`${data.profile.targetRoleLabel} 成长工作台`}
-            description={`${data.user.displayName} · ${data.profile.major || "未填写专业"} · 每周 ${data.profile.weeklyAvailableHours} 小时`}
+            title={`${data.profile.targetRoleLabel ?? "未设置目标岗位"} 成长工作台`}
+            description={`${data.user.displayName} · ${data.profile.major || "未填写专业"} · 每周 ${data.profile.weeklyAvailableHours ?? 0} 小时`}
             aiStatus={
               <div style={{ display: "flex", alignItems: "center", gap: 8, borderRadius: "var(--cm-radius-sm)", border: "1px solid var(--cm-border)", padding: "6px 12px", fontSize: 13, color: "var(--cm-text-muted)" }}>
                 <Gauge size={16} />

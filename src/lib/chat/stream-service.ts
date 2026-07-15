@@ -8,6 +8,7 @@ import { createArtifactsForChat } from "./artifact-service";
 import { errorPart } from "./artifacts";
 import { createTurnService, TurnServiceError } from "./turn-service";
 import { buildAgentContext, trimRecentMessages } from "./context-builder";
+import { parseConversationState } from "./conversation-state";
 import { normalizeCitations, detectSearchToolCall } from "@/lib/tbox/citations";
 import { createProfileMutationService } from "@/lib/profile/profile-mutation-service";
 import { createMemoryProposalService } from "@/lib/memory/proposal-service";
@@ -64,13 +65,18 @@ async function handleStatefulStream(
 
   // ── 短事务 A：认领轮次 ──────────────────────────
   let beginResult: { kind: "new"; turn: { id: string; userMessageId: string; assistantMessageId: string } } | { kind: "replay"; turn: { assistantText: string } };
+  // 预加载 UserProfile（用于 profileVersion 和后续上下文构建）
+  let realProfile: RealProfileFields | null = null;
   try {
+    realProfile = await loadRealUserProfile(userId);
+
     beginResult = await turnService.begin({
       userId,
       conversationId,
       message,
       clientRequestId,
       actionId: options.actionId,
+      profileVersion: realProfile?.version ?? 1,
     });
   } catch (err) {
     if (err instanceof TurnServiceError) {
@@ -121,13 +127,17 @@ async function handleStatefulStream(
   // ── 新轮次：加载历史 + 构建上下文 + 调用百宝箱 ──────
   const turn = beginResult.turn;
 
-  // 并行加载：画像、记忆、计划、最近消息
-  const [profile, messages, memories, activePlan] = await Promise.all([
+  // 并行加载：ChatConversation state、记忆、计划、最近消息、QuestionLedger
+  const [convDetail, messages, memories, activePlan, answeredQuestions] = await Promise.all([
     svc.getConversation(conversationId, userId).catch(() => null),
     svc.getMessages(conversationId, userId, undefined, 24).catch(() => []),
     loadContextMemories(userId),
     loadActivePlan(userId),
+    loadAnsweredQuestionKeys(conversationId),
   ]);
+
+  // 解析会话状态
+  const convState = parseConversationState(convDetail?.state ?? null);
 
   // 构建最近消息历史（用于 tbox history）
   const recentMessages = messages
@@ -140,20 +150,20 @@ async function handleStatefulStream(
     content: m.content,
   }));
 
-  // 构建 AgentContext
+  // 构建 AgentContext——使用真实的 UserProfile 字段
   const agentContext = buildAgentContext({
-    profile: {
-      educationStage: (profile as any)?.educationStage,
-      major: (profile as any)?.major,
-      targetRole: (profile as any)?.targetRole,
-      targetRoleLabel: (profile as any)?.targetRoleLabel,
-      weeklyAvailableHours: (profile as any)?.weeklyAvailableHours,
-      learningPreference: [],
-      experienceSummary: (profile as any)?.experienceSummary,
-      constraints: [],
-    },
-    profileVersion: (profile as any)?.version ?? 1,
-    memories: memories.map((m: any) => ({
+    profile: realProfile ? {
+      educationStage: realProfile.educationStage ?? undefined,
+      major: realProfile.major ?? undefined,
+      targetRole: realProfile.targetRole ?? undefined,
+      targetRoleLabel: realProfile.targetRoleLabel ?? undefined,
+      weeklyAvailableHours: realProfile.weeklyAvailableHours ?? undefined,
+      learningPreference: parseJsonArray(realProfile.learningPreference),
+      experienceSummary: realProfile.experienceSummary,
+      constraints: parseJsonArray(realProfile.constraints),
+    } : null,
+    profileVersion: realProfile?.version ?? 1,
+    memories: memories.map((m) => ({
       id: m.id,
       kind: m.kind ?? "career_fact",
       content: m.content,
@@ -165,11 +175,11 @@ async function handleStatefulStream(
       immediateActions: [],
     } : null,
     conversation: {
-      contextVersion: (profile as any)?.contextVersion ?? 1,
-      summary: (profile as any)?.summary ?? "",
-      currentTask: { kind: "idle", status: "idle", answers: {} },
-      awaitingQuestion: null,
-      answeredQuestionKeys: [],
+      contextVersion: convDetail?.contextVersion ?? 1,
+      summary: convDetail?.summary ?? "",
+      currentTask: convState.currentTask,
+      awaitingQuestion: convState.awaitingQuestion,
+      answeredQuestionKeys: answeredQuestions,
       recentMessages: trimmedHistory,
     },
     userMessage: message,
@@ -189,7 +199,7 @@ async function handleStatefulStream(
     },
   }));
 
-  const existingRemoteId = (profile as any)?.remoteConversationId ?? undefined;
+  const existingRemoteId = convDetail?.remoteConversationId ?? undefined;
 
   // 根据配置决定如何传输上下文
   const hasHistory = config.historyMode === "provider" && historyMessages.length > 0;
@@ -562,14 +572,98 @@ async function handleLegacyStream(
   });
 }
 
+// ── 辅助：加载真实 UserProfile ──────────────────────
+
+interface RealProfileFields {
+  educationStage: string | null;
+  major: string | null;
+  targetRole: string | null;
+  targetRoleLabel: string | null;
+  weeklyAvailableHours: number | null;
+  learningPreference: string;
+  experienceSummary: string;
+  constraints: string;
+  interestTags: string;
+  memoryEnabled: boolean;
+  version: number;
+}
+
+async function loadRealUserProfile(userId: string): Promise<RealProfileFields | null> {
+  try {
+    const { getPrisma } = await import("@/lib/prisma");
+    const db = getPrisma();
+    const row = await db.userProfile.findUnique({ where: { userId } });
+    if (!row) return null;
+    return {
+      educationStage: row.educationStage,
+      major: row.major,
+      targetRole: row.targetRole,
+      targetRoleLabel: row.targetRoleLabel,
+      weeklyAvailableHours: row.weeklyAvailableHours,
+      learningPreference: row.learningPreference,
+      experienceSummary: row.experienceSummary,
+      constraints: row.constraints,
+      interestTags: row.interestTags,
+      memoryEnabled: row.memoryEnabled,
+      version: row.version,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ── 辅助：加载已回答的问题 keys ────────────────────
+
+async function loadAnsweredQuestionKeys(conversationId: string): Promise<string[]> {
+  try {
+    const { getPrisma } = await import("@/lib/prisma");
+    const db = getPrisma();
+    const rows = await db.questionLedger.findMany({
+      where: { conversationId, status: "answered" },
+      select: { normalizedQuestionKey: true },
+    });
+    return rows.map((r) => r.normalizedQuestionKey);
+  } catch {
+    return [];
+  }
+}
+
+// ── 辅助：安全解析 JSON 数组 ──────────────────────────
+
+function parseJsonArray(raw: string | undefined | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed.filter((v): v is string => typeof v === "string");
+    return [];
+  } catch {
+    return [];
+  }
+}
+
 // ── 辅助：加载上下文记忆 ──────────────────────────
 
 async function loadContextMemories(userId: string): Promise<Array<{ id: string; kind: string; content: string }>> {
   try {
     const { getPrisma } = await import("@/lib/prisma");
     const db = getPrisma();
+
+    // 检查用户是否启用了记忆功能
+    const profile = await db.userProfile.findUnique({ where: { userId }, select: { memoryEnabled: true } });
+    if (!profile?.memoryEnabled) return [];
+
+    const now = new Date();
     const rows = await db.memoryItem.findMany({
-      where: { userId, status: "confirmed", scope: "career", sensitivity: "normal" },
+      where: {
+        userId,
+        status: "confirmed",
+        scope: "career",
+        sensitivity: "normal",
+        OR: [
+          { expiresAt: null },
+          { expiresAt: { gt: now } },
+        ],
+      },
       orderBy: { createdAt: "desc" },
       take: 5,
     });

@@ -13,8 +13,8 @@ const baseConfig: TboxConfig = {
   contextTransport: "business_data",
   structuredMode: "terminal",
   reuseRemoteConversationId: false,
-  chatEndpoint: "https://tbox.example/chat/create",
-  retrieveEndpoint: "https://tbox.example/retrieve",
+  chatEndpoint: "https://o.tbox.cn/openapi/v1/chat/create",
+  retrieveEndpoint: "https://api.tbox.cn/api/datasets/retrieve",
   streamTimeoutMs: 90_000,
   probeAgentId: undefined,
   datasetIds: {
@@ -64,7 +64,7 @@ describe("Tbox fallback adapter", () => {
     });
     const [url, init] = fetchImpl.mock.calls[0];
     // conversation_id 现在在请求体中，不在 URL 查询参数中
-    expect(String(url)).toBe("https://tbox.example/chat/create");
+    expect(String(url)).toBe("https://o.tbox.cn/openapi/v1/chat/create");
     expect(init?.headers).toMatchObject({
       Authorization: "test-api-key",
       "Content-Type": "application/json",

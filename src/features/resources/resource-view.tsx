@@ -15,7 +15,7 @@ const roleLabels: Record<string, string> = { ai_product_manager: "AI 产品经�
 const selectStyle: React.CSSProperties = { display: "block", marginTop: 4, height: 40, width: "100%", borderRadius: "var(--cm-radius-control)", border: "1px solid var(--cm-border-strong)", background: "var(--cm-surface)", padding: "0 12px", fontSize: 14, color: "var(--cm-text-strong)" };
 
 export function ResourceView({ resources, profile, weakAbilities }: ResourceViewProps) {
-  const [roleKey, setRoleKey] = useState(profile.targetRole);
+  const [roleKey, setRoleKey] = useState(profile.targetRole ?? "");
   const [abilityKey, setAbilityKey] = useState<string>("all");
   const [resourceType, setResourceType] = useState<string>("all");
   const relevant = filterResources(resources, { roleKey, abilityKey, type: resourceType });

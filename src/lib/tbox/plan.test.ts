@@ -41,8 +41,8 @@ const config: TboxConfig = {
   contextTransport: "business_data",
   structuredMode: "terminal",
   reuseRemoteConversationId: false,
-  chatEndpoint: "https://tbox.example/chat/create",
-  retrieveEndpoint: "https://tbox.example/retrieve",
+  chatEndpoint: "https://o.tbox.cn/openapi/v1/chat/create",
+  retrieveEndpoint: "https://api.tbox.cn/api/datasets/retrieve",
   streamTimeoutMs: 90_000,
   probeAgentId: undefined,
   datasetIds: {

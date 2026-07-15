@@ -17,15 +17,17 @@ function readRetrievalMode() {
 }
 
 function readHistoryMode(): TboxHistoryMode {
-  // 安全默认 context_only，只有真实隔离探针通过 history 后才改为 provider
+  // fail-closed：安全默认 context_only；只有显式 "provider" 才启用，非法值落回安全默认
   const value = read("TBOX_HISTORY_MODE", "context_only").trim().toLowerCase();
-  return value === "context_only" ? "context_only" : "provider";
+  if (value === "provider") return "provider";
+  return "context_only";
 }
 
 function readContextTransport(): TboxContextTransport {
-  // 安全默认 question_prefix（business_data 探针未通过）
+  // fail-closed：安全默认 question_prefix；只有显式 "business_data" 才启用，非法值落回安全默认
   const value = read("TBOX_CONTEXT_TRANSPORT", "question_prefix").trim().toLowerCase();
-  return value === "question_prefix" ? "question_prefix" : "business_data";
+  if (value === "business_data") return "business_data";
+  return "question_prefix";
 }
 
 function readStructuredMode(): TboxStructuredMode {

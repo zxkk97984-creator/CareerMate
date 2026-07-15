@@ -42,7 +42,7 @@ const contextMeta = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.requireCurrentUser.mockResolvedValue({ id: "user-1" });
+  mocks.requireCurrentUser.mockResolvedValue({ id: "user-1", role: "admin" });
   mocks.prepareChat.mockResolvedValue({
     enhancedQuestion: "enhanced hello",
     contextMeta,
