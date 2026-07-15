@@ -1,12 +1,18 @@
 import { prepareCareerChat } from "./server";
 import { createChatService, type ChatService } from "./service";
 import { streamChatWithTboxProgressive } from "@/lib/tbox/streaming";
-import { parseStructuredAssistantResult } from "@/lib/tbox/structured-result";
-import { getTboxConfig, isStatefulChatTurns } from "@/lib/env";
+import { parseStructuredAssistantResult, parseTerminalAgentResponse } from "@/lib/tbox/structured-result";
+import { getTboxConfig, isStatefulChatTurns, isAgentOperationsEnabled } from "@/lib/env";
 import { writeSseEvent } from "./sse";
 import { createArtifactsForChat } from "./artifact-service";
 import { errorPart } from "./artifacts";
 import { createTurnService, TurnServiceError } from "./turn-service";
+import { buildAgentContext, trimRecentMessages } from "./context-builder";
+import { normalizeCitations, detectSearchToolCall } from "@/lib/tbox/citations";
+import { createProfileMutationService } from "@/lib/profile/profile-mutation-service";
+import { createMemoryProposalService } from "@/lib/memory/proposal-service";
+import type { TboxHistoryMessage } from "@/lib/tbox/types";
+import type { AgentOperation } from "./agent-protocol";
 
 // ── 类型 ──────────────────────────────────────────────────
 
@@ -112,10 +118,64 @@ async function handleStatefulStream(
     });
   }
 
-  // ── 新轮次：构建上下文并调用百宝箱 ──────────────────
+  // ── 新轮次：加载历史 + 构建上下文 + 调用百宝箱 ──────
   const turn = beginResult.turn;
 
-  // 构建安全上下文
+  // 并行加载：画像、记忆、计划、最近消息
+  const [profile, messages, memories, activePlan] = await Promise.all([
+    svc.getConversation(conversationId, userId).catch(() => null),
+    svc.getMessages(conversationId, userId, undefined, 24).catch(() => []),
+    loadContextMemories(userId),
+    loadActivePlan(userId),
+  ]);
+
+  // 构建最近消息历史（用于 tbox history）
+  const recentMessages = messages
+    .filter((m) => m.status === "completed" && m.content)
+    .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+
+  const trimmedHistory = trimRecentMessages(recentMessages);
+  const historyMessages: TboxHistoryMessage[] = trimmedHistory.map((m) => ({
+    role: m.role,
+    content: m.content,
+  }));
+
+  // 构建 AgentContext
+  const agentContext = buildAgentContext({
+    profile: {
+      educationStage: (profile as any)?.educationStage,
+      major: (profile as any)?.major,
+      targetRole: (profile as any)?.targetRole,
+      targetRoleLabel: (profile as any)?.targetRoleLabel,
+      weeklyAvailableHours: (profile as any)?.weeklyAvailableHours,
+      learningPreference: [],
+      experienceSummary: (profile as any)?.experienceSummary,
+      constraints: [],
+    },
+    profileVersion: (profile as any)?.version ?? 1,
+    memories: memories.map((m: any) => ({
+      id: m.id,
+      kind: m.kind ?? "career_fact",
+      content: m.content,
+    })),
+    activePlan: activePlan ? {
+      id: activePlan.id,
+      targetRole: activePlan.targetRole,
+      summary: activePlan.summary ?? "",
+      immediateActions: [],
+    } : null,
+    conversation: {
+      contextVersion: (profile as any)?.contextVersion ?? 1,
+      summary: (profile as any)?.summary ?? "",
+      currentTask: { kind: "idle", status: "idle", answers: {} },
+      awaitingQuestion: null,
+      answeredQuestionKeys: [],
+      recentMessages: trimmedHistory,
+    },
+    userMessage: message,
+  });
+
+  // 构建安全上下文（用于 question_prefix 模式）
   const prepared = await prepareCareerChat(
     { userId, question: message },
   ).catch(() => ({
@@ -129,9 +189,12 @@ async function handleStatefulStream(
     },
   }));
 
-  // 获取已有远端会话 ID
-  const convDetail = await svc.getConversation(conversationId, userId).catch(() => null);
-  const existingRemoteId = convDetail?.remoteConversationId ?? undefined;
+  const existingRemoteId = (profile as any)?.remoteConversationId ?? undefined;
+
+  // 根据配置决定如何传输上下文
+  const hasHistory = config.historyMode === "provider" && historyMessages.length > 0;
+  const hasContext = config.contextTransport === "business_data";
+  const searchPolicy = agentContext.searchPolicy;
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -147,12 +210,16 @@ async function handleStatefulStream(
           ...prepared.contextMeta,
         });
 
-        // 调用百宝箱
+        // 调用百宝箱——传入历史、上下文和搜索策略
+        const toolNames = new Set<string>();
         const aiResponse = await streamChatWithTboxProgressive(
           {
             question: prepared.enhancedQuestion,
             userId,
             conversationId: existingRemoteId as string | undefined,
+            history: hasHistory ? historyMessages : undefined,
+            context: hasContext ? agentContext : undefined,
+            searchPolicy,
           },
           { config, signal },
           (event) => {
@@ -176,6 +243,27 @@ async function handleStatefulStream(
 
         // 解析结构化结果
         const assistantResult = parseStructuredAssistantResult(aiResponse.data);
+
+        // 归一化 citations
+        const hasSearchTool = detectSearchToolCall(toolNames);
+        const citations = normalizeCitations(assistantResult.citations, hasSearchTool);
+
+        // 解析 AgentResponse（如果 AGENT_OPERATIONS_V1 开启）
+        let agentResponse: import("./agent-protocol").AgentResponse | undefined;
+        if (isAgentOperationsEnabled()) {
+          const parsed = parseTerminalAgentResponse(assistantResult);
+          agentResponse = parsed.response;
+          if (parsed.warnings.length > 0) {
+            assistantResult.warnings.push(...parsed.warnings);
+          }
+
+          // 处理 Agent operations
+          if (agentResponse?.operations && agentResponse.operations.length > 0) {
+            await processAgentOperations(userId, conversationId, turn.assistantMessageId, message, agentResponse.operations);
+          }
+        }
+
+        // 创建 artifacts
         const parts = await createArtifactsForChat({
           userId,
           conversationId,
@@ -183,6 +271,20 @@ async function handleStatefulStream(
         }).catch(() => [
           errorPart("ARTIFACT_UNAVAILABLE", "回答已生成，但画像、计划或职业报告卡片暂未生成。"),
         ]);
+
+        // 添加 citation 卡片
+        if (citations.length > 0) {
+          parts.push({
+            type: "citations",
+            items: citations.map((c) => ({
+              title: c.title,
+              source: c.source,
+              url: c.url,
+              accessedAt: c.accessedAt,
+              label: c.label,
+            })),
+          } as any);
+        }
 
         for (const part of parts) {
           writeSseEvent(controller, "artifact", {
@@ -455,4 +557,102 @@ async function handleLegacyStream(
       Connection: "keep-alive",
     },
   });
+}
+
+// ── 辅助：加载上下文记忆 ──────────────────────────
+
+async function loadContextMemories(userId: string): Promise<Array<{ id: string; kind: string; content: string }>> {
+  try {
+    const { getPrisma } = await import("@/lib/prisma");
+    const db = getPrisma();
+    const rows = await db.memoryItem.findMany({
+      where: { userId, status: "confirmed", scope: "career", sensitivity: "normal" },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+    });
+    return rows.map((r) => ({ id: r.id, kind: r.kind, content: r.content }));
+  } catch {
+    return [];
+  }
+}
+
+// ── 辅助：加载活跃计划 ────────────────────────────
+
+async function loadActivePlan(userId: string): Promise<{ id: string; targetRole: string; summary: string } | null> {
+  try {
+    const { getPrisma } = await import("@/lib/prisma");
+    const db = getPrisma();
+    const plan = await db.careerPlan.findFirst({
+      where: { userId, status: "active" },
+      orderBy: { version: "desc" },
+    });
+    if (!plan) return null;
+    return { id: plan.id, targetRole: plan.targetRole, summary: plan.content ?? "" };
+  } catch {
+    return null;
+  }
+}
+
+// ── 辅助：处理 Agent Operations ────────────────────
+
+async function processAgentOperations(
+  userId: string,
+  conversationId: string,
+  sourceMessageId: string,
+  userMessage: string,
+  operations: AgentOperation[],
+): Promise<void> {
+  const profileMutation = createProfileMutationService();
+  const memoryProposal = createMemoryProposalService();
+
+  for (const op of operations) {
+    try {
+      if (op.type === "profile_patch") {
+        const decision = await profileMutation.decide({
+          userId,
+          conversationId,
+          patch: op.patch as any,
+          sourceKind: op.sourceKind,
+          confidence: op.confidence,
+          evidenceExcerpt: op.evidenceExcerpt,
+          reason: op.reason,
+          sensitive: op.sensitive,
+          userMessage,
+        });
+
+        if (decision.action === "auto_apply") {
+          await profileMutation.applyPatch(userId, op.patch as any);
+        } else if (decision.action === "pending_candidate") {
+          await profileMutation.createCandidate({
+            userId,
+            conversationId,
+            patch: op.patch as any,
+            sourceKind: op.sourceKind,
+            confidence: op.confidence,
+            evidenceExcerpt: op.evidenceExcerpt,
+            reason: decision.reason,
+            sensitive: op.sensitive,
+          });
+        }
+      }
+
+      if (op.type === "memory_proposal") {
+        await memoryProposal.processProposal({
+          userId,
+          conversationId,
+          sourceMessageId,
+          content: op.content,
+          kind: op.kind,
+          sourceKind: op.sourceKind,
+          confidence: op.confidence,
+          reason: op.reason,
+          sensitivity: op.sensitive ? "sensitive" : "normal",
+        });
+      }
+
+      // plan_draft 和 exploration_report 由 artifact-service 处理
+    } catch {
+      // 单个 operation 失败不影响其他
+    }
+  }
 }
