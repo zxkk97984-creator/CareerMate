@@ -63,21 +63,17 @@ test("user completes a three-round simulation and receives a score", async ({ pa
   await expect(page.getByText("本次未生成画像更新候选。")).toBeVisible();
 });
 
-test("new account completes multi-message onboarding", async ({ page }) => {
+test("new account registers and enters open chat directly", async ({ page }) => {
   await page.goto("/login");
   await page.getByRole("button", { name: "注册" }).click();
   await page.getByLabel("账号").fill(`e2e_${Date.now()}`);
   await page.getByLabel("昵称").fill("端到端用户");
   await page.getByLabel("密码").fill("careermate123");
   await page.getByRole("button", { name: "创建账号" }).click();
-  await expect(page).toHaveURL(/\/onboarding/);
-  await page.getByPlaceholder(/一次可以告诉我多项信息/).fill("我是大三统计学专业，目标是数据分析师，每周可以投入 8 小时，喜欢项目实践和文字学习。");
-  await page.getByRole("button", { name: "发送" }).click();
-  await page.getByPlaceholder(/一次可以告诉我多项信息/).fill("做过校园活动数据看板和 Excel 分析，限制是工作日课程多，只能晚上学习，希望一年内找到实习。");
-  await page.getByRole("button", { name: "发送" }).click();
-  await expect(page.getByRole("button", { name: "确认并生成成长工作台" })).toBeEnabled();
-  await page.getByRole("button", { name: "确认并生成成长工作台" }).click();
+  // 开放入口：注册后直接进入主聊天，不强制跳转 onboarding
   await expect(page).toHaveURL(/\/$/);
+  // 可以在主聊天中直接提问
+  await expect(page.getByPlaceholder(/Enter 发送|输入消息/)).toBeVisible();
 });
 
 test("admin generates and approves a validated role draft", async ({ page }) => {

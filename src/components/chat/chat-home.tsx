@@ -29,6 +29,7 @@ export function ChatHomePage({ displayName }: ChatHomePageProps) {
   // 用 ref 追踪当前活跃会话和流式状态，避免闭包过期
   const activeCidRef = useRef<string | null>(null);
   const streamingRef = useRef(false);
+  const requestIdRef = useRef<string | null>(null); // 稳定的请求 ID，用于幂等
 
   // 加载会话列表
   const loadConversations = useCallback(async () => {
@@ -90,6 +91,10 @@ export function ChatHomePage({ displayName }: ChatHomePageProps) {
     streamingRef.current = true;
     setIsStreaming(true);
 
+    // 生成稳定的请求 ID（首次发送时生成，流式期间保持不变）
+    const clientRequestId = crypto.randomUUID?.() ?? `req-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    requestIdRef.current = clientRequestId;
+
     // 添加用户消息到本地
     const userMsg: MessageItem = {
       id: "temp-user-" + Date.now(),
@@ -122,13 +127,17 @@ export function ChatHomePage({ displayName }: ChatHomePageProps) {
     const response = await fetch(`/api/chat/conversations/${cid}/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text }),
+      body: JSON.stringify({ message: text, clientRequestId }),
     });
 
     if (!response.ok || !response.body) {
+      const errorMessage = response.status === 409
+        ? "当前回复仍在生成，请稍候"
+        : "发送失败";
+      const errorCode = response.status === 409 ? "TURN_IN_PROGRESS" : "HTTP_ERROR";
       setMessages(prev =>
         prev.map(m => m.id === assistantMsg.id
-          ? { ...m, status: "failed", parts: [{ type: "error", code: "HTTP_ERROR", message: "发送失败" }] }
+          ? { ...m, status: "failed", parts: [{ type: "error", code: errorCode, message: errorMessage }] }
           : m,
         ),
       );
