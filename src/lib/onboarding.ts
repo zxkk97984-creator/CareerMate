@@ -10,7 +10,7 @@ export const onboardingDraftSchema = z
   .object({
     educationStage: cleanText.optional(),
     major: cleanText.optional(),
-    targetRole: z.enum(["ai_product_manager", "data_analyst", "aigc_operator"]).optional(),
+    targetRole: z.string().trim().min(1).max(120).optional(),
     targetRoleLabel: cleanText.optional(),
     weeklyAvailableHours: z.number().int().min(1).max(40).optional(),
     learningPreference: cleanList.optional(),
@@ -30,7 +30,8 @@ export interface OnboardingProfileUpdateCandidate {
   reason: string;
 }
 
-const roleAliases: Array<{ patterns: string[]; key: OnboardingDraft["targetRole"]; label: string }> = [
+const roleAliases: Array<{ patterns: string[]; key: string; label: string }> = [
+  { patterns: ["DBA", "数据库管理员", "数据库运维", "数据库运维工程师", "数据库管理", "database administrator"], key: "database_administrator", label: "数据库管理员（DBA）" },
   { patterns: ["ai_product_manager", "AI 产品经理", "AI产品经理"], key: "ai_product_manager", label: "AI 产品经理" },
   { patterns: ["data_analyst", "数据分析师", "数据分析"], key: "data_analyst", label: "数据分析师" },
   { patterns: ["aigc_operator", "AIGC 内容运营", "AIGC内容运营", "AIGC 运营", "AIGC运营"], key: "aigc_operator", label: "AIGC 内容运营" },
@@ -201,7 +202,7 @@ export function canCompleteOnboarding(completeness: number) {
 const nextQuestions: Record<string, string> = {
   educationStage: "你目前处于什么学习或工作阶段？例如大三、研究生、在职或准备转行。",
   major: "你的专业或主要背景是什么？",
-  targetRole: "你最想发展的目标岗位是什么？目前支持 AI 产品经理、数据分析师和 AIGC 内容运营。",
+  targetRole: "你目前最想探索或发展的岗位是什么？任何职业都可以；如果还没想好，也可以先聊兴趣和优势。",
   weeklyAvailableHours: "你每周大约能稳定投入多少小时学习和实践？",
   learningPreference: "你偏好哪种学习方式？例如视频、阅读、项目实操或导师带教。",
   experienceSummary: "你过去做过哪些与目标相关的课程、项目或工作？",
