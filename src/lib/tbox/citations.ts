@@ -116,9 +116,7 @@ export function normalizeCitations(
 
 export function detectSearchToolCall(toolNames: ReadonlySet<string>): boolean {
   for (const name of toolNames) {
-    for (const searchName of SEARCH_TOOL_NAMES) {
-      if (name.toLowerCase().includes(searchName.toLowerCase())) return true;
-    }
+    if (SEARCH_TOOL_NAMES.has(name)) return true;
   }
   return false;
 }

@@ -9,7 +9,7 @@ import { errorPart } from "./artifacts";
 import { createTurnService, TurnServiceError } from "./turn-service";
 import { buildAgentContext, trimRecentMessages } from "./context-builder";
 import { parseConversationState } from "./conversation-state";
-import { normalizeCitations, detectSearchToolCall } from "@/lib/tbox/citations";
+import { normalizeCitations } from "@/lib/tbox/citations";
 import { createProfileMutationService } from "@/lib/profile/profile-mutation-service";
 import { createMemoryProposalService } from "@/lib/memory/proposal-service";
 import type { TboxHistoryMessage } from "@/lib/tbox/types";
@@ -221,7 +221,6 @@ async function handleStatefulStream(
         });
 
         // 调用百宝箱——传入历史、上下文和搜索策略
-        const toolNames = new Set<string>();
         const aiResponse = await streamChatWithTboxProgressive(
           {
             question: prepared.enhancedQuestion,
@@ -275,8 +274,8 @@ async function handleStatefulStream(
           assistantResult.warnings.push(...agentResponseResult.warnings);
         }
 
-        // 归一化 citations
-        const hasSearchTool = detectSearchToolCall(toolNames);
+        // 归一化 citations：搜索检测基于 per-turn searchPolicy（required 时启用搜索）
+        const hasSearchTool = searchPolicy === "required";
         const citations = normalizeCitations(assistantResult.citations, hasSearchTool);
 
         // 创建 artifacts
