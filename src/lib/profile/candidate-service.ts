@@ -16,12 +16,26 @@ export const ALLOWED_CANDIDATE_FIELDS = new Set([
   "experienceSummary",
   "interestTags",
   "constraints",
+  "patch",
   "abilityScores.aiTooling",
   "abilityScores.roleFoundation",
   "abilityScores.dataAnalysis",
   "abilityScores.businessProduct",
   "abilityScores.communication",
   "abilityScores.projectPractice",
+]);
+
+/** patch 模式可展开的原子字段 */
+const PATCHABLE_FIELDS = new Set([
+  "educationStage",
+  "major",
+  "targetRole",
+  "targetRoleLabel",
+  "weeklyAvailableHours",
+  "learningPreference",
+  "experienceSummary",
+  "interestTags",
+  "constraints",
 ]);
 
 // ── 错误 ────────────────────────────────────────────────
@@ -111,7 +125,7 @@ export function createCandidateService(): CandidateService {
         if (action === "reject") {
           const updated = await transaction.profileUpdateCandidate.update({
             where: { id: candidateId },
-            data: { status: "rejected" },
+            data: { status: "rejected", resolvedAt: new Date() },
           });
           return {
             id: updated.id,
@@ -133,7 +147,31 @@ export function createCandidateService(): CandidateService {
           throw new CandidateServiceError("候选值不合法", "INVALID_VALUE", 400);
         }
 
-        if (targetField.startsWith("abilityScores.")) {
+        // patch 模式：展开为原子字段逐字段安全合并
+        if (targetField === "patch") {
+          const patchObj = parsed as Record<string, unknown>;
+          const updateData: Record<string, unknown> = {};
+          for (const [key, value] of Object.entries(patchObj)) {
+            if (!PATCHABLE_FIELDS.has(key)) continue;
+            if (value === null || value === undefined) continue;
+            const validated = validatedProfileValue(key, value);
+            updateData[key] = Array.isArray(validated) ? toJson(validated) : validated;
+          }
+          // targetRole 和 targetRoleLabel 原子更新
+          if (patchObj.targetRole && !patchObj.targetRoleLabel) {
+            delete updateData.targetRole;
+          }
+          if (patchObj.targetRoleLabel && !patchObj.targetRole) {
+            delete updateData.targetRoleLabel;
+          }
+          if (Object.keys(updateData).length > 0) {
+            updateData.version = { increment: 1 };
+            await transaction.userProfile.update({
+              where: { userId },
+              data: updateData,
+            });
+          }
+        } else if (targetField.startsWith("abilityScores.")) {
           const abilityKey = targetField.split(".")[1];
           if (!abilityKeys.includes(abilityKey as (typeof abilityKeys)[number])) {
             throw new CandidateServiceError(
@@ -162,7 +200,7 @@ export function createCandidateService(): CandidateService {
           currentScores[abilityKey as keyof AbilityScores] = score;
           await transaction.userProfile.update({
             where: { userId },
-            data: { abilityScores: toJson(currentScores) },
+            data: { abilityScores: toJson(currentScores), version: { increment: 1 } },
           });
         } else {
           const validated = validatedProfileValue(targetField, parsed);
@@ -191,6 +229,7 @@ export function createCandidateService(): CandidateService {
           where: { id: candidateId },
           data: {
             status: "accepted",
+            resolvedAt: new Date(),
             ...(action === "edit" ? { newValue: resolvedValue } : {}),
           },
         });

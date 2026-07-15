@@ -74,10 +74,23 @@ function extractMajor(message: string) {
 }
 
 function extractHours(message: string) {
-  const match = message.match(/(?:每周|一周|每星期|weekly)\s*(?:能|可|可以|大概)?\s*(?:投入|学习|安排)?\s*(\d{1,2}(?:\.\d+)?)\s*(?:个)?(?:小时|h\b)/i);
-  if (!match) return undefined;
-  const value = Number(match[1]);
-  return Number.isInteger(value) && value >= 1 && value <= 40 ? value : undefined;
+  // 匹配多种小时表达：带前缀"每周10小时"、纯数字"10个小时吧"、"大概10个小时"等
+  const patterns = [
+    // 带时间单位前缀
+    /(?:每周|一周|每星期|weekly)\s*(?:能|可|可以|大概)?\s*(?:投入|学习|安排)?\s*(\d{1,2}(?:\.\d+)?)\s*(?:个)?(?:小时|h\b)/i,
+    // 纯数字+小时（无前缀）——如"10个小时吧"、"大概10小时"
+    /(?:大概|大约|差不多|可能)?\s*(\d{1,2})\s*个?(?:小时|h\b)/i,
+    // 结尾纯数字——如"10"、"10个"（在关于时间的问题语境下）
+    /(?:^|\s)(\d{1,2})\s*个?\s*$/m,
+  ];
+  for (const pattern of patterns) {
+    const match = message.match(pattern);
+    if (match) {
+      const value = Number(match[1]);
+      if (Number.isInteger(value) && value >= 1 && value <= 40) return value;
+    }
+  }
+  return undefined;
 }
 
 function extractExperience(message: string) {

@@ -59,15 +59,31 @@ export function createSummaryService(): SummaryService {
       if (!conv) return { should: false, messageCount: 0 };
 
       // 计算上次摘要后的 completed 消息数
-      const where: Record<string, unknown> = {
-        conversationId,
-        status: "completed",
-      };
+      let count: number;
       if (conv.lastSummarizedMessageId) {
-        where.createdAt = { gt: new Date(0) }; // 简化：实际应用需要按时间过滤
+        // 获取上次摘要消息的时间戳，只统计其后的消息
+        const lastSummarized = await db.chatMessage.findUnique({
+          where: { id: conv.lastSummarizedMessageId },
+          select: { createdAt: true },
+        });
+        if (lastSummarized) {
+          count = await db.chatMessage.count({
+            where: {
+              conversationId,
+              status: "completed",
+              createdAt: { gt: lastSummarized.createdAt },
+            },
+          });
+        } else {
+          count = await db.chatMessage.count({
+            where: { conversationId, status: "completed" },
+          });
+        }
+      } else {
+        count = await db.chatMessage.count({
+          where: { conversationId, status: "completed" },
+        });
       }
-
-      const count = await db.chatMessage.count({ where: where as any });
 
       return {
         should: count >= SUMMARY_MESSAGE_THRESHOLD,

@@ -2,7 +2,7 @@ import { prepareCareerChat } from "./server";
 import { createChatService, type ChatService } from "./service";
 import { streamChatWithTboxProgressive } from "@/lib/tbox/streaming";
 import { parseStructuredAssistantResult, parseTerminalAgentResponse } from "@/lib/tbox/structured-result";
-import { getTboxConfig, isStatefulChatTurns, isAgentOperationsEnabled } from "@/lib/env";
+import { getTboxConfig, isStatefulChatTurns } from "@/lib/env";
 import { writeSseEvent } from "./sse";
 import { createArtifactsForChat } from "./artifact-service";
 import { errorPart } from "./artifacts";
@@ -251,27 +251,33 @@ async function handleStatefulStream(
         finalMeta = aiResponse.meta as unknown as Record<string, unknown>;
         remoteConversationId = aiResponse.data.conversationId ?? remoteConversationId;
 
-        // 解析结构化结果
-        const assistantResult = parseStructuredAssistantResult(aiResponse.data);
-
-        // 归一化 citations
-        const hasSearchTool = detectSearchToolCall(toolNames);
-        const citations = normalizeCitations(assistantResult.citations, hasSearchTool);
-
-        // 解析 AgentResponse（如果 AGENT_OPERATIONS_V1 开启）
+        // ── AgentResponse 解析（必须先于旧 capability parser，防止 structured 被清除）──
+        // 正式主聊天直接从百宝箱显式 terminal structured 字段校验 agentResponseSchema
+        // 绝不从 text/Markdown/代码块提取，正文 JSON 零副作用
         let agentResponse: import("./agent-protocol").AgentResponse | undefined;
-        if (isAgentOperationsEnabled()) {
-          const parsed = parseTerminalAgentResponse(assistantResult);
-          agentResponse = parsed.response;
-          if (parsed.warnings.length > 0) {
-            assistantResult.warnings.push(...parsed.warnings);
-          }
+        const agentResponseResult = parseTerminalAgentResponse(aiResponse.data);
 
-          // 处理 Agent operations
+        // TBOX_STRUCTURED_MODE 控制：disabled 时零业务写入
+        if (config.structuredMode !== "disabled") {
+          agentResponse = agentResponseResult.response;
+
+          // 处理 Agent operations（仅可信 structured mode 下执行）
           if (agentResponse?.operations && agentResponse.operations.length > 0) {
             await processAgentOperations(userId, conversationId, turn.assistantMessageId, message, agentResponse.operations);
           }
         }
+
+        // 解析结构化结果（旧 capability parser——仅用于 artifact 卡片生成）
+        const assistantResult = parseStructuredAssistantResult(aiResponse.data);
+
+        // 将 AgentResponse warnings 合并到 assistantResult
+        if (agentResponseResult.warnings.length > 0) {
+          assistantResult.warnings.push(...agentResponseResult.warnings);
+        }
+
+        // 归一化 citations
+        const hasSearchTool = detectSearchToolCall(toolNames);
+        const citations = normalizeCitations(assistantResult.citations, hasSearchTool);
 
         // 创建 artifacts
         const parts = await createArtifactsForChat({
@@ -747,7 +753,53 @@ async function processAgentOperations(
         });
       }
 
-      // plan_draft 和 exploration_report 由 artifact-service 处理
+      if (op.type === "plan_draft") {
+        // 持久化 Plan V2 draft → pending 状态
+        try {
+          const { getPrisma } = await import("@/lib/prisma");
+          const db = getPrisma();
+          const planData = op.plan as Record<string, unknown>;
+          await db.careerPlan.create({
+            data: {
+              userId,
+              targetRole: (planData.targetRole as any)?.key ?? "unknown",
+              version: 1,
+              status: "pending",
+              schemaVersion: 2,
+              content: JSON.stringify(op.plan),
+              targetRoleLabel: (planData.targetRole as any)?.label ?? null,
+              years: "[]",
+              quarters: "[]",
+              months: "[]",
+              currentMonthIndex: 0,
+              assumptions: JSON.stringify((planData as any)?.assumptions ?? []),
+              riskNotes: JSON.stringify((planData as any)?.riskNotes ?? []),
+              generationMeta: JSON.stringify({
+                triggeredBy: "chat",
+                conversationId,
+                source: "agent_operation",
+              }),
+            },
+          });
+        } catch { /* plan_draft 持久化失败不影响其他 */ }
+      }
+
+      if (op.type === "exploration_report") {
+        // 持久化探索报告到 progressLog（careerExploration 表不存在，使用 progressLog）
+        try {
+          const { getPrisma } = await import("@/lib/prisma");
+          const db = getPrisma();
+          await db.progressLog.create({
+            data: {
+              userId,
+              eventType: "exploration_report",
+              title: "职业探索报告",
+              summary: JSON.stringify(op.report).slice(0, 500),
+              metadata: JSON.stringify({ conversationId, sourceMessageId }),
+            },
+          });
+        } catch { /* exploration_report 持久化失败不影响其他 */ }
+      }
     } catch {
       // 单个 operation 失败不影响其他
     }
