@@ -14,7 +14,7 @@ describe("non-stream chat normalization", () => {
           ],
         },
       }),
-    ).toEqual({ text: "真实百宝箱回答", conversationId: "conversation-live", citations: [], warnings: [] });
+    ).toEqual({ text: "真实百宝箱回答", conversationId: "conversation-live", citations: [], warnings: [], structured: undefined, toolCalls: [] });
   });
 
   it.each([
@@ -33,6 +33,6 @@ describe("non-stream chat normalization", () => {
           ],
         },
       }),
-    ).toEqual({ text: "第一段\n第二段", conversationId: "conversation-1", citations: [], warnings: [] });
+    ).toEqual({ text: "第一段\n第二段", conversationId: "conversation-1", citations: [], warnings: [], structured: undefined, toolCalls: [] });
   });
 });

@@ -46,10 +46,22 @@ export type AgentQuestion = z.infer<typeof agentQuestionSchema>;
 
 // ── AgentSourceRef ───────────────────────────────
 
+/** 来源类型：知识库检索 / 联网搜索 / AI推断 */
 export const agentSourceRefSchema = z.object({
   id: z.string().trim().min(1).max(120),
-  kind: z.enum(["citation", "ai_inference"]),
+  /** 来源分类：knowledge_base（知识库）/ web_search（联网搜索）/ ai_inference（AI推断） */
+  kind: z.enum(["knowledge_base", "web_search", "ai_inference"]),
+  /** 在 citations 数组中的索引（从0开始），与 NormalizedCitation.providerIndex 对齐 */
   citationIndex: z.number().int().min(0).optional(),
+  /** 工具类型（如 knowledge/夸克搜索），匹配 agentic_tool_start.toolType */
+  toolType: z.string().trim().max(60).optional(),
+  /** 来源标题 */
+  title: z.string().trim().max(240).optional(),
+  /** 外部 URL（仅在 web_search 且 URL 校验通过时设置） */
+  url: z.string().url().max(2000).optional(),
+  /** 相关度分数（知识库检索时填写） */
+  relevance: z.number().min(0).max(1).optional(),
+  /** 补充说明 */
   note: z.string().trim().max(500).optional(),
 }).strict();
 

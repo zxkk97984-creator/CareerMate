@@ -28,7 +28,7 @@ export interface ProbeObservation {
   text: string;
   conversationId?: string;
   eventNames: string[];
-  /** 工具名称列表（来自 tool_start/tool_end 事件） */
+  /** 工具类型列表（来自 agentic_tool_start/agentic_tool_end 事件的 toolType 字段） */
   toolNames: string[];
   citations: CitationObservation[];
   structured?: unknown;

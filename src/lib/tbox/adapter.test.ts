@@ -53,7 +53,7 @@ describe("Tbox fallback adapter", () => {
     );
 
     expect(result).toEqual({
-      data: { text: "API answer", conversationId: "conversation-2", citations: [], warnings: [] },
+      data: { text: "API answer", conversationId: "conversation-2", citations: [], warnings: [], structured: undefined, toolCalls: [] },
       meta: {
         requestedMode: "api",
         actualMode: "api",

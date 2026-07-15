@@ -134,3 +134,86 @@ export function resolveRoleIdentity(
 export function roleKeyFromName(raw: string): string {
   return resolveRoleIdentity(raw).key;
 }
+
+// ── 数据库别名扩展 ──────────────────────────────
+
+/** 从数据库加载 RoleTemplate.aliases，与内存 SEED_ALIASES 合并 */
+async function loadDbAliases(): Promise<Record<string, { key: string; label: string }>> {
+  try {
+    const { getPrisma } = await import("@/lib/prisma");
+    const db = getPrisma();
+    const templates = await db.roleTemplate.findMany({
+      select: { roleKey: true, roleName: true, aliases: true },
+    });
+    const merged: Record<string, { key: string; label: string }> = { ...SEED_ALIASES };
+    for (const t of templates) {
+      if (!t.aliases) continue;
+      let aliases: string[];
+      try {
+        aliases = typeof t.aliases === "string" ? JSON.parse(t.aliases) : t.aliases;
+        if (!Array.isArray(aliases)) continue;
+      } catch { continue; }
+      for (const alias of aliases) {
+        if (typeof alias !== "string" || !alias.trim()) continue;
+        const normalized = normalizeName(alias);
+        if (normalized && !merged[normalized]) {
+          merged[normalized] = { key: t.roleKey, label: t.roleName };
+        }
+      }
+    }
+    return merged;
+  } catch {
+    return { ...SEED_ALIASES };
+  }
+}
+
+/** 缓存的合并别名表（首次调用时从 DB 加载） */
+let cachedMergedAliases: Record<string, { key: string; label: string }> | null = null;
+
+/**
+ * 从任意原始输入解析角色身份（异步版，会查询数据库别名）
+ * 已知别名返回 verified_template，否则生成 custom key，标记 unverified
+ */
+export async function resolveRoleIdentityAsync(
+  raw: string,
+  options?: { templateId?: string; coverage?: RoleCoverage },
+): Promise<RoleIdentity> {
+  // 先检查内存种子别名
+  const seed = resolveSeedRoleAlias(raw);
+  if (seed) {
+    return {
+      ...seed,
+      templateId: options?.templateId,
+      coverage: options?.coverage ?? seed.coverage,
+    };
+  }
+
+  // 加载数据库别名（缓存）
+  if (!cachedMergedAliases) {
+    cachedMergedAliases = await loadDbAliases();
+  }
+
+  // 检查数据库别名
+  const normalized = normalizeName(raw);
+  const compact = normalizeNameCompact(raw);
+  const dbEntry = cachedMergedAliases[normalized] ?? cachedMergedAliases[compact];
+  if (dbEntry) {
+    return {
+      key: dbEntry.key,
+      label: dbEntry.label,
+      normalizedLabel: dbEntry.label,
+      coverage: "verified_template",
+      templateId: options?.templateId,
+    };
+  }
+
+  const key = stableCustomRoleKey(raw);
+  const label = raw.normalize("NFKC").trim();
+  return {
+    key,
+    label,
+    normalizedLabel: label,
+    coverage: options?.coverage ?? "unverified",
+    templateId: options?.templateId,
+  };
+}

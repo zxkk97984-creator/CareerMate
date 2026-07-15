@@ -17,12 +17,17 @@ function responseData(input: unknown) {
   return { root, data: record(root.result) ?? record(root.data) ?? root };
 }
 
+/**
+ * 从非流式响应数据中提取结构化结果
+ * 注意：真实 API 的 completed 事件不返回 variables.result 字段，
+ * 仅历史兼容保留 data.result 和 data.variables.result 的检查
+ */
 function extractStructured(data: Record<string, unknown>): unknown | undefined {
-  // variables.result 优先
-  const variables = record(data.variables);
-  if (variables && variables.result !== undefined) return variables.result;
   // 直接 result 字段
   if (data.result !== undefined) return data.result;
+  // 历史兼容：variables.result（真实 API 不返回此字段）
+  const variables = record(data.variables);
+  if (variables && variables.result !== undefined) return variables.result;
   return undefined;
 }
 
@@ -62,13 +67,13 @@ export function normalizeNonStreamChatResponse(input: unknown): NormalizedAssist
   }
   const text = parts.join("\n");
 
-  // 提取结构化结果
+  // 提取结构化结果（真实 API 中通常为 undefined）
   const structured = extractStructured(data);
 
   // 文本和结构化结果都没有时才异常
   if (!text && structured === undefined) throw new TboxError("invalid_response");
 
-  return { text, structured, conversationId, citations: [], warnings };
+  return { text, structured, conversationId, citations: [], warnings, toolCalls: [] };
 }
 
 export function normalizeRetrievalResponse(input: unknown): RetrievalItem[] {

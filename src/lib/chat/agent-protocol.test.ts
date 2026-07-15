@@ -182,11 +182,24 @@ describe("agentQuestionSchema", () => {
 });
 
 describe("agentSourceRefSchema", () => {
-  it("accepts citation ref", () => {
+  it("accepts knowledge_base ref", () => {
     const result = agentSourceRefSchema.safeParse({
       id: "ref1",
-      kind: "citation",
+      kind: "knowledge_base",
       citationIndex: 0,
+      toolType: "knowledge",
+      title: "DBA技能要求",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts web_search ref with url", () => {
+    const result = agentSourceRefSchema.safeParse({
+      id: "ref2",
+      kind: "web_search",
+      citationIndex: 1,
+      url: "https://example.com/dba-skills",
+      title: "DBA Skills Guide",
     });
     expect(result.success).toBe(true);
   });
