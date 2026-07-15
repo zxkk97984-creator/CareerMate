@@ -70,6 +70,9 @@ export function planDto(plan: {
   riskNotes: string;
   generationMeta: string;
   sourceReportId: string | null;
+  schemaVersion?: number;
+  content?: string | null;
+  targetRoleLabel?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }): CareerPlanDto {
@@ -93,6 +96,9 @@ export function planDto(plan: {
       triggeredBy: "manual" as const,
     }),
     sourceReportId: plan.sourceReportId,
+    schemaVersion: plan.schemaVersion ?? 1,
+    content: plan.content ?? null,
+    targetRoleLabel: plan.targetRoleLabel ?? null,
     createdAt: plan.createdAt.toISOString(),
     updatedAt: plan.updatedAt.toISOString(),
   };

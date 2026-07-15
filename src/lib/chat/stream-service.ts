@@ -758,12 +758,18 @@ async function processAgentOperations(
         try {
           const { getPrisma } = await import("@/lib/prisma");
           const db = getPrisma();
+          // 获取当前最高版本号后自增
+          const latest = await db.careerPlan.findFirst({
+            where: { userId },
+            orderBy: { version: "desc" },
+            select: { version: true },
+          });
           const planData = op.plan as Record<string, unknown>;
           await db.careerPlan.create({
             data: {
               userId,
               targetRole: (planData.targetRole as any)?.key ?? "unknown",
-              version: 1,
+              version: (latest?.version ?? 0) + 1,
               status: "pending",
               schemaVersion: 2,
               content: JSON.stringify(op.plan),

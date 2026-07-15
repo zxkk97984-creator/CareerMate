@@ -31,16 +31,11 @@ export async function POST(
 
   if (input.data.action === "accept") {
     await db.$transaction(async (tx) => {
-      // 归档当前 active 计划
-      const active = await tx.careerPlan.findFirst({
-        where: { userId: user.id, status: "active", targetRole: pending.targetRole },
+      // 归档该用户所有旧的 active 计划（任意时刻最多一个 active）
+      await tx.careerPlan.updateMany({
+        where: { userId: user.id, status: "active" },
+        data: { status: "archived" },
       });
-      if (active) {
-        await tx.careerPlan.update({
-          where: { id: active.id },
-          data: { status: "archived" },
-        });
-      }
 
       // 激活 pending
       await tx.careerPlan.update({
@@ -49,6 +44,12 @@ export async function POST(
           status: "active",
           activatedAt: new Date(),
         },
+      });
+
+      // 令相关会话 contextVersion 失效，强制刷新上下文
+      await tx.chatConversation.updateMany({
+        where: { userId: user.id, status: { not: "deleted" } },
+        data: { contextVersion: { increment: 1 } },
       });
     });
 

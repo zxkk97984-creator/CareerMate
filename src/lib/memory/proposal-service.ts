@@ -35,6 +35,12 @@ export function createMemoryProposalService(): MemoryProposalService {
     async processProposal(input) {
       const { userId, conversationId, sourceMessageId, content, kind, sourceKind, confidence, reason, sensitivity } = input;
 
+      // memoryEnabled=false 时零记忆写入
+      const profile = await db.userProfile.findUnique({ where: { userId }, select: { memoryEnabled: true } });
+      if (!profile?.memoryEnabled) {
+        return { action: "rejected", reason: "memory_disabled" };
+      }
+
       // 内容校验
       if (!content || content.trim().length < 3) {
         return { action: "rejected", reason: "content_too_short" };

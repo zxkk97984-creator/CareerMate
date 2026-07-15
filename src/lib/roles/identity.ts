@@ -17,6 +17,12 @@ const SEED_ALIASES: Record<string, { key: string; label: string }> = {
   // 数据分析师（种子职业）
   "数据分析师": { key: "data_analyst", label: "数据分析师" },
   "data analyst": { key: "data_analyst", label: "数据分析师" },
+  // AIGC 内容运营（种子职业）
+  "aigc内容运营": { key: "aigc_operator", label: "AIGC 内容运营" },
+  "aigc 内容运营": { key: "aigc_operator", label: "AIGC 内容运营" },
+  "aigc运营": { key: "aigc_operator", label: "AIGC 内容运营" },
+  "ai内容运营": { key: "aigc_operator", label: "AIGC 内容运营" },
+  "ai 内容运营": { key: "aigc_operator", label: "AIGC 内容运营" },
 };
 
 // ── 辅助函数 ────────────────────────────────────
@@ -59,6 +65,7 @@ export const seedRoleKeys = [
   "database_administrator",
   "ai_product_manager",
   "data_analyst",
+  "aigc_operator",
 ] as const;
 
 /**

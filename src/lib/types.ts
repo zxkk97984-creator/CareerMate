@@ -80,14 +80,23 @@ export interface CareerPlanDto {
   targetRole: string;
   version: number;
   status: string;
+  /** V1 兼容字段（V2 计划中为空数组） */
   years: Array<Record<string, unknown>>;
+  /** V1 兼容字段（V2 计划中为空数组） */
   quarters: Array<Record<string, unknown>>;
+  /** V1 兼容字段（V2 计划中为空数组） */
   months: Array<Record<string, unknown>>;
   currentMonthIndex: number;
   assumptions: string[];
   riskNotes: string[];
   generationMeta: PlanGenerationMeta;
   sourceReportId: string | null;
+  /** Plan V2：schema 版本号（1=V1固定36月，2=V2灵活周期） */
+  schemaVersion: number;
+  /** Plan V2：AI 返回的完整计划 JSON 字符串 */
+  content: string | null;
+  /** Plan V2：目标岗位显示名称 */
+  targetRoleLabel: string | null;
   createdAt: string;
   updatedAt: string;
 }
