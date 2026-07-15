@@ -53,9 +53,7 @@ export interface ChatTurnService {
 
 // ── 桩实现（完整实现在 Task 10）─────────────────
 
-export function createTurnService(_deps: {
-  getPrisma: () => unknown;
-  getCurrentContext: (conversationId: string) => unknown;
-}): ChatTurnService {
+export function createTurnService(_opts?: Record<string, unknown>): ChatTurnService {
+  void _opts;
   throw new Error("TurnService 完整实现在 Task 10 中完成");
 }
