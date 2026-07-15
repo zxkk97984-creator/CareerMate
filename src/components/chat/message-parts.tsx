@@ -14,6 +14,7 @@ import { requireApiOk } from "@/lib/client-api";
 
 interface MessagePartsProps {
   parts: ChatMessagePart[];
+  onQuickAction?: (actionId: string, value: string) => void;
 }
 
 function CitationList({ items }: { items: ChatMessagePart & { type: "citations" } }) {
@@ -327,7 +328,7 @@ function ErrorPart({ code, message }: { code: string; message: string }) {
   );
 }
 
-export function MessageParts({ parts }: MessagePartsProps) {
+export function MessageParts({ parts, onQuickAction }: MessagePartsProps) {
   if (!parts || parts.length === 0) return null;
 
   return (
@@ -360,7 +361,7 @@ export function MessageParts({ parts }: MessagePartsProps) {
                 questionId={q.questionId}
                 actions={q.actions}
                 status={q.status}
-                onSelect={() => {}} // 由 chat-thread 外层控制
+                onSelect={(actionId, value) => onQuickAction?.(actionId, value)}
               />
             );
           }

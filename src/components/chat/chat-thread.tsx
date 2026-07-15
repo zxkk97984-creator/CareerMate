@@ -11,6 +11,7 @@ interface ChatThreadProps {
   messages: MessageItem[];
   activeConversationId: string | null;
   onNewChat: (initialMessage?: string) => void;
+  onQuickAction?: (actionId: string, value: string) => void;
 }
 
 const SUGGESTED_QUESTIONS = [
@@ -20,7 +21,7 @@ const SUGGESTED_QUESTIONS = [
   "帮我制定一个3个月的学习计划",
 ];
 
-export function ChatThread({ messages, activeConversationId, onNewChat }: ChatThreadProps) {
+export function ChatThread({ messages, activeConversationId, onNewChat, onQuickAction }: ChatThreadProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // 自动滚动到底部
@@ -82,7 +83,7 @@ export function ChatThread({ messages, activeConversationId, onNewChat }: ChatTh
                 <p className="message-text streaming-cursor">思考中...</p>
               ) : null}
               {msg.parts && msg.parts.length > 0 && (
-                <MessageParts parts={msg.parts as ChatMessagePart[]} />
+                <MessageParts parts={msg.parts as ChatMessagePart[]} onQuickAction={onQuickAction} />
               )}
             </div>
             {msg.status === "failed" && (

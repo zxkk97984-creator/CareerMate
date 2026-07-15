@@ -125,34 +125,32 @@ export function ChatHomePage({ displayName }: ChatHomePageProps) {
     };
     setMessages(prev => [...prev, assistantMsg]);
 
-    // 发起SSE流式请求
-    const response = await fetch(`/api/chat/conversations/${cid}/stream`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text, clientRequestId }),
-    });
-
-    if (!response.ok || !response.body) {
-      const errorMessage = response.status === 409
-        ? "当前回复仍在生成，请稍候"
-        : "发送失败";
-      const errorCode = response.status === 409 ? "TURN_IN_PROGRESS" : "HTTP_ERROR";
-      setMessages(prev =>
-        prev.map(m => m.id === assistantMsg.id
-          ? { ...m, status: "failed", parts: [{ type: "error", code: errorCode, message: errorMessage }] }
-          : m,
-        ),
-      );
-      streamingRef.current = false;
-      setIsStreaming(false);
-      return;
-    }
-
-    // 使用共享 SSE 消费器，正确处理跨网络 chunk 拆分的 event/data。
+    // 发起SSE流式请求（整个 fetch + SSE 消费在 try/finally 内，防止网络异常导致永久 streaming=true）
     let assistantContent = "";
     let sseResult: FrontendSseResult | null = null;
 
     try {
+      const response = await fetch(`/api/chat/conversations/${cid}/stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text, clientRequestId }),
+      });
+
+      if (!response.ok || !response.body) {
+        const errorMessage = response.status === 409
+          ? "当前回复仍在生成，请稍候"
+          : "发送失败";
+        const errorCode = response.status === 409 ? "TURN_IN_PROGRESS" : "HTTP_ERROR";
+        setMessages(prev =>
+          prev.map(m => m.id === assistantMsg.id
+            ? { ...m, status: "failed", parts: [{ type: "error", code: errorCode, message: errorMessage }] }
+            : m,
+          ),
+        );
+        // 不 throw，直接返回；finally 会清理 streaming 状态
+      } else {
+
+      // 使用共享 SSE 消费器
       sseResult = await consumeFrontendSseResponse(response, {
         onDelta(content) {
           assistantContent += content;
@@ -183,6 +181,7 @@ export function ChatHomePage({ displayName }: ChatHomePageProps) {
           : m,
         ),
       );
+    } // end else (response.ok)
     } catch {
       setMessages(prev =>
         prev.map(m => m.id === assistantMsg.id
@@ -190,10 +189,11 @@ export function ChatHomePage({ displayName }: ChatHomePageProps) {
           : m,
         ),
       );
+    } finally {
+      streamingRef.current = false;
+      setIsStreaming(false);
+      requestIdRef.current = null; // 重置请求 ID 用于下次发送
     }
-
-    streamingRef.current = false;
-    setIsStreaming(false);
 
     // 刷新会话列表以获取更新的标题
     loadConversations();
@@ -328,6 +328,14 @@ export function ChatHomePage({ displayName }: ChatHomePageProps) {
           messages={messages}
           activeConversationId={activeConversationId}
           onNewChat={handleNewChat}
+          onQuickAction={(actionId, value) => {
+            // 快捷动作：发送 value 作为用户消息
+            if (activeConversationId) {
+              doSend(activeConversationId, value);
+            } else {
+              handleNewChat(value);
+            }
+          }}
         />
 
         {lastAssistantMeta?.degraded && (
