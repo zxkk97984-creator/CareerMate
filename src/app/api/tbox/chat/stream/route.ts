@@ -1,3 +1,7 @@
+/**
+ * @deprecated 诊断/测试专用——非产品聊天入口。
+ * 产品聊天请使用 /api/chat/conversations/[id]/stream。
+ */
 import { fail } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
 import { prepareCareerChat } from "@/lib/chat/server";

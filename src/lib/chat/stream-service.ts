@@ -35,7 +35,6 @@ export async function handleStreamRequest(
   options: StreamingOptions,
   service?: ChatService,
 ): Promise<Response> {
-  const { userId, conversationId, message, clientRequestId, actionId, signal } = options;
   const svc = service ?? createChatService();
   const config = getTboxConfig();
 

@@ -4,7 +4,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Gauge, Menu } from "lucide-react";
 import { SimulationView } from "@/features/simulation/simulation-view";
-import { ChatView } from "@/features/chat/chat-view";
+// 旧 ChatView 已废弃，请使用 src/components/chat/chat-home.tsx 的主聊天入口
+// import { ChatView } from "@/features/chat/chat-view";
 import { DashboardView } from "@/features/dashboard/dashboard-view";
 import { OnboardingView } from "@/features/onboarding/onboarding-view";
 import { PathView } from "@/features/path/path-view";
@@ -198,7 +199,11 @@ export function Workspace({ initialView, isAdmin = false }: { initialView: View;
           {activeView === "simulation" && <SimulationView simulations={data.simulations} refresh={loadAll} setNotice={setNotice} />}
           {activeView === "resources" && <ResourceView resources={data.resources} profile={data.profile} weakAbilities={data.match?.weakAbilities ?? []} />}
           {activeView === "memory" && <MemoryView memories={data.memories} candidates={data.candidates} memoryEnabled={data.profile.memoryEnabled} refresh={loadAll} setNotice={setNotice} />}
-          {activeView === "chat" && <ChatView setNotice={setNotice} />}
+          {activeView === "chat" && (
+            <div className="p-8 text-center text-muted-foreground">
+              聊天功能已迁移到首页，请返回首页开始对话。
+            </div>
+          )}
           {activeView === "admin" && <AdminView drafts={data.drafts} templates={data.templates} refresh={loadAll} setNotice={setNotice} />}
           </div>
         </div>
