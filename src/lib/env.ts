@@ -2,7 +2,8 @@ import type { TboxMode } from "@/lib/types";
 import type { TboxConfig, TboxHistoryMode, TboxContextTransport, TboxStructuredMode } from "@/lib/tbox/types";
 
 function read(name: string, fallback = "") {
-  return process.env[name] ?? fallback;
+  const value = process.env[name];
+  return value?.trim() ? value : fallback;
 }
 
 function readBoolean(name: string, fallback: boolean) {
@@ -21,7 +22,8 @@ function readHistoryMode(): TboxHistoryMode {
 }
 
 function readContextTransport(): TboxContextTransport {
-  const value = read("TBOX_CONTEXT_TRANSPORT", "business_data").trim().toLowerCase();
+  // 2026-07-15 探针：business_data 未生效，默认使用 question_prefix
+  const value = read("TBOX_CONTEXT_TRANSPORT", "question_prefix").trim().toLowerCase();
   return value === "question_prefix" ? "question_prefix" : "business_data";
 }
 

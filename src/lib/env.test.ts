@@ -49,11 +49,11 @@ describe("tbox environment config", () => {
     expect(config.historyMode).toBe("context_only");
   });
 
-  it("defaults context transport to business_data", async () => {
+  it("defaults context transport to question_prefix（2026-07-15 探针结果）", async () => {
     vi.stubEnv("TBOX_CONTEXT_TRANSPORT", "");
     const { getTboxConfig } = await import("./env");
     const config = getTboxConfig();
-    expect(config.contextTransport).toBe("business_data");
+    expect(config.contextTransport).toBe("question_prefix");
   });
 
   it("reads context transport question_prefix", async () => {

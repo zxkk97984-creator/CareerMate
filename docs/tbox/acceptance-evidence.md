@@ -100,46 +100,57 @@ npm.cmd run test:e2e
 - 当前产品请求：**依赖 conversation_id 维持多轮上下文**，未发送本地 history/context 作为权威状态源。
 - 结构化输出（variables.result）：**agent_response 结构未验证**。未知百宝箱是否能在同轮 SSE 流中同时返回正文和结构化 JSON。
 
-## 2026-07-15 百宝箱契约探针（Phase 0 Task 2）
+## 2026-07-15 百宝箱契约探针（Phase 0 Task 2 v2）
 
-> 提交：待 Task 2 commit
-> 状态：探针脚本已完成，等待真实 API 运行
+> 提交：见 Task 2 最终 commit
+> 探针运行时间：2026-07-15T13:08 UTC
+> 运行方式：`npm run tbox:probe -- --yes`（确认门已通过）
 
-### 新增文件与修改
+### 新增/修改文件
 
 | 文件 | 变更类型 | 说明 |
 |------|----------|------|
-| `scripts/tbox-chat-contract-probe.ts` | 新建 | 8 场景脱敏探针脚本 |
-| `src/lib/tbox/client.ts` | 修改 | 新增 `SafeProbeResult` 接口和 `sanitizeProbeResult()` 函数 |
-| `src/lib/tbox/types.ts` | 修改 | 新增 `TboxHistoryMode`、`TboxContextTransport`、`TboxStructuredMode` 类型 |
-| `src/lib/env.ts` | 修改 | 新增 `TBOX_HISTORY_MODE`、`TBOX_CONTEXT_TRANSPORT`、`TBOX_STRUCTURED_MODE` 读取逻辑 |
-| `src/lib/env.test.ts` | 修改 | 新增 7 个配置项测试（默认值、显式值、无效值回退） |
-| `src/lib/tbox/client.test.ts` | 修改 | 新增 5 个 `SafeProbeResult` 脱敏测试 |
-| `package.json` | 修改 | 新增 `tbox:probe` 脚本命令 |
-| `.env.example` | 修改 | 新增 3 个传输决策环境变量 |
+| `scripts/tbox-chat-contract-probe.ts` | 重写 | 9 场景脱敏探针 v2（loadEnvConfig + 确认门 + 统一脱敏） |
+| `src/lib/tbox/probe-judge.ts` | **新建** | 所有探针判据的纯函数模块 |
+| `src/lib/tbox/probe-judge.test.ts` | **新建** | 74 个正向+负向单元测试 |
+| `src/lib/tbox/client.ts` | 修改 | `SafeProbeResult` 接口和 `sanitizeProbeResult()` 函数 |
+| `src/lib/tbox/types.ts` | 修改 | `TboxHistoryMode`、`TboxContextTransport`、`TboxStructuredMode` 类型 |
+| `src/lib/env.ts` | 修改 | 3 个传输决策变量读取 + 默认值按探针结果调整 |
+| `src/lib/env.test.ts` | 修改 | 11 个配置项测试 |
+| `src/lib/tbox/client.test.ts` | 修改 | 5 个 SafeProbeResult 脱敏测试 |
+| 5 个 tbox 测试文件 | 修改 | 补充 TboxConfig 新字段 |
 
-### 探针矩阵（8 场景）
+### 真实探针结果（9 场景）
 
-| 探针 | 目的 | 非 api 模式行为 |
-|------|------|----------------|
-| `basic_sse` | 验证基础 SSE 流式对话 | blocked |
-| `conversation_id` | 验证连续三轮同一远端 ID | blocked |
-| `history` | 验证仅通过 history 传代号 | blocked |
-| `business_data` | 验证隐藏画像上下文传递 | blocked |
-| `text_and_result` | 验证同轮正文+结构化输出 | blocked |
-| `search_and_citation` | 验证联网搜索与 citation | blocked |
-| `invalid_conversation` | 验证伪造远端 ID 错误形态 | blocked |
-| `context_size` | 探测上下文大小上限 | blocked |
+| # | 探针 | 结果 | 详情 |
+|---|------|------|------|
+| 1 | `basic_sse` | ✅ pass | 17 个 SSE 事件，含 conversation + text_delta + done，有正文 |
+| 2 | `conversation_id` | ❌ fail | 首轮成功但后续轮次返回 5xx，无法验证多轮 ID 延续 |
+| 3 | `history` | ✅ pass | Agent 仅通过 history 字段成功复述 `CM-HISTORY-731` |
+| 4 | `business_data` | ❌ fail | Agent 未提及 DBA，business_data 中的画像信息未被读取 |
+| 5 | `text_and_result` | ❌ fail | 仅有正文，无结构化 `variables.result` |
+| 6 | `followup_structured` | ❌ fail | followup 请求也未返回结构化结果 |
+| 7 | `search_and_citation` | ❌ fail | 返回 5xx 服务端错误（搜索可能未在平台配置） |
+| 8 | `invalid_conversation` | ❌ fail | 错误形态不明确，无法提取 HTTP 状态码或错误码 |
+| 9 | `context_size` | ✅ pass | 至少支持 16000 字符（已达探测上限，不写成平台上限） |
 
-### 当前传输决策（默认值，待真实探针确认）
+### 最终传输决策
 
 ```env
-TBOX_HISTORY_MODE="provider"
-TBOX_CONTEXT_TRANSPORT="business_data"
-TBOX_STRUCTURED_MODE="terminal"
+TBOX_HISTORY_MODE="provider"           # history 探针通过，百宝箱能读取 history 字段
+TBOX_CONTEXT_TRANSPORT="question_prefix"  # business_data 探针失败，回退到用户不可见前缀
+TBOX_STRUCTURED_MODE="terminal"        # 同轮和 followup 均失败，结构化能力标记 blocked
 ```
+
+### 分支决策依据
+
+- **history 通过** → `TBOX_HISTORY_MODE="provider"`（确认）
+- **business_data 不通过** → `TBOX_CONTEXT_TRANSPORT="question_prefix"`，服务端使用用户不可见的上下文前缀，数据库仍只保存原始用户问题
+- **两种结构方式都不通过** → 保留正文、零业务写入，结构化能力标记 blocked。`TBOX_STRUCTURED_MODE` 保持 `"terminal"` 不变
 
 ### 阻塞项
 
-- **在线探针运行**：需要在 `TBOX_MODE=api` + `TBOX_SEARCH_ENGINE=true` + 有效 `.env.local` 凭证下运行 `npm run tbox:probe` 获取真实结果
-- 当前所有 8 个场景标记为 blocked（若无 api 模式凭证则无法解除）
+- **conversation_id 多轮**：首轮后 5xx 错误，需排查平台侧多轮会话配置
+- **结构化输出**：百宝箱主 Agent 当前不返回 `variables.result`，结构化业务操作不可用
+- **联网搜索**：`TBOX_SEARCH_ENGINE=true` 时返回 5xx，需确认平台是否已启用搜索插件
+- **无效会话错误码**：异常被统一脱敏后无法提取精确 HTTP 状态码，`invalid_conversation` 探针需要更细粒度的错误信息提取
