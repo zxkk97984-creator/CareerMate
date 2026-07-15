@@ -1,5 +1,5 @@
 import type { TboxMode } from "@/lib/types";
-import type { TboxConfig } from "@/lib/tbox/types";
+import type { TboxConfig, TboxHistoryMode, TboxContextTransport, TboxStructuredMode } from "@/lib/tbox/types";
 
 function read(name: string, fallback = "") {
   return process.env[name] ?? fallback;
@@ -13,6 +13,21 @@ function readBoolean(name: string, fallback: boolean) {
 
 function readRetrievalMode() {
   return read("TBOX_RETRIEVAL_MODE", "agent") === "hybrid" ? "hybrid" : "agent";
+}
+
+function readHistoryMode(): TboxHistoryMode {
+  const value = read("TBOX_HISTORY_MODE", "provider").trim().toLowerCase();
+  return value === "context_only" ? "context_only" : "provider";
+}
+
+function readContextTransport(): TboxContextTransport {
+  const value = read("TBOX_CONTEXT_TRANSPORT", "business_data").trim().toLowerCase();
+  return value === "question_prefix" ? "question_prefix" : "business_data";
+}
+
+function readStructuredMode(): TboxStructuredMode {
+  const value = read("TBOX_STRUCTURED_MODE", "terminal").trim().toLowerCase();
+  return value === "followup" ? "followup" : "terminal";
 }
 
 export function getTboxConfig(): TboxConfig {
@@ -29,6 +44,9 @@ export function getTboxConfig(): TboxConfig {
     agentVersion: read("TBOX_AGENT_VERSION") || undefined,
     searchEngine: readBoolean("TBOX_SEARCH_ENGINE", false),
     retrievalMode: readRetrievalMode(),
+    historyMode: readHistoryMode(),
+    contextTransport: readContextTransport(),
+    structuredMode: readStructuredMode(),
     chatEndpoint: read("TBOX_CHAT_ENDPOINT", "https://o.tbox.cn/openapi/v1/chat/create"),
     retrieveEndpoint: read("TBOX_RETRIEVE_ENDPOINT", "https://api.tbox.cn/api/datasets/retrieve"),
     streamTimeoutMs:

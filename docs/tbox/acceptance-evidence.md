@@ -99,3 +99,47 @@ npm.cmd run test:e2e
 - 真实百宝箱联网搜索/citation：**未验证**。当前 `TBOX_SEARCH_ENGINE` 默认为 false，未测试搜索工具调用和 citation 事件的真伪。
 - 当前产品请求：**依赖 conversation_id 维持多轮上下文**，未发送本地 history/context 作为权威状态源。
 - 结构化输出（variables.result）：**agent_response 结构未验证**。未知百宝箱是否能在同轮 SSE 流中同时返回正文和结构化 JSON。
+
+## 2026-07-15 百宝箱契约探针（Phase 0 Task 2）
+
+> 提交：待 Task 2 commit
+> 状态：探针脚本已完成，等待真实 API 运行
+
+### 新增文件与修改
+
+| 文件 | 变更类型 | 说明 |
+|------|----------|------|
+| `scripts/tbox-chat-contract-probe.ts` | 新建 | 8 场景脱敏探针脚本 |
+| `src/lib/tbox/client.ts` | 修改 | 新增 `SafeProbeResult` 接口和 `sanitizeProbeResult()` 函数 |
+| `src/lib/tbox/types.ts` | 修改 | 新增 `TboxHistoryMode`、`TboxContextTransport`、`TboxStructuredMode` 类型 |
+| `src/lib/env.ts` | 修改 | 新增 `TBOX_HISTORY_MODE`、`TBOX_CONTEXT_TRANSPORT`、`TBOX_STRUCTURED_MODE` 读取逻辑 |
+| `src/lib/env.test.ts` | 修改 | 新增 7 个配置项测试（默认值、显式值、无效值回退） |
+| `src/lib/tbox/client.test.ts` | 修改 | 新增 5 个 `SafeProbeResult` 脱敏测试 |
+| `package.json` | 修改 | 新增 `tbox:probe` 脚本命令 |
+| `.env.example` | 修改 | 新增 3 个传输决策环境变量 |
+
+### 探针矩阵（8 场景）
+
+| 探针 | 目的 | 非 api 模式行为 |
+|------|------|----------------|
+| `basic_sse` | 验证基础 SSE 流式对话 | blocked |
+| `conversation_id` | 验证连续三轮同一远端 ID | blocked |
+| `history` | 验证仅通过 history 传代号 | blocked |
+| `business_data` | 验证隐藏画像上下文传递 | blocked |
+| `text_and_result` | 验证同轮正文+结构化输出 | blocked |
+| `search_and_citation` | 验证联网搜索与 citation | blocked |
+| `invalid_conversation` | 验证伪造远端 ID 错误形态 | blocked |
+| `context_size` | 探测上下文大小上限 | blocked |
+
+### 当前传输决策（默认值，待真实探针确认）
+
+```env
+TBOX_HISTORY_MODE="provider"
+TBOX_CONTEXT_TRANSPORT="business_data"
+TBOX_STRUCTURED_MODE="terminal"
+```
+
+### 阻塞项
+
+- **在线探针运行**：需要在 `TBOX_MODE=api` + `TBOX_SEARCH_ENGINE=true` + 有效 `.env.local` 凭证下运行 `npm run tbox:probe` 获取真实结果
+- 当前所有 8 个场景标记为 blocked（若无 api 模式凭证则无法解除）

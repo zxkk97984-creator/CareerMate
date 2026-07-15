@@ -34,4 +34,53 @@ describe("tbox environment config", () => {
     const config = getTboxConfig();
     expect(config.retrievalMode).toBe("agent");
   });
+
+  it("defaults history mode to provider", async () => {
+    vi.stubEnv("TBOX_HISTORY_MODE", "");
+    const { getTboxConfig } = await import("./env");
+    const config = getTboxConfig();
+    expect(config.historyMode).toBe("provider");
+  });
+
+  it("reads history mode context_only", async () => {
+    vi.stubEnv("TBOX_HISTORY_MODE", "context_only");
+    const { getTboxConfig } = await import("./env");
+    const config = getTboxConfig();
+    expect(config.historyMode).toBe("context_only");
+  });
+
+  it("defaults context transport to business_data", async () => {
+    vi.stubEnv("TBOX_CONTEXT_TRANSPORT", "");
+    const { getTboxConfig } = await import("./env");
+    const config = getTboxConfig();
+    expect(config.contextTransport).toBe("business_data");
+  });
+
+  it("reads context transport question_prefix", async () => {
+    vi.stubEnv("TBOX_CONTEXT_TRANSPORT", "question_prefix");
+    const { getTboxConfig } = await import("./env");
+    const config = getTboxConfig();
+    expect(config.contextTransport).toBe("question_prefix");
+  });
+
+  it("defaults structured mode to terminal", async () => {
+    vi.stubEnv("TBOX_STRUCTURED_MODE", "");
+    const { getTboxConfig } = await import("./env");
+    const config = getTboxConfig();
+    expect(config.structuredMode).toBe("terminal");
+  });
+
+  it("reads structured mode followup", async () => {
+    vi.stubEnv("TBOX_STRUCTURED_MODE", "followup");
+    const { getTboxConfig } = await import("./env");
+    const config = getTboxConfig();
+    expect(config.structuredMode).toBe("followup");
+  });
+
+  it("rejects invalid structured mode values and defaults to terminal", async () => {
+    vi.stubEnv("TBOX_STRUCTURED_MODE", "garbage");
+    const { getTboxConfig } = await import("./env");
+    const config = getTboxConfig();
+    expect(config.structuredMode).toBe("terminal");
+  });
 });

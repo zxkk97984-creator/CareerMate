@@ -140,3 +140,49 @@ export async function requestRetrieval(
     readJsonResponse,
   );
 }
+
+// ── 脱敏探针报告 ─────────────────────────────
+
+/** 百宝箱契约探针的安全报告结构，不含 prompt、密钥或完整请求体 */
+export interface SafeProbeResult {
+  name: string;
+  status: "pass" | "fail" | "blocked";
+  httpOk: boolean;
+  actualMode: "api" | "manual" | "mock";
+  eventNames: string[];
+  hasConversationId: boolean;
+  hasText: boolean;
+  hasStructuredResult: boolean;
+  citationCount: number;
+  note: string;
+}
+
+/** 对探针原始结果进行脱敏，剥离敏感字段并将非 api 模式标记为 blocked */
+export function sanitizeProbeResult(
+  raw: SafeProbeResult & { prompt?: string; authorization?: string; fullPayload?: unknown },
+): SafeProbeResult {
+  const { name, httpOk, actualMode, eventNames, hasConversationId, hasText, hasStructuredResult, citationCount } = raw;
+
+  // 非 api 模式一律标记为 blocked
+  const effectiveStatus: SafeProbeResult["status"] =
+    actualMode !== "api" ? "blocked" : raw.status;
+
+  // 对 blocked 补充说明
+  let note = raw.note;
+  if (actualMode !== "api" && !note.includes("manual") && !note.includes("mock")) {
+    note = note ? `${note}（${actualMode} fallback）` : `${actualMode} fallback，非真实 API`;
+  }
+
+  return {
+    name,
+    status: effectiveStatus,
+    httpOk,
+    actualMode,
+    eventNames,
+    hasConversationId,
+    hasText,
+    hasStructuredResult,
+    citationCount,
+    note,
+  };
+}

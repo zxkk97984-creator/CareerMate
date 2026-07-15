@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { consumeChatResponse, requestRetrieval } from "./client";
+import { consumeChatResponse, requestRetrieval, sanitizeProbeResult, type SafeProbeResult } from "./client";
 import type { TboxConfig } from "./types";
 
 const baseConfig: TboxConfig = {
@@ -9,6 +9,9 @@ const baseConfig: TboxConfig = {
   agentVersion: "2.0",
   searchEngine: false,
   retrievalMode: "agent",
+  historyMode: "provider",
+  contextTransport: "business_data",
+  structuredMode: "terminal",
   chatEndpoint: "https://o.tbox.cn/openapi/v1/chat/create",
   retrieveEndpoint: "https://api.tbox.cn/api/datasets/retrieve",
   streamTimeoutMs: 90_000,
@@ -38,6 +41,9 @@ describe("tbox client request contract", () => {
           agentVersion: "2.0",
           searchEngine: false,
           retrievalMode: "agent",
+          historyMode: "provider",
+          contextTransport: "business_data",
+          structuredMode: "terminal",
           chatEndpoint: "https://o.tbox.cn/openapi/v1/chat/create",
           retrieveEndpoint: "https://api.tbox.cn/api/datasets/retrieve",
           streamTimeoutMs: 90_000,
@@ -207,5 +213,132 @@ describe("tbox client request contract", () => {
         async () => undefined,
       ),
     ).rejects.toMatchObject({ reason: "aborted", code: "ABORTED" });
+  });
+});
+
+// ── SafeProbeResult 脱敏报告 ─────────────────────────────
+
+describe("SafeProbeResult sanitization", () => {
+  it("produces only whitelisted fields in the safe report", () => {
+    const result = sanitizeProbeResult({
+      name: "basic_sse",
+      status: "pass",
+      httpOk: true,
+      actualMode: "api",
+      eventNames: ["conversation.chat.created", "conversation.message.delta", "conversation.chat.completed"],
+      hasConversationId: true,
+      hasText: true,
+      hasStructuredResult: false,
+      citationCount: 0,
+      note: "正常",
+      // 以下敏感字段不应出现在输出中
+      prompt: "请用一句话介绍 CareerMate",
+      authorization: "Bearer inc-akd-secret-token",
+      fullPayload: { question: "请用一句话介绍 CareerMate", user_id: "probe-123" },
+    } satisfies SafeProbeResult & { prompt?: string; authorization?: string; fullPayload?: unknown });
+
+    // 白名单字段存在
+    expect(result).toHaveProperty("name", "basic_sse");
+    expect(result).toHaveProperty("status", "pass");
+    expect(result).toHaveProperty("httpOk", true);
+    expect(result).toHaveProperty("actualMode", "api");
+    expect(result).toHaveProperty("eventNames");
+    expect(result).toHaveProperty("hasConversationId", true);
+    expect(result).toHaveProperty("hasText", true);
+    expect(result).toHaveProperty("hasStructuredResult", false);
+    expect(result).toHaveProperty("citationCount", 0);
+    expect(result).toHaveProperty("note", "正常");
+
+    // 敏感字段被剥离
+    expect(result).not.toHaveProperty("prompt");
+    expect(result).not.toHaveProperty("authorization");
+    expect(result).not.toHaveProperty("fullPayload");
+    expect(JSON.stringify(result)).not.toContain("inc-akd");
+    expect(JSON.stringify(result)).not.toContain("Bearer");
+  });
+
+  it("marks probe as blocked when actualMode is not api", () => {
+    const manual = sanitizeProbeResult({
+      name: "basic_sse",
+      status: "pass",
+      httpOk: true,
+      actualMode: "manual",
+      eventNames: [],
+      hasConversationId: false,
+      hasText: true,
+      hasStructuredResult: false,
+      citationCount: 0,
+      note: "使用了 fallback",
+    } satisfies SafeProbeResult);
+
+    expect(manual.status).toBe("blocked");
+    expect(manual.note).toContain("manual");
+  });
+
+  it("marks mock as blocked", () => {
+    const mock = sanitizeProbeResult({
+      name: "basic_sse",
+      status: "pass",
+      httpOk: true,
+      actualMode: "mock",
+      eventNames: [],
+      hasConversationId: false,
+      hasText: true,
+      hasStructuredResult: false,
+      citationCount: 0,
+      note: "",
+    } satisfies SafeProbeResult);
+
+    expect(mock.status).toBe("blocked");
+  });
+
+  it("preserves pass/fail for api-mode probes", () => {
+    const pass = sanitizeProbeResult({
+      name: "conversation_id",
+      status: "pass",
+      httpOk: true,
+      actualMode: "api",
+      eventNames: ["conversation.chat.created"],
+      hasConversationId: true,
+      hasText: true,
+      hasStructuredResult: false,
+      citationCount: 0,
+      note: "连续三轮同一 ID",
+    } satisfies SafeProbeResult);
+
+    expect(pass.status).toBe("pass");
+
+    const fail = sanitizeProbeResult({
+      name: "history",
+      status: "fail",
+      httpOk: true,
+      actualMode: "api",
+      eventNames: ["conversation.chat.created", "conversation.message.delta"],
+      hasConversationId: true,
+      hasText: true,
+      hasStructuredResult: false,
+      citationCount: 0,
+      note: "Agent 未能复述代号",
+    } satisfies SafeProbeResult);
+
+    expect(fail.status).toBe("fail");
+  });
+
+  it("returns empty eventNames array when none provided", () => {
+    const result = sanitizeProbeResult({
+      name: "context_size",
+      status: "blocked",
+      httpOk: false,
+      actualMode: "api",
+      eventNames: [],
+      hasConversationId: false,
+      hasText: false,
+      hasStructuredResult: false,
+      citationCount: 0,
+      note: "请求超时",
+    } satisfies SafeProbeResult);
+
+    expect(Array.isArray(result.eventNames)).toBe(true);
+    expect(result.eventNames).toHaveLength(0);
   });
 });

@@ -20,7 +20,8 @@
     "db:migrate:deploy": "prisma migrate deploy",
     "db:migrate:baseline": "prisma migrate resolve --applied 20260710000000_baseline",
     "seed": "tsx prisma/seed.ts",
-    "secret:scan": "node scripts/secret-scan.mjs"
+    "secret:scan": "node scripts/secret-scan.mjs",
+    "tbox:probe": "tsx scripts/tbox-chat-contract-probe.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.14.0",

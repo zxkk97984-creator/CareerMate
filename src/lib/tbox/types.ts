@@ -9,6 +9,15 @@ export type DatasetKey =
   | "ethicsRules"
   | "careerTrends";
 
+/** 百宝箱 history 传输模式 */
+export type TboxHistoryMode = "provider" | "context_only";
+
+/** 百宝箱业务上下文传输方式 */
+export type TboxContextTransport = "business_data" | "question_prefix";
+
+/** 百宝箱结构化输出模式 */
+export type TboxStructuredMode = "terminal" | "followup";
+
 export interface TboxConfig {
   mode: AiMode;
   apiKey: string;
@@ -17,6 +26,9 @@ export interface TboxConfig {
   agentVersion?: string;
   searchEngine: boolean;
   retrievalMode: "agent" | "hybrid";
+  historyMode: TboxHistoryMode;
+  contextTransport: TboxContextTransport;
+  structuredMode: TboxStructuredMode;
   chatEndpoint: string;
   retrieveEndpoint: string;
   streamTimeoutMs: number;
