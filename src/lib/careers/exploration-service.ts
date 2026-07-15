@@ -1,7 +1,7 @@
 import { getPrisma } from "@/lib/prisma";
 import { toJson } from "@/lib/json";
 import { explorationReportSchema, type ExplorationReport } from "./exploration-schema";
-import { supportedRoleKeys, type SupportedRoleKey } from "@/lib/types";
+import { resolveRoleIdentity } from "@/lib/roles/identity";
 
 // ── 错误 ────────────────────────────────────────────────
 
@@ -40,7 +40,7 @@ export interface ExplorationService {
   resolveCareerSources(
     roleName: string,
   ): Promise<{
-    sourceLabel: "精品职业资料" | "实时联网调研";
+    sourceLabel: "精品职业资料" | "实时联网调研" | "AI分析与推断";
     knowledgeSources: Array<{ title: string; organization: string; label: string }>;
     isKnownRole: boolean;
   }>;
@@ -154,34 +154,33 @@ export function createExplorationService(): ExplorationService {
     },
 
     async resolveCareerSources(roleName) {
-      // 尝试匹配内置职业
-      const roleKey = roleName.toLowerCase().replace(/\s+/g, "_");
-      const isKnownRole = supportedRoleKeys.includes(roleKey as SupportedRoleKey);
+      // 使用角色身份系统解析，先查 RoleTemplate
+      const identity = resolveRoleIdentity(roleName);
+      const roleKey = identity.key;
 
-      if (isKnownRole) {
-        // 内置职业：读取 RoleTemplate 的来源
-        const template = await db.roleTemplate.findUnique({
-          where: { roleKey },
-        });
-        if (template) {
-          const sources = JSON.parse(template.sources || "[]") as Array<{
-            title: string; organization: string; label: string;
-          }>;
-          return {
-            sourceLabel: "精品职业资料",
-            knowledgeSources: sources.length > 0 ? sources : [
-              { title: `${roleName}职业标准`, organization: "CareerMate职业库", label: "已核验职业库" },
-            ],
-            isKnownRole: true,
-          };
-        }
+      // 查 RoleTemplate（覆盖种子职业和数据库中的动态模板）
+      const template = await db.roleTemplate.findUnique({
+        where: { roleKey },
+      }).catch(() => null);
+
+      if (template) {
+        const sources = JSON.parse(template.sources || "[]") as Array<{
+          title: string; organization: string; label: string;
+        }>;
+        return {
+          sourceLabel: "精品职业资料",
+          knowledgeSources: sources.length > 0 ? sources : [
+            { title: `${roleName}职业标准`, organization: "CareerMate职业库", label: "已核验职业库" },
+          ],
+          isKnownRole: true,
+        };
       }
 
-      // 未知职业：标注为需要联网调研
+      // 未知职业：不标"实时联网调研"（需真实 citation 证据），标为 AI 分析
       return {
-        sourceLabel: "实时联网调研",
+        sourceLabel: identity.coverage === "verified_template" ? "精品职业资料" : "AI分析与推断",
         knowledgeSources: [],
-        isKnownRole: false,
+        isKnownRole: identity.coverage === "verified_template",
       };
     },
   };

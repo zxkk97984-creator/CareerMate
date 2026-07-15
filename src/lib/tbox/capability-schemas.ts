@@ -37,7 +37,7 @@ export const profileAssessmentSchema = z.object({
   candidateUpdates: z.array(candidateUpdateSchema).max(12).default([]),
 }).strict();
 
-/** 三岗位匹配 */
+/** 岗位匹配（1-8 个，不限制为 3） */
 export const roleMatchResultSchema = z.object({
   type: z.literal("role_match"),
   matches: z.array(z.object({
@@ -46,7 +46,7 @@ export const roleMatchResultSchema = z.object({
     reasons: z.array(z.string().trim().min(1)).max(5),
     gaps: z.array(z.string().trim().min(1)).max(5),
     assumptions: z.array(z.string().trim().min(1)).max(5),
-  }).strict()).length(3),
+  }).strict()).min(1).max(8),
 }).strict();
 
 /** 职业计划（复用现有 careerPlanSchema） */

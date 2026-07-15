@@ -5,10 +5,10 @@ import { serializePlan } from "@/lib/career";
 import { planDto, profileDto } from "@/lib/dto";
 import { getPrisma } from "@/lib/prisma";
 import { generatePlanWithTbox, planGenerationNote } from "@/lib/tbox";
-import { supportedRoleKeys } from "@/lib/types";
+const roleKeySchema = z.string().trim().min(1).max(120).regex(/^[a-z0-9_:-]+$/i);
 
 const generatePlanBodySchema = z.object({
-  targetRole: z.enum(supportedRoleKeys).optional(),
+  targetRole: roleKeySchema.optional(),
   regenerate: z.boolean().optional(),
 }).strict();
 

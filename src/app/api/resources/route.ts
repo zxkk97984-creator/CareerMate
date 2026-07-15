@@ -3,10 +3,11 @@ import { fail, ok } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
 import { getPrisma } from "@/lib/prisma";
 import { isAllowedResourceSource } from "@/lib/resources";
-import { resourceTypes, supportedRoleKeys } from "@/lib/types";
+import { resourceTypes } from "@/lib/types";
 
+const roleKeySchema = z.string().trim().min(1).max(120).regex(/^[a-z0-9_:-]+$/i);
 const querySchema = z.object({
-  roleKey: z.enum(supportedRoleKeys).optional(),
+  roleKey: roleKeySchema.optional(),
   abilityKey: z.enum([
     "aiTooling",
     "roleFoundation",

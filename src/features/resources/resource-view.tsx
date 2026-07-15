@@ -3,7 +3,7 @@
 /** 资源中心 —— 按岗位/能力/类型筛选学习资源 */
 import { useState } from "react";
 import { filterResources } from "@/lib/resources";
-import { abilityKeys, abilityLabels, resourceTypes, supportedRoleKeys, type ProfileDto, type ResourceItemDto } from "@/lib/types";
+import { abilityKeys, abilityLabels, resourceTypes, seedRoleKeys, type ProfileDto, type ResourceItemDto } from "@/lib/types";
 import { SurfaceCard } from "@/components/ui/surface-card";
 
 /* ── 主视图 ── */
@@ -23,7 +23,7 @@ export function ResourceView({ resources, profile, weakAbilities }: ResourceView
   return (
     <SurfaceCard title="资源中心">
       <div style={{ marginBottom: 20, display: "grid", gap: 12 }} className="grid-cols-3 max-md:grid-cols-1">
-        <label style={{ fontSize: 14, color: "var(--cm-text-muted)" }}>目标岗位<select style={selectStyle} value={roleKey} onChange={(e) => setRoleKey(e.target.value)}>{supportedRoleKeys.map((r) => <option key={r} value={r}>{roleLabels[r]}</option>)}</select></label>
+        <label style={{ fontSize: 14, color: "var(--cm-text-muted)" }}>目标岗位<select style={selectStyle} value={roleKey} onChange={(e) => setRoleKey(e.target.value)}>{seedRoleKeys.map((r) => <option key={r} value={r}>{roleLabels[r]}</option>)}</select></label>
         <label style={{ fontSize: 14, color: "var(--cm-text-muted)" }}>能力方向<select style={selectStyle} value={abilityKey} onChange={(e) => setAbilityKey(e.target.value)}><option value="all">全部能力</option>{abilityKeys.map((a) => <option key={a} value={a}>{abilityLabels[a]}</option>)}</select></label>
         <label style={{ fontSize: 14, color: "var(--cm-text-muted)" }}>资源类型<select style={selectStyle} value={resourceType} onChange={(e) => setResourceType(e.target.value)}><option value="all">全部类型</option>{resourceTypes.map((t) => <option key={t} value={t}>{t}</option>)}</select></label>
       </div>

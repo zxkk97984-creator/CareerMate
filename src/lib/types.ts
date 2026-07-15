@@ -120,8 +120,9 @@ export interface PlanMonth {
   evaluationMetrics: string[];
 }
 
-export const supportedRoleKeys = ["ai_product_manager", "data_analyst", "aigc_operator"] as const;
-export type SupportedRoleKey = (typeof supportedRoleKeys)[number];
+/** 种子职业 key（不作为白名单，仅初始选项） */
+export const seedRoleKeys = ["database_administrator", "ai_product_manager", "data_analyst", "aigc_operator"] as const;
+export type SeedRoleKey = (typeof seedRoleKeys)[number];
 
 export const resourceTypes = ["course", "practice", "project", "template"] as const;
 export type ResourceType = (typeof resourceTypes)[number];

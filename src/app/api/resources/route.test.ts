@@ -24,10 +24,9 @@ describe("GET /api/resources", () => {
   });
 
   it.each([
-    "roleKey=unknown",
     "abilityKey=unknown",
     "type=video",
-    `roleKey=${"x".repeat(101)}`,
+    `roleKey=${"x".repeat(200)}`,
   ])("rejects invalid filter query %s", async (query) => {
     const response = await GET(new Request(`http://localhost/api/resources?${query}`));
 
