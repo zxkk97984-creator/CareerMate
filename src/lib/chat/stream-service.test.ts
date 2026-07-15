@@ -47,7 +47,9 @@ vi.mock("@/lib/env", () => ({
       ethicsRules: "ds4",
       careerTrends: "",
     },
+    searchEngine: false,
   }),
+  isStatefulChatTurns: () => false, // 旧路径测试
 }));
 
 vi.mock("./artifact-service", () => ({
@@ -161,7 +163,7 @@ describe("handleStreamRequest", () => {
     const service = createMockService();
 
     const response = await handleStreamRequest(
-      { userId: "user-1", conversationId: "conv-1", message: "什么是数据分析师？" },
+      { userId: "user-1", conversationId: "conv-1", message: "什么是数据分析师？", clientRequestId: "550e8400-e29b-41d4-a716-446655440000" },
       service as any,
     );
 
@@ -184,7 +186,7 @@ describe("handleStreamRequest", () => {
     const service = createMockService();
 
     const response = await handleStreamRequest(
-      { userId: "user-1", conversationId: "conv-1", message: "测试" },
+      { userId: "user-1", conversationId: "conv-1", message: "测试", clientRequestId: "550e8400-e29b-41d4-a716-446655440000" },
       service as any,
     );
 
@@ -204,7 +206,7 @@ describe("handleStreamRequest", () => {
     const service = createMockService();
 
     const response = await handleStreamRequest(
-      { userId: "user-1", conversationId: "conv-1", message: "测试" },
+      { userId: "user-1", conversationId: "conv-1", message: "测试", clientRequestId: "550e8400-e29b-41d4-a716-446655440000" },
       service as any,
     );
 
@@ -224,7 +226,7 @@ describe("handleStreamRequest", () => {
     const service = createMockService();
 
     const response = await handleStreamRequest(
-      { userId: "user-1", conversationId: "conv-1", message: "测试" },
+      { userId: "user-1", conversationId: "conv-1", message: "测试", clientRequestId: "550e8400-e29b-41d4-a716-446655440000" },
       service as any,
     );
 
@@ -255,7 +257,7 @@ describe("handleStreamRequest", () => {
     const service = createMockService();
 
     const response = await handleStreamRequest(
-      { userId: "user-1", conversationId: "conv-1", message: "测试" },
+      { userId: "user-1", conversationId: "conv-1", message: "测试", clientRequestId: "550e8400-e29b-41d4-a716-446655440000" },
       service as any,
     );
 
@@ -279,7 +281,7 @@ describe("handleStreamRequest", () => {
     const service = createMockService();
 
     const response = await handleStreamRequest(
-      { userId: "user-1", conversationId: "conv-1", message: "测试" },
+      { userId: "user-1", conversationId: "conv-1", message: "测试", clientRequestId: "550e8400-e29b-41d4-a716-446655440000" },
       service as any,
     );
 
@@ -297,7 +299,7 @@ describe("handleStreamRequest", () => {
     ]);
     const service = createMockService();
     const response = await handleStreamRequest(
-      { userId: "user-1", conversationId: "conv-1", message: "数据分析师是什么？" },
+      { userId: "user-1", conversationId: "conv-1", message: "数据分析师是什么？", clientRequestId: "550e8400-e29b-41d4-a716-446655440000" },
       service as any,
     );
 

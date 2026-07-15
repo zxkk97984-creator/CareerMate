@@ -112,3 +112,29 @@ describe("tbox environment config", () => {
     expect(config.probeAgentId).toBe("probe-agent-v1");
   });
 });
+
+describe("feature flags", () => {
+  it("STATEFUL_CHAT_TURNS defaults to true", async () => {
+    vi.stubEnv("STATEFUL_CHAT_TURNS", "");
+    const { isStatefulChatTurns } = await import("./env");
+    expect(isStatefulChatTurns()).toBe(true);
+  });
+
+  it("STATEFUL_CHAT_TURNS can be disabled", async () => {
+    vi.stubEnv("STATEFUL_CHAT_TURNS", "false");
+    const { isStatefulChatTurns } = await import("./env");
+    expect(isStatefulChatTurns()).toBe(false);
+  });
+
+  it("OPEN_CHAT_ENTRY defaults to true", async () => {
+    vi.stubEnv("OPEN_CHAT_ENTRY", "");
+    const { isOpenChatEntry } = await import("./env");
+    expect(isOpenChatEntry()).toBe(true);
+  });
+
+  it("OPEN_CHAT_ENTRY can be disabled", async () => {
+    vi.stubEnv("OPEN_CHAT_ENTRY", "false");
+    const { isOpenChatEntry } = await import("./env");
+    expect(isOpenChatEntry()).toBe(false);
+  });
+});

@@ -2,10 +2,11 @@ import { prepareCareerChat } from "./server";
 import { createChatService, type ChatService } from "./service";
 import { streamChatWithTboxProgressive } from "@/lib/tbox/streaming";
 import { parseStructuredAssistantResult } from "@/lib/tbox/structured-result";
-import { getTboxConfig } from "@/lib/env";
+import { getTboxConfig, isStatefulChatTurns } from "@/lib/env";
 import { writeSseEvent } from "./sse";
 import { createArtifactsForChat } from "./artifact-service";
 import { errorPart } from "./artifacts";
+import { createTurnService, TurnServiceError } from "./turn-service";
 
 // ── 类型 ──────────────────────────────────────────────────
 
@@ -13,6 +14,8 @@ export interface StreamingOptions {
   userId: string;
   conversationId: string;
   message: string;
+  clientRequestId: string;
+  actionId?: string;
   signal?: AbortSignal;
 }
 
@@ -21,24 +24,252 @@ export interface StreamingOptions {
 /**
  * 处理流式聊天请求，返回 ReadableStream SSE 响应。
  *
- * 通过回调模式实现真正的渐进式输出——
- * 每个 delta 到达后立即写入 SSE 流，不等待全部收集完成。
- * 同时在内存中累计完整正文用于最终持久化。
- *
- * 持久化顺序：
- * 1. 用户消息 + 助手占位消息（status=streaming）+ 更新会话时间
+ * 当 STATEFUL_CHAT_TURNS 启用时使用两阶段事务：
+ * 1. begin() 原子认领轮次、创建消息、幂等检查
  * 2. 调用百宝箱
- * 3. 每个 delta 立即写入 SSE + 内存累计
- * 4. 完成后一次性持久化助手消息（content + parts + meta + status=completed）
- * 5. 失败时保留用户消息，助手标记为 failed，写入安全 error 部件
- * 6. 客户端断开时不撤销已持久化的用户输入
+ * 3. finalize() 完成消息、释放锁 — 或 fail() 处理错误
+ *
+ * 关闭开关时回退旧编排（直接创建消息 → 调用百宝箱 → 更新消息）。
  */
 export async function handleStreamRequest(
   options: StreamingOptions,
   service?: ChatService,
 ): Promise<Response> {
-  const { userId, conversationId, message, signal } = options;
+  const { userId, conversationId, message, clientRequestId, actionId, signal } = options;
   const svc = service ?? createChatService();
+  const config = getTboxConfig();
+
+  // 有状态轮次路径（STATEFUL_CHAT_TURNS 开关）
+  if (isStatefulChatTurns()) {
+    return handleStatefulStream(options, svc, config);
+  }
+
+  // ── 旧编排路径（兼容）─────────────────────────────
+  return handleLegacyStream(options, svc, config);
+}
+
+/** 有状态轮次路径：两阶段事务 + replay 支持 */
+async function handleStatefulStream(
+  options: StreamingOptions,
+  svc: ChatService,
+  config: ReturnType<typeof getTboxConfig>,
+): Promise<Response> {
+  const { userId, conversationId, message, clientRequestId, signal } = options;
+  const turnService = createTurnService();
+
+  // ── 短事务 A：认领轮次 ──────────────────────────
+  let beginResult: { kind: "new"; turn: { id: string; userMessageId: string; assistantMessageId: string } } | { kind: "replay"; turn: { assistantText: string } };
+  try {
+    beginResult = await turnService.begin({
+      userId,
+      conversationId,
+      message,
+      clientRequestId,
+      actionId: options.actionId,
+    });
+  } catch (err) {
+    if (err instanceof TurnServiceError) {
+      return new Response(JSON.stringify({ error: { code: err.code, message: err.message } }), {
+        status: err.status,
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+      });
+    }
+    throw err;
+  }
+
+  // ── 重放路径 ──────────────────────────────────
+  if (beginResult.kind === "replay") {
+    const stream = new ReadableStream({
+      async start(controller) {
+        writeSseEvent(controller, "context", {
+          conversationId,
+          userMessageId: "",
+          assistantMessageId: "",
+          intent: null,
+          usedProfile: false,
+          usedPlan: false,
+          usedMemoryCount: 0,
+          knowledgeSources: [],
+        });
+        writeSseEvent(controller, "delta", {
+          messageId: "",
+          text: beginResult.turn.assistantText,
+        });
+        writeSseEvent(controller, "done", {
+          messageId: "",
+          remoteConversationId: null,
+          status: "completed" as const,
+          meta: { requestedMode: "mock", actualMode: "mock", degraded: false, fallbackReason: null, source: "replay" },
+        });
+        try { controller.close(); } catch { /* 已关闭 */ }
+      },
+    });
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+      },
+    });
+  }
+
+  // ── 新轮次：构建上下文并调用百宝箱 ──────────────────
+  const turn = beginResult.turn;
+
+  // 构建安全上下文
+  const prepared = await prepareCareerChat(
+    { userId, question: message },
+  ).catch(() => ({
+    enhancedQuestion: message,
+    contextMeta: {
+      intent: null as string | null,
+      usedProfile: false,
+      usedPlan: false,
+      usedMemoryCount: 0,
+      knowledgeSources: [] as string[],
+    },
+  }));
+
+  // 获取已有远端会话 ID
+  const convDetail = await svc.getConversation(conversationId, userId).catch(() => null);
+  const existingRemoteId = convDetail?.remoteConversationId ?? undefined;
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      let fullContent = "";
+      let remoteConversationId: string | null = null;
+      let finalMeta: Record<string, unknown> | null = null;
+
+      try {
+        writeSseEvent(controller, "context", {
+          conversationId,
+          userMessageId: turn.userMessageId,
+          assistantMessageId: turn.assistantMessageId,
+          ...prepared.contextMeta,
+        });
+
+        // 调用百宝箱
+        const aiResponse = await streamChatWithTboxProgressive(
+          {
+            question: prepared.enhancedQuestion,
+            userId,
+            conversationId: existingRemoteId as string | undefined,
+          },
+          { config, signal },
+          (event) => {
+            if (event.meta) finalMeta = event.meta;
+
+            if (event.event === "message" && event.data.type === "delta") {
+              fullContent += event.data.content;
+              writeSseEvent(controller, "delta", {
+                messageId: turn.assistantMessageId,
+                text: event.data.content,
+              });
+            }
+
+            if (event.event === "done") {
+              remoteConversationId = event.data.conversationId;
+            }
+          },
+        );
+        finalMeta = aiResponse.meta as unknown as Record<string, unknown>;
+        remoteConversationId = aiResponse.data.conversationId ?? remoteConversationId;
+
+        // 解析结构化结果
+        const assistantResult = parseStructuredAssistantResult(aiResponse.data);
+        const parts = await createArtifactsForChat({
+          userId,
+          conversationId,
+          assistantResult,
+        }).catch(() => [
+          errorPart("ARTIFACT_UNAVAILABLE", "回答已生成，但画像、计划或职业报告卡片暂未生成。"),
+        ]);
+
+        for (const part of parts) {
+          writeSseEvent(controller, "artifact", {
+            messageId: turn.assistantMessageId,
+            part,
+          });
+        }
+
+        // ── 短事务 B：完成轮次 ──────────────────
+        await turnService.finalize({
+          turn: {
+            id: turn.id,
+            conversationId,
+            userId,
+            clientRequestId,
+            userMessageId: turn.userMessageId,
+            assistantMessageId: turn.assistantMessageId,
+          },
+          assistantText: fullContent,
+          citations: [],
+          remoteConversationId: remoteConversationId ?? undefined,
+          executionMeta: finalMeta ?? { requestedMode: config.mode, actualMode: config.mode, degraded: false, source: "tbox-api" },
+          warnings: assistantResult.warnings ?? [],
+        });
+
+        writeSseEvent(controller, "done", {
+          messageId: turn.assistantMessageId,
+          remoteConversationId,
+          status: "completed" as const,
+          meta: finalMeta ?? {
+            requestedMode: config.mode,
+            actualMode: config.mode,
+            degraded: false,
+            fallbackReason: null,
+            source: "tbox-api",
+          },
+        });
+      } catch (err) {
+        const errMessage = err instanceof Error ? err.message : "未知错误";
+        const errorCode = errMessage === "aborted" ? "ABORTED" : "TBOX_UNAVAILABLE";
+
+        // 尝试释放锁
+        await turnService.fail({
+          turn: {
+            id: turn.id,
+            conversationId,
+            userId,
+            clientRequestId,
+            userMessageId: turn.userMessageId,
+            assistantMessageId: turn.assistantMessageId,
+          },
+          partialText: fullContent || "",
+          code: errorCode,
+        }).catch(() => {}); // fail 本身失败也不阻塞 SSE 错误发送
+
+        writeSseEvent(controller, "error", {
+          messageId: turn.assistantMessageId,
+          code: errorCode,
+          message: "这次连接没有成功，你的提问已经保留，可以稍后重试。",
+          retryable: errorCode !== "ABORTED",
+        });
+      } finally {
+        try { controller.close(); } catch { /* 可能已关闭 */ }
+      }
+    },
+    cancel() {
+      // 客户端断开——用户消息已持久化
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+    },
+  });
+}
+
+/** 旧编排路径（STATEFUL_CHAT_TURNS 关闭时使用） */
+async function handleLegacyStream(
+  options: StreamingOptions,
+  svc: ChatService,
+  config: ReturnType<typeof getTboxConfig>,
+): Promise<Response> {
+  const { userId, conversationId, message, signal } = options;
 
   // 构建安全上下文（失败时使用最小上下文回退）
   const prepared = await prepareCareerChat(
@@ -81,8 +312,6 @@ export async function handleStreamRequest(
   // 获取已有远端会话 ID 用于多轮延续
   const convDetail = await svc.getConversation(conversationId, userId).catch(() => null);
   const existingRemoteId = convDetail?.remoteConversationId ?? undefined;
-
-  const config = getTboxConfig();
 
   // 使用 ReadableStream 实现真正的渐进式输出
   const stream = new ReadableStream({

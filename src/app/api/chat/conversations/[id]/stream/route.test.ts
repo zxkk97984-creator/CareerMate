@@ -61,7 +61,7 @@ describe("POST /api/chat/conversations/:id/stream", () => {
     const res = await POST(
       new Request("http://localhost/api/chat/conversations/conv-1/stream", {
         method: "POST",
-        body: JSON.stringify({ message: "你好" }),
+        body: JSON.stringify({ message: "你好", clientRequestId: "550e8400-e29b-41d4-a716-446655440000" }),
       }),
       { params: Promise.resolve({ id: "conv-1" }) } as any,
     );
@@ -74,7 +74,7 @@ describe("POST /api/chat/conversations/:id/stream", () => {
     const res = await POST(
       new Request("http://localhost/api/chat/conversations/conv-1/stream", {
         method: "POST",
-        body: JSON.stringify({ message: "你好" }),
+        body: JSON.stringify({ message: "你好", clientRequestId: "550e8400-e29b-41d4-a716-446655440000" }),
       }),
       { params: Promise.resolve({ id: "conv-1" }) } as any,
     );
@@ -85,7 +85,7 @@ describe("POST /api/chat/conversations/:id/stream", () => {
     const res = await POST(
       new Request("http://localhost/api/chat/conversations/conv-1/stream", {
         method: "POST",
-        body: JSON.stringify({ message: "" }),
+        body: JSON.stringify({ message: "", clientRequestId: "550e8400-e29b-41d4-a716-446655440000" }),
       }),
       { params: Promise.resolve({ id: "conv-1" }) } as any,
     );
@@ -96,7 +96,7 @@ describe("POST /api/chat/conversations/:id/stream", () => {
     const res = await POST(
       new Request("http://localhost/api/chat/conversations/conv-1/stream", {
         method: "POST",
-        body: JSON.stringify({ message: "a".repeat(8001) }),
+        body: JSON.stringify({ message: "a".repeat(8001), clientRequestId: "550e8400-e29b-41d4-a716-446655440000" }),
       }),
       { params: Promise.resolve({ id: "conv-1" }) } as any,
     );
@@ -107,7 +107,7 @@ describe("POST /api/chat/conversations/:id/stream", () => {
     const res = await POST(
       new Request("http://localhost/api/chat/conversations/conv-1/stream", {
         method: "POST",
-        body: JSON.stringify({ message: "什么是数据分析师？" }),
+        body: JSON.stringify({ message: "什么是数据分析师？", clientRequestId: "550e8400-e29b-41d4-a716-446655440000" }),
       }),
       { params: Promise.resolve({ id: "conv-1" }) } as any,
     );
@@ -118,7 +118,7 @@ describe("POST /api/chat/conversations/:id/stream", () => {
     await POST(
       new Request("http://localhost/api/chat/conversations/conv-1/stream", {
         method: "POST",
-        body: JSON.stringify({ message: "你好" }),
+        body: JSON.stringify({ message: "你好", clientRequestId: "550e8400-e29b-41d4-a716-446655440000" }),
       }),
       { params: Promise.resolve({ id: "conv-1" }) } as any,
     );
@@ -128,6 +128,7 @@ describe("POST /api/chat/conversations/:id/stream", () => {
         userId: "user-1",
         conversationId: "conv-1",
         message: "你好",
+        clientRequestId: "550e8400-e29b-41d4-a716-446655440000",
       }),
       expect.anything(),
     );

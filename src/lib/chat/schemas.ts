@@ -40,7 +40,9 @@ export const sendMessageInputSchema = z.object({
     .string()
     .min(1, "消息不能为空")
     .max(8000, "消息不能超过8000个字符"),
-});
+  clientRequestId: z.string().uuid("请求ID必须是有效的UUID"),
+  actionId: z.string().trim().min(1).max(120).optional(),
+}).strict();
 
 // ── DTO ───────────────────────────────────────────────────
 

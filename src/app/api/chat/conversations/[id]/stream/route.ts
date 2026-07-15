@@ -36,6 +36,8 @@ export async function POST(
       userId: user.id,
       conversationId,
       message: input.data.message.trim(),
+      clientRequestId: input.data.clientRequestId,
+      actionId: input.data.actionId,
       signal: request.signal,
     }, service);
   } catch (err) {

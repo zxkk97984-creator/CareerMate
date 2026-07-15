@@ -74,6 +74,10 @@ export function isOpenChatEntry(): boolean {
   return readBoolean("OPEN_CHAT_ENTRY", true);
 }
 
+export function isStatefulChatTurns(): boolean {
+  return readBoolean("STATEFUL_CHAT_TURNS", true);
+}
+
 export function getPluginToken() {
   return read("CAREERMATE_PLUGIN_TOKEN");
 }
