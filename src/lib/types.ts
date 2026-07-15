@@ -43,10 +43,28 @@ export interface ProfileDto {
   experienceSummary: string;
   interestTags: string[];
   constraints: string[];
-  abilityScores: AbilityScores;
+  abilityScores: Partial<AbilityScores>;
   memoryEnabled: boolean;
   onboardingCompleted: boolean;
+  version: number;
+  introStatus: string;
   updatedAt: string;
+}
+
+/** 完整画像——用于需要目标岗位和时间的操作（如计划生成） */
+export type PlanReadyProfile = ProfileDto & {
+  targetRole: string;
+  targetRoleLabel: string;
+  weeklyAvailableHours: number;
+};
+
+export function isPlanReadyProfile(profile: ProfileDto): profile is PlanReadyProfile {
+  return Boolean(
+    profile.targetRole?.trim() &&
+    profile.targetRoleLabel?.trim() &&
+    Number.isInteger(profile.weeklyAvailableHours) &&
+    Number(profile.weeklyAvailableHours) > 0,
+  );
 }
 
 export interface CurrentUserDto {

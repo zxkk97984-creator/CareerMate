@@ -1,24 +1,19 @@
 import { toJson } from "@/lib/json";
 
+/** 新用户空画像——不写入任何假事实 */
 export function createIncompleteProfileDefaults() {
   return {
-    educationStage: "junior",
+    educationStage: "",
     major: "",
-    targetRole: "ai_product_manager",
-    targetRoleLabel: "AI 产品经理",
-    weeklyAvailableHours: 5,
-    learningPreference: toJson(["project", "practice"]),
-    experienceSummary: "新用户，等待 CareerMate 完成画像采集。",
-    interestTags: toJson(["AI 工具", "职业探索"]),
+    targetRole: "",
+    targetRoleLabel: "",
+    weeklyAvailableHours: 0,
+    learningPreference: toJson([]),
+    experienceSummary: "",
+    interestTags: toJson([]),
     constraints: toJson([]),
     onboardingCompleted: false,
-    abilityScores: toJson({
-      aiTooling: 45,
-      roleFoundation: 35,
-      dataAnalysis: 35,
-      businessProduct: 40,
-      communication: 45,
-      projectPractice: 30,
-    }),
+    introStatus: "not_started",
+    abilityScores: toJson({}),
   };
 }

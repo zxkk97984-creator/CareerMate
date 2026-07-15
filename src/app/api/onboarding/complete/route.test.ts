@@ -38,6 +38,8 @@ const profile = {
   abilityScores: "{}",
   memoryEnabled: true,
   onboardingCompleted: false,
+  version: 1,
+  introStatus: "not_started",
   updatedAt: new Date("2026-07-10T00:00:00.000Z"),
 };
 

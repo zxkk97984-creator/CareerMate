@@ -32,5 +32,5 @@ export async function POST(request: Request) {
   });
 
   await setSession(user.id);
-  return ok({ user: userDto(user), nextPath: "/onboarding" });
+  return ok({ user: userDto(user), nextPath: "/" });
 }

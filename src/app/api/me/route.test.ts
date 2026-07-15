@@ -43,6 +43,8 @@ const profile = {
   }),
   memoryEnabled: true,
   onboardingCompleted: true,
+  version: 1,
+  introStatus: "not_started",
   updatedAt: new Date("2026-07-10T00:00:00.000Z"),
 };
 
@@ -276,8 +278,8 @@ describe("GET /api/me", () => {
       ...profile,
       id: "profile-repaired",
       userId: "user-without-profile",
-      targetRole: "ai_product_manager",
-      targetRoleLabel: "AI 产品经理",
+      targetRole: "",
+      targetRoleLabel: "",
       onboardingCompleted: false,
     };
     mocks.upsertProfile.mockResolvedValue(repairedProfile);
@@ -289,7 +291,6 @@ describe("GET /api/me", () => {
     expect(payload.data.profile).toMatchObject({
       userId: "user-without-profile",
       onboardingCompleted: false,
-      targetRole: "ai_product_manager",
     });
     expect(mocks.upsertProfile).toHaveBeenCalledWith({
       where: { userId: "user-without-profile" },
@@ -297,7 +298,6 @@ describe("GET /api/me", () => {
       create: expect.objectContaining({
         userId: "user-without-profile",
         onboardingCompleted: false,
-        targetRole: "ai_product_manager",
       }),
     });
   });

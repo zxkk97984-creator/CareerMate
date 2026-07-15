@@ -32,6 +32,8 @@ export function profileDto(profile: {
   abilityScores: string;
   memoryEnabled: boolean;
   onboardingCompleted: boolean;
+  version?: number;
+  introStatus?: string;
   updatedAt: Date;
 }): ProfileDto {
   return {
@@ -39,14 +41,9 @@ export function profileDto(profile: {
     learningPreference: parseJson<string[]>(profile.learningPreference, []),
     interestTags: parseJson<string[]>(profile.interestTags, []),
     constraints: parseJson<string[]>(profile.constraints, []),
-    abilityScores: parseJson<AbilityScores>(profile.abilityScores, {
-      aiTooling: 0,
-      roleFoundation: 0,
-      dataAnalysis: 0,
-      businessProduct: 0,
-      communication: 0,
-      projectPractice: 0,
-    }),
+    abilityScores: parseJson<AbilityScores>(profile.abilityScores, {} as AbilityScores),
+    version: profile.version ?? 1,
+    introStatus: profile.introStatus ?? "not_started",
     updatedAt: profile.updatedAt.toISOString(),
   };
 }

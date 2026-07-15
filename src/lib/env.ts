@@ -70,6 +70,10 @@ export function getTboxConfig(): TboxConfig {
   };
 }
 
+export function isOpenChatEntry(): boolean {
+  return readBoolean("OPEN_CHAT_ENTRY", true);
+}
+
 export function getPluginToken() {
   return read("CAREERMATE_PLUGIN_TOKEN");
 }

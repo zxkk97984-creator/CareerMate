@@ -53,7 +53,7 @@ describe("onboarding routing", () => {
     }));
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ ok: true, data: { nextPath: "/onboarding" } });
+    expect(await response.json()).toMatchObject({ ok: true, data: { nextPath: "/" } });
     expect(mocks.userCreate).toHaveBeenCalledWith({
       data: expect.objectContaining({
         profile: {

@@ -26,6 +26,8 @@ const profile: ProfileDto = {
   },
   memoryEnabled: true,
   onboardingCompleted: true,
+  version: 1,
+  introStatus: "not_started",
   updatedAt: "2026-07-10T00:00:00.000Z",
 };
 
