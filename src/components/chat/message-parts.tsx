@@ -205,8 +205,10 @@ function PlanRef({ planId, version }: { planId: string; version: number }) {
           ? { directionChange: false, addedTasks: [], removedTasks: [] }
           : null}
         onAcceptReplan={async (id) => {
-          const response = await fetch(`/api/plans/${encodeURIComponent(id)}/accept-replan`, {
+          const response = await fetch(`/api/plans/${encodeURIComponent(id)}/decision`, {
             method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "accept" }),
           });
           await requireApiOk(response);
           setPlan((current) => current ? { ...current, status: "active" } : current);

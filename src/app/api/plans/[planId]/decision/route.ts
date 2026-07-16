@@ -53,7 +53,8 @@ export async function POST(
       });
     });
 
-    return ok({ activated: true, planId });
+    const updated = await db.careerPlan.findUnique({ where: { id: planId } });
+    return ok({ new: { id: planId, status: updated?.status ?? "active" } });
   }
 
   // reject

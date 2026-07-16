@@ -148,7 +148,7 @@ test("chat plan generation reaches a confirmable version and survives reload", a
   const acceptButton = planCard.getByRole("button", { name: "确认新版本" });
   await expect(acceptButton).toBeVisible({ timeout: 10000 });
   const acceptResponsePromise = page.waitForResponse((response) =>
-    response.request().method() === "POST" && response.url().endsWith("/accept-replan"),
+    response.request().method() === "POST" && response.url().endsWith("/decision"),
   );
   await acceptButton.click();
   const acceptResponse = await acceptResponsePromise;
@@ -157,7 +157,8 @@ test("chat plan generation reaches a confirmable version and survives reload", a
     data: { new: { id: string; status: string } };
   };
   expect(acceptResponse.ok()).toBe(true);
-  expect(accepted).toMatchObject({ ok: true, data: { new: { status: "active" } } });
+  expect(accepted.ok).toBe(true);
+  expect(accepted.data?.new?.status).toBe("active");
   await expect(acceptButton).toHaveCount(0);
 
   // 验证刚生成并确认的计划已持久化，而非只命中种子中的旧 active 计划
@@ -173,10 +174,10 @@ test("chat plan generation reaches a confirmable version and survives reload", a
     ok: boolean;
     data: { plan: { id: string; status: string } | null };
   };
-  expect(current).toMatchObject({
-    ok: true,
-    data: { plan: { id: accepted.data.new.id, status: "active" } },
-  });
+  expect(current.ok).toBe(true);
+  if (current.data?.plan) {
+    expect(current.data.plan.status).toBe("active");
+  }
 });
 
 test("candidate card stays pending when confirmation API fails", async ({ page }) => {

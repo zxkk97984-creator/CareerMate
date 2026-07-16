@@ -86,7 +86,8 @@ export function isAgentOperationsEnabled(): boolean {
 }
 
 export function isPlanV2WriteEnabled(): boolean {
-  return readBoolean("PLAN_V2_WRITE", true);
+  // fail-closed: 默认 false，与 .env.example 一致
+  return readBoolean("PLAN_V2_WRITE", false);
 }
 
 export function isConversationSummaryEnabled(): boolean {

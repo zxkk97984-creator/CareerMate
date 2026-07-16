@@ -277,7 +277,7 @@ async function handleStatefulStream(
 
         // 处理 AgentResponse.task/questions → 更新会话状态
         if (agentResponse?.task || agentResponse?.questions?.length) {
-          await applyAgentTaskState(conversationId, agentResponse).catch(() => {});
+          await applyAgentTaskState(conversationId, agentResponse, realProfile?.version ?? 1).catch(() => {});
         }
 
         // ── 执行 Agent Operations（finalize 成功后，仅可信来源）──
@@ -582,6 +582,7 @@ function validateSourceRefs(
 async function applyAgentTaskState(
   conversationId: string,
   agentResponse: { task?: { kind: string; status: string; goal?: string }; questions?: Array<{ id: string; normalizedKey: string; text: string; profileField?: string; answerKind: string; actions?: Array<{ id: string; label: string; value: string }> }> },
+  profileVersion: number,
 ): Promise<void> {
   try {
     const db = getPrisma();
@@ -599,38 +600,47 @@ async function applyAgentTaskState(
       state.currentTask = agentResponse.task;
     }
 
-    // 处理 questions —— 记录 asked，生成 quick_actions
+    // 处理 questions —— 记录 asked，生成 quick_actions（含完整 schema 字段）
     const question = agentResponse.questions?.[0];
     if (question) {
-      // 记录 asked（非阻塞）
-      try {
-        await db.questionLedger.upsert({
-          where: {
-            conversationId_normalizedQuestionKey_profileVersion: {
+      // 检查是否应该提问：已有 answered 记录则跳过
+      const existing = await db.questionLedger.findFirst({
+        where: { conversationId, normalizedQuestionKey: question.normalizedKey, status: "answered" },
+      });
+      if (!existing) {
+        try {
+          await db.questionLedger.upsert({
+            where: {
+              conversationId_normalizedQuestionKey_profileVersion: {
+                conversationId,
+                normalizedQuestionKey: question.normalizedKey,
+                profileVersion,
+              },
+            },
+            update: { questionText: question.text, status: "asked" },
+            create: {
               conversationId,
               normalizedQuestionKey: question.normalizedKey,
-              profileVersion: 1, // 将在下一轮 begin 时更新
+              profileVersion,
+              questionText: question.text,
+              profileField: question.profileField ?? null,
+              status: "asked",
+              answerSummary: "",
             },
-          },
-          update: {},
-          create: {
-            conversationId,
-            normalizedQuestionKey: question.normalizedKey,
-            profileVersion: 1,
-            questionText: question.text,
-            profileField: question.profileField ?? null,
-            status: "asked",
-            answerSummary: "",
-          },
-        });
-      } catch { /* 唯一约束冲突等非关键错误 */ }
+          });
+        } catch { /* 唯一约束冲突等非关键错误 */ }
 
-      state.awaitingQuestion = {
-        normalizedKey: question.normalizedKey,
-        text: question.text,
-        profileField: question.profileField ?? null,
-        askedAt: new Date().toISOString(),
-      };
+        // 写入完整 awaitingQuestion（含 id/answerKind/actions，通过下一轮 schema 校验）
+        state.awaitingQuestion = {
+          id: question.id,
+          normalizedKey: question.normalizedKey,
+          text: question.text,
+          profileField: question.profileField ?? null,
+          answerKind: question.answerKind,
+          actions: question.actions ?? [],
+          askedAt: new Date().toISOString(),
+        };
+      }
     }
 
     await db.chatConversation.update({
