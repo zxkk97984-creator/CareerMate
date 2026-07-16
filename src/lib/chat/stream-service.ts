@@ -319,7 +319,7 @@ async function handleStatefulStream(
           });
           if (allowedOps.length > 0) {
             const operationResults = await executeAgentOperations(
-              userId, conversationId, turn.assistantMessageId, message, allowedOps,
+              userId, conversationId, clientRequestId, turn.assistantMessageId, message, allowedOps,
             );
             for (const ref of operationResults) {
               parts.push(ref);
@@ -430,7 +430,7 @@ async function handleLegacyStream(
   svc: ChatService,
   config: ReturnType<typeof getTboxConfig>,
 ): Promise<Response> {
-  const { userId, conversationId, message, signal } = options;
+  const { userId, conversationId, message, signal, clientRequestId } = options;
 
   const userMsg = await svc.createMessage(userId, {
     conversationId,
@@ -522,7 +522,7 @@ async function handleLegacyStream(
 
         // 执行 operations
         if (operations.length > 0) {
-          const opRefs = await executeAgentOperations(userId, conversationId, assistantMsg.id, message, operations);
+          const opRefs = await executeAgentOperations(userId, conversationId, clientRequestId, assistantMsg.id, message, operations);
           for (const ref of opRefs) {
             writeSseEvent(controller, "artifact", { messageId: assistantMsg.id, part: ref });
           }
@@ -733,6 +733,7 @@ interface OperationResult {
 async function executeAgentOperations(
   userId: string,
   conversationId: string,
+  clientRequestId: string,
   sourceMessageId: string,
   userMessage: string,
   operations: AgentOperation[],
@@ -743,10 +744,13 @@ async function executeAgentOperations(
   const results: OperationResult[] = [];
 
   for (const op of operations) {
+    let opResult: OperationResult | null = null;
+    let opError: string | null = null;
     try {
-      // ── 幂等检查：op.id 已处理过则跳过 ──
-      const existing = await checkOperationIdempotent(db, userId, op.id, op.type);
+      // ── 幂等检查：通过 OperationExecution 表精确匹配 ──
+      const existing = await checkOperationIdempotent(db, userId, conversationId, clientRequestId, op.id);
       if (existing) {
+        opResult = existing;
         results.push(existing);
         continue;
       }
@@ -765,7 +769,8 @@ async function executeAgentOperations(
 
         if (decision.action === "auto_apply") {
           const r = await profileMutation.applyPatch(userId, op.patch as any);
-          results.push({ type: "profile_applied", version: r.version, operationId: op.id });
+          opResult = { type: "profile_applied", version: r.version, operationId: op.id };
+          results.push(opResult);
         } else if (decision.action === "pending_candidate") {
           // 逐字段创建候选——每个字段独立可确认
           const patch = op.patch as Record<string, unknown>;
@@ -782,7 +787,8 @@ async function executeAgentOperations(
                 sensitive: op.sensitive,
                 operationId: op.id,
               });
-              results.push({ type: "profile_candidate_ref", candidateId: r.candidateId, operationId: op.id });
+              opResult = { type: "profile_candidate_ref", candidateId: r.candidateId, operationId: op.id };
+              results.push(opResult);
             } catch { /* 单字段候选创建失败不阻止其他字段 */ }
           }
         }
@@ -799,10 +805,12 @@ async function executeAgentOperations(
             operationId: op.id,
           });
           if (r.action !== "rejected") {
-            results.push({ type: "memory_ref", memoryId: r.memoryId, status: r.action, operationId: op.id });
+            opResult = { type: "memory_ref", memoryId: r.memoryId, status: r.action, operationId: op.id };
+            results.push(opResult);
           }
         } catch (e) {
-          results.push({ type: "error", code: "MEMORY_PROPOSAL_FAILED", message: (e as Error).message.slice(0, 200) });
+          opError = (e as Error).message.slice(0, 200);
+          results.push({ type: "error", code: "MEMORY_PROPOSAL_FAILED", message: opError! });
         }
       }
 
@@ -834,9 +842,11 @@ async function executeAgentOperations(
               generationMeta: JSON.stringify({ triggeredBy: "chat", conversationId, source: "agent_operation", operationId: op.id }),
             },
           });
-          results.push({ type: "plan_ref", planId: created.id, version: created.version, operationId: op.id });
+          opResult = { type: "plan_ref", planId: created.id, version: created.version, operationId: op.id };
+          results.push(opResult);
         } catch (e) {
-          results.push({ type: "error", code: "PLAN_DRAFT_FAILED", message: (e as Error).message.slice(0, 200) });
+          opError = (e as Error).message.slice(0, 200);
+          results.push({ type: "error", code: "PLAN_DRAFT_FAILED", message: opError! });
         }
       }
 
@@ -853,69 +863,75 @@ async function executeAgentOperations(
               executionMeta: JSON.stringify({ source: "agent_operation", sourceMessageId, operationId: op.id }),
             },
           });
-          results.push({ type: "exploration_report_ref", reportId: created.id, operationId: op.id });
+          opResult = { type: "exploration_report_ref", reportId: created.id, operationId: op.id };
+          results.push(opResult);
         } catch (e) {
-          results.push({ type: "error", code: "REPORT_CREATE_FAILED", message: (e as Error).message.slice(0, 200) });
+          opError = (e as Error).message.slice(0, 200);
+          results.push({ type: "error", code: "REPORT_CREATE_FAILED", message: opError! });
         }
       }
     } catch (e) {
-      results.push({ type: "error", code: "OPERATION_FAILED", message: (e as Error).message.slice(0, 200) });
+      opError = (e as Error).message.slice(0, 200);
+      results.push({ type: "error", code: "OPERATION_FAILED", message: opError });
+    }
+    // 记录到 OperationExecution 表（journal）
+    if (opResult || opError) {
+      await recordOperationResult(db, userId, conversationId, clientRequestId, op.id, op.type, opResult, opError);
     }
   }
 
   return results;
 }
 
-/** 幂等检查：根据 operationId 查询是否已有对应产物（retry 安全） */
+/** 幂等检查 + 记录：通过 OperationExecution 表精确匹配 (userId, conversationId, clientRequestId, operationId) */
 async function checkOperationIdempotent(
   db: ReturnType<typeof getPrisma>,
   userId: string,
+  conversationId: string,
+  clientRequestId: string,
   operationId: string,
-  opType: string,
 ): Promise<OperationResult | null> {
   try {
-    // 用 operationId 精确匹配已持久化的产物
-    const idTag = `"operationId":"${operationId}"`;
-
-    if (opType === "profile_patch") {
-      // 候选通过 source 字段标记 operationId
-      const candidate = await db.profileUpdateCandidate.findFirst({
-        where: { userId, source: `agent_operation:${operationId}` },
-        orderBy: { createdAt: "desc" },
-      });
-      if (candidate) return { type: "profile_candidate_ref", candidateId: candidate.id, operationId };
-      // 也检查最近是否已有 auto_apply（5分钟内同字段同值）
-      return null;
+    const existing = await db.operationExecution.findUnique({
+      where: { userId_conversationId_clientRequestId_operationId: { userId, conversationId, clientRequestId, operationId } },
+    });
+    if (!existing) return null; // 全新操作
+    if (existing.status === "completed") {
+      // 已完成 → 返回缓存结果（idempotent）
+      try { return JSON.parse(existing.result) as OperationResult; } catch { return null; }
     }
-    if (opType === "memory_proposal") {
-      // source 字段标记 operationId：agent_proposal:op1 或 explicit_remember:op1
-      const existing = await db.memoryItem.findFirst({
-        where: { userId, source: { contains: operationId } },
-        orderBy: { createdAt: "desc" },
-      });
-      if (existing) return { type: "memory_ref", memoryId: existing.id, status: existing.status, operationId };
-      return null;
-    }
-    if (opType === "plan_draft") {
-      const existing = await db.careerPlan.findFirst({
-        where: { userId, generationMeta: { contains: idTag } },
-        orderBy: { createdAt: "desc" },
-      });
-      if (existing) return { type: "plan_ref", planId: existing.id, version: existing.version, operationId };
-      return null;
-    }
-    if (opType === "exploration_report") {
-      const existing = await db.careerExplorationReport.findFirst({
-        where: { userId, executionMeta: { contains: idTag } },
-        orderBy: { createdAt: "desc" },
-      });
-      if (existing) return { type: "exploration_report_ref", reportId: existing.id, operationId };
-      return null;
-    }
+    // pending 或 failed → 允许重试
     return null;
   } catch {
-    return null; // 幂等检查失败不阻塞操作
+    return null;
   }
+}
+
+/** 记录操作执行结果到 OperationExecution 表 */
+async function recordOperationResult(
+  db: ReturnType<typeof getPrisma>,
+  userId: string,
+  conversationId: string,
+  clientRequestId: string,
+  operationId: string,
+  opType: string,
+  result: OperationResult | null,
+  error: string | null,
+): Promise<void> {
+  try {
+    await db.operationExecution.upsert({
+      where: { userId_conversationId_clientRequestId_operationId: { userId, conversationId, clientRequestId, operationId } },
+      update: {
+        status: error ? "failed" : "completed",
+        result: JSON.stringify(result ?? { error }),
+      },
+      create: {
+        userId, conversationId, clientRequestId, operationId, opType,
+        status: error ? "failed" : "completed",
+        result: JSON.stringify(result ?? { error }),
+      },
+    });
+  } catch { /* 记录失败不阻塞主流程 */ }
 }
 
 // ── 辅助：加载真实 UserProfile ──────────────────────

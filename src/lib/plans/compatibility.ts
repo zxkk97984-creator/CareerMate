@@ -145,13 +145,19 @@ export function serializePlanV1(plan: CareerPlanV1) {
 
 // ── V2 到 V1 转换（填充 years/quarters/months 用于渲染）──
 
-/** 将 duration 转为近似月数 */
-function durationToMonths(d: { value: number; unit: string }): number {
-  const factors: Record<string, number> = { day: 1 / 30, week: 1 / 4.345, month: 1, year: 12 };
-  return Math.round(d.value * (factors[d.unit] ?? 1));
+/** 将 duration 转为原始天数（用于比例计算） */
+function durationToDays(d: { value: number; unit: string }): number {
+  const factors: Record<string, number> = { day: 1, week: 7, month: 30, year: 365 };
+  return d.value * (factors[d.unit] ?? 30);
 }
 
-/** 将 Plan V2 的 phases 按真实 duration 展开为 V1 兼容的 years/quarters/months 数组 */
+/** 将 horizon 转为总月数（权威值） */
+function horizonToMonths(h: { value: number; unit: string }): number {
+  const factors: Record<string, number> = { day: 1 / 30, week: 1 / 4.345, month: 1, year: 12 };
+  return Math.max(1, Math.round(h.value * (factors[h.unit] ?? 1)));
+}
+
+/** 将 Plan V2 的 phases 按比例分配 horizon 总月数 */
 export function convertV2ToV1Arrays(v2: AiCareerPlanV2): {
   years: Array<{ yearIndex: number; goal: string }>;
   quarters: Array<{ quarterIndex: number; goal: string; milestone: string }>;
@@ -162,14 +168,28 @@ export function convertV2ToV1Arrays(v2: AiCareerPlanV2): {
   const quarters: Array<{ quarterIndex: number; goal: string; milestone: string }> = [];
   const months: Array<{ monthIndex: number; goal: string; learningTasks: Array<{ id: string; title: string; type: string; status: string; dueWeek: number }>; practiceOutputs: string[]; evaluationMetrics: string[] }> = [];
 
-  // 计算每个 phase 的月数
-  const phaseMonths: number[] = v2.phases.map((p) =>
-    Math.max(1, durationToMonths(p.duration)),
-  );
-  const totalPhaseMonths = phaseMonths.reduce((s, m) => s + m, 0);
+  // horizon 总月数作为权威值
+  const totalMonths = horizonToMonths(v2.horizon);
 
-  // horizon 总月数——以各 phase duration 之和为准
-  const totalMonths = totalPhaseMonths > 0 ? totalPhaseMonths : durationToMonths(v2.horizon);
+  // 按各 phase 的 duration（天数）比例分配月份，确保总和精确等于 totalMonths
+  const phaseDays = v2.phases.map((p) => durationToDays(p.duration));
+  const totalDays = phaseDays.reduce((s, d) => s + d, 0);
+  // 每个 phase 至少 1 个月，剩余按比例分配
+  const minAlloc = v2.phases.map(() => 1);
+  const allocated = minAlloc.reduce((s, m) => s + m, 0);
+  const remaining = totalMonths - allocated;
+  const phaseMonths = minAlloc.map((base, i) => {
+    if (remaining <= 0) return base;
+    // 按天数比例分配剩余月份（至少1个月保证）
+    const fraction = totalDays > 0 ? phaseDays[i] / totalDays : 1 / v2.phases.length;
+    const extra = Math.round(remaining * fraction);
+    return base + extra;
+  });
+  // 修正舍入误差：调整最后一个 phase 使总和精确等于 totalMonths
+  const currentSum = phaseMonths.reduce((s, m) => s + m, 0);
+  if (currentSum !== totalMonths && phaseMonths.length > 0) {
+    phaseMonths[phaseMonths.length - 1] += totalMonths - currentSum;
+  }
 
   let monthIndex = 1;
   let yearIndex = 1;
@@ -183,17 +203,14 @@ export function convertV2ToV1Arrays(v2: AiCareerPlanV2): {
     const pm = phaseMonths[pi];
     const actions = phase.actions ?? [];
 
-    // 每个 phase 分配月数不低于 1，确保最小粒度
     for (let mi = 0; mi < pm; mi++) {
       const action = actions[mi % Math.max(1, actions.length)];
 
-      // 年份边界（每12个月）
       if (monthsInCurrentYear === 0) {
         currentYearGoal = phase.objective ?? phase.title;
         years.push({ yearIndex, goal: currentYearGoal });
       }
 
-      // 季度边界（每3个月）
       if (monthsInCurrentQuarter === 0) {
         quarters.push({
           quarterIndex,
@@ -216,14 +233,8 @@ export function convertV2ToV1Arrays(v2: AiCareerPlanV2): {
       monthsInCurrentYear++;
       monthsInCurrentQuarter++;
 
-      if (monthsInCurrentQuarter >= 3) {
-        monthsInCurrentQuarter = 0;
-        quarterIndex++;
-      }
-      if (monthsInCurrentYear >= 12) {
-        monthsInCurrentYear = 0;
-        yearIndex++;
-      }
+      if (monthsInCurrentQuarter >= 3) { monthsInCurrentQuarter = 0; quarterIndex++; }
+      if (monthsInCurrentYear >= 12) { monthsInCurrentYear = 0; yearIndex++; }
     }
   }
 

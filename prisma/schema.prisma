@@ -305,6 +305,22 @@ model ChatMessage {
   @@index([conversationId, createdAt])
 }
 
+model OperationExecution {
+  id              String   @id @default(cuid())
+  userId          String
+  conversationId  String
+  clientRequestId String
+  operationId     String
+  opType          String
+  status          String   @default("pending")
+  result          String   @default("{}")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([userId, conversationId, clientRequestId, operationId])
+  @@index([userId, operationId])
+}
+
 model QuestionLedger {
   id                    String   @id @default(cuid())
   conversationId        String

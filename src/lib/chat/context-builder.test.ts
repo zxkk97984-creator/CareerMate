@@ -66,9 +66,24 @@ describe("determineScope — 通用职业表达模式", () => {
     }))).toBe("career_full");
   });
 
-  it("我想学英语 → career_full（含学习意图模式）", () => {
-    // "我想学" 匹配 careerIntentPatterns
-    expect(determineScope(input({ userMessage: "我想学英语" }))).toBe("career_full");
+  it("我想学英语 → general_minimal（普通兴趣学习）", () => {
+    expect(determineScope(input({ userMessage: "我想学英语" }))).toBe("general_minimal");
+  });
+
+  it("我想学做蛋糕 → general_minimal（普通兴趣学习）", () => {
+    expect(determineScope(input({ userMessage: "我想学做蛋糕" }))).toBe("general_minimal");
+  });
+
+  it("DBA → career_full（大写缩写）", () => {
+    expect(determineScope(input({ userMessage: "DBA" }))).toBe("career_full");
+  });
+
+  it("精算师 → career_full（角色后缀词）", () => {
+    expect(determineScope(input({ userMessage: "精算师" }))).toBe("career_full");
+  });
+
+  it("UX → career_full（缩写）", () => {
+    expect(determineScope(input({ userMessage: "UX" }))).toBe("career_full");
   });
 
   it("删除我的数据 → privacy", () => {
