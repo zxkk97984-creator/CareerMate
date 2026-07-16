@@ -106,24 +106,38 @@ export function createMemoryProposalService(): MemoryProposalService {
     },
 
     async acceptProposal(memoryId, userId) {
-      await db.memoryItem.updateMany({
+      const result = await db.memoryItem.updateMany({
         where: { id: memoryId, userId, status: "pending" },
         data: { status: "confirmed" },
       });
+      if (result.count === 0) throw new MemoryProposalError("记忆不存在或已处理", "NOT_FOUND", 404);
     },
 
     async rejectProposal(memoryId, userId) {
-      await db.memoryItem.updateMany({
+      const result = await db.memoryItem.updateMany({
         where: { id: memoryId, userId, status: "pending" },
         data: { status: "rejected" },
       });
+      if (result.count === 0) throw new MemoryProposalError("记忆不存在或已处理", "NOT_FOUND", 404);
     },
 
     async editProposal(memoryId, userId, content) {
-      await db.memoryItem.updateMany({
+      const result = await db.memoryItem.updateMany({
         where: { id: memoryId, userId, status: "pending" },
         data: { content: content.slice(0, 2000) },
       });
+      if (result.count === 0) throw new MemoryProposalError("记忆不存在或已处理", "NOT_FOUND", 404);
     },
   };
+}
+
+export class MemoryProposalError extends Error {
+  constructor(
+    message: string,
+    public code: string,
+    public status: number,
+  ) {
+    super(message);
+    this.name = "MemoryProposalError";
+  }
 }

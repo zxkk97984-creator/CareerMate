@@ -10,6 +10,7 @@ import { normalizeCitations, normalizeCitationsFromToolCalls, detectSearchToolCa
 import { createProfileMutationService } from "@/lib/profile/profile-mutation-service";
 import { createMemoryProposalService } from "@/lib/memory/proposal-service";
 import { getPrisma } from "@/lib/prisma";
+import type { TboxHistoryMessage } from "@/lib/tbox/types";
 import type { AgentOperation } from "./agent-protocol";
 
 // ── 类型 ──────────────────────────────────────────────────
@@ -178,8 +179,11 @@ async function handleStatefulStream(
     ? (convDetail?.remoteConversationId ?? undefined)
     : undefined;
 
-  const hasContext = config.contextTransport === "business_data";
-  const searchPolicy = agentContext.searchPolicy;
+  // 确定搜索策略：未知职业/薪资/时效问题 → required
+  const searchPolicy = resolveSearchPolicy(message, agentContext);
+
+  // 三种互斥上下文模式
+  const transport = config.contextTransport;
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -199,16 +203,34 @@ async function handleStatefulStream(
           knowledgeSources: [],
         });
 
-        // 构建增强问题（question_prefix 模式将上下文嵌入问题文本）
-        const enhancedQuestion = buildEnhancedQuestion(message, agentContext as unknown as Record<string, unknown>);
+        // 按模式构建请求参数
+        let question: string;
+        let history: TboxHistoryMessage[] | undefined;
+        let context: unknown;
+
+        if (transport === "provider_history") {
+          // provider_history: 发送原始问题 + 裁剪后的历史（排除本轮消息）
+          question = message;
+          history = buildProviderHistory(messages, turn.userMessageId);
+        } else if (transport === "business_data") {
+          // business_data: 原始问题 + 结构化 context
+          question = message;
+          context = agentContext;
+          history = undefined;
+        } else {
+          // question_prefix: 增强问题嵌入完整上下文
+          question = buildEnhancedQuestion(message, agentContext as unknown as Record<string, unknown>);
+          history = undefined;
+          context = undefined;
+        }
 
         const aiResponse = await streamChatWithTboxProgressive(
           {
-            question: enhancedQuestion,
+            question,
             userId,
             conversationId: existingRemoteId,
-            history: undefined, // provider history 不含本轮已持久化的用户消息
-            context: hasContext ? agentContext : undefined,
+            history,
+            context,
             searchPolicy,
           },
           { config, signal },
@@ -535,7 +557,8 @@ async function handleLegacyStream(
 
 function buildEnhancedQuestion(userMessage: string, ctx: Record<string, unknown>): string {
   const conv = ctx.conversation as Record<string, unknown> | undefined;
-  // 12k 总预算注入完整脱敏 AgentContext
+  // 12k 总预算注入完整脱敏 AgentContext（含 recentMessages、summary、memories、plan、ledger）
+  const recentMsgs = (conv?.recentMessages as Array<{ role: string; content: string }> | undefined) ?? [];
   const contextObj: Record<string, unknown> = {
     profile: ctx.profile,
     profileVersion: ctx.profileVersion,
@@ -547,15 +570,50 @@ function buildEnhancedQuestion(userMessage: string, ctx: Record<string, unknown>
       answeredQuestionKeys: conv?.answeredQuestionKeys,
       summary: conv?.summary,
       contextVersion: conv?.contextVersion,
+      recentMessages: recentMsgs.slice(-6).map((m) => ({ role: m.role, text: m.content.slice(0, 300) })),
     },
     policy: ctx.policy,
     searchPolicy: ctx.searchPolicy,
     scope: ctx.scope,
   };
   const contextStr = JSON.stringify(contextObj);
+  // 保证 JSON 完整性：在 maxContext 字符内找到最后一个完整的 } 或 ]
   const maxContext = 10_000;
-  const trimmedContext = contextStr.length > maxContext ? contextStr.slice(0, maxContext - 3) + "..." : contextStr;
+  let trimmedContext = contextStr;
+  if (contextStr.length > maxContext) {
+    trimmedContext = contextStr.slice(0, maxContext - 3);
+    // 回退到最后一个 } 保持 JSON 闭合
+    const lastBrace = trimmedContext.lastIndexOf("}");
+    if (lastBrace > maxContext / 2) trimmedContext = trimmedContext.slice(0, lastBrace + 1);
+  }
   return `你是 CareerMate 职业规划助手。以下是已授权用户上下文：\n${trimmedContext}\n\n用户原始问题：${userMessage}`;
+}
+
+// ── 构建 provider_history 模式的历史消息（排除本轮消息）──
+
+function buildProviderHistory(
+  messages: Array<{ id: string; role: string; content: string; status: string }>,
+  excludeUserMsgId: string,
+): TboxHistoryMessage[] {
+  return messages
+    .filter((m) => m.status === "completed" && m.content && m.id !== excludeUserMsgId)
+    .slice(-12)
+    .map((m) => ({ role: m.role as "user" | "assistant", content: m.content.slice(0, 800) }));
+}
+
+// ── 确定搜索策略 ─────────────────────────────────────
+
+function resolveSearchPolicy(
+  userMessage: string,
+  ctx: { searchPolicy: string; scope: string },
+): "off" | "allowed" | "required" {
+  // 非职业 scope → off
+  if (ctx.scope === "general_minimal" || ctx.scope === "privacy") return "off";
+  // 显式联网请求、未知职业、薪资趋势等时效问题 → required
+  const msg = userMessage.toLowerCase();
+  if (/联网|搜索|查一下|最新|薪资|工资|趋势|招聘|行情|市场/.test(msg)) return "required";
+  if (/介绍|了解|什么是|怎么样|前景/.test(msg) && /岗位|职业|工作/.test(msg)) return "required";
+  return ctx.searchPolicy as "off" | "allowed" | "required";
 }
 
 // ── 辅助：校验 sourceRefs 与 citations 绑定 ──

@@ -24,8 +24,9 @@ function readHistoryMode(): TboxHistoryMode {
 }
 
 function readContextTransport(): TboxContextTransport {
-  // fail-closed：安全默认 question_prefix；只有显式 "business_data" 才启用，非法值落回安全默认
+  // fail-closed：安全默认 question_prefix
   const value = read("TBOX_CONTEXT_TRANSPORT", "question_prefix").trim().toLowerCase();
+  if (value === "provider_history") return "provider_history";
   if (value === "business_data") return "business_data";
   return "question_prefix";
 }

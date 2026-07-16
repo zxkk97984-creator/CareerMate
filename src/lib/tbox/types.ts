@@ -13,7 +13,7 @@ export type DatasetKey =
 export type TboxHistoryMode = "provider" | "context_only";
 
 /** 百宝箱业务上下文传输方式 */
-export type TboxContextTransport = "business_data" | "question_prefix";
+export type TboxContextTransport = "provider_history" | "business_data" | "question_prefix";
 
 /** 百宝箱结构化输出模式 */
 export type TboxStructuredMode = "disabled" | "terminal" | "followup";
