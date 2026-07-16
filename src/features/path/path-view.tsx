@@ -23,14 +23,14 @@ export function PathView({ plan, pendingPlan, executionMeta, refresh, setNotice 
 
   async function generatePlan() { if (generating) return; setGenerating(true); setError(""); setNotice("正在生成 36 个月行动计划..."); try { const r = await fetchApi<{ plan: CareerPlanDto; note: string }>("/api/plans/generate", { method: "POST", body: JSON.stringify({ regenerate: Boolean(plan) }) }); if (!r.ok) throw new Error(r.error?.message ?? "职业路径生成失败"); await refresh(); setNotice(r.data.note || "职业路径已生成。"); } catch (caught: any) { const m = caught.message ?? "职业路径生成失败，请稍后重试。"; setError(m); setNotice(m); } finally { setGenerating(false); } }
   async function updateTask(taskId: string, status: TaskStatus) { if (!plan || busyTaskId) return; setBusyTaskId(taskId); setError(""); setNotice("正在保存任务状态..."); try { const r = await fetchApi<{ plan: CareerPlanDto; changed: boolean }>(`/api/plans/${encodeURIComponent(plan.id)}/tasks/${encodeURIComponent(taskId)}`, { method: "PATCH", body: JSON.stringify({ status }) }); if (!r.ok) throw new Error(r.error?.message ?? "任务状态保存失败"); await refresh(); setNotice(r.data.changed ? "任务状态已更新。" : "任务状态未变化。"); } catch (caught: any) { const m = caught.message ?? "任务状态保存失败，请刷新后重试。"; setError(m); setNotice(m); } finally { setBusyTaskId(null); } }
-  async function acceptPendingPlan(planId: string) { setError(""); setNotice("正在确认新计划版本..."); const r = await fetchApi(`/api/plans/${encodeURIComponent(planId)}/accept-replan`, { method: "POST" }); if (!r.ok) { const m = r.error?.message ?? "新计划确认失败，请稍后重试。"; setError(m); setNotice(m); throw new Error(m); } await refresh(); setNotice("新计划版本已确认，旧版本已保留。"); }
+  async function acceptPendingPlan(planId: string) { setError(""); setNotice("正在确认新计划版本..."); const r = await fetchApi(`/api/plans/${encodeURIComponent(planId)}/decision`, { method: "POST", body: JSON.stringify({ action: "accept" }) }); if (!r.ok) { const m = r.error?.message ?? "新计划确认失败，请稍后重试。"; setError(m); setNotice(m); throw new Error(m); } await refresh(); setNotice("新计划版本已确认，旧版本已保留。"); }
 
   const timeline = plan ? groupPlanTimeline(plan) : [];
   const months = (plan?.months ?? []) as unknown as PlanMonth[];
   const currentMonth = months.find((m) => m.monthIndex === plan?.currentMonthIndex);
 
   return (
-    <SurfaceCard title="3 年职业路径" action={<Button disabled={generating} onClick={generatePlan}>{generating ? "生成中..." : plan ? "重规划" : "生成路径"}</Button>}>
+    <SurfaceCard title="职业路径" action={<Button disabled={generating} onClick={generatePlan}>{generating ? "生成中..." : plan ? "重规划" : "生成路径"}</Button>}>
       {error ? <div style={{ marginBottom: 16 }}><InlineAlert tone="error">{error}</InlineAlert></div> : null}
       {pendingPlan ? <div style={{ marginBottom: 20 }}><PlanSummaryCard plan={pendingPlan} onAcceptReplan={acceptPendingPlan} /></div> : null}
       {!plan ? (pendingPlan ? null : <div style={{ borderRadius: "var(--cm-radius-sm)", background: "var(--cm-canvas)", padding: 20, fontSize: 14, color: "var(--cm-text-muted)" }}>还没有职业路径，请先生成。</div>) : (

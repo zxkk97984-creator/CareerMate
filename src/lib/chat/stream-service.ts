@@ -280,32 +280,12 @@ async function handleStatefulStream(
           parts.push({ type: "error", code: "AGENT_RESPONSE_WARNINGS", message: agentResponseResult.warnings.join("; ").slice(0, 500) });
         }
 
-        await turnService.finalize({
-          turn: {
-            id: turn.id,
-            conversationId,
-            userId,
-            clientRequestId,
-            userMessageId: turn.userMessageId,
-            assistantMessageId: turn.assistantMessageId,
-          },
-          assistantText: fullContent,
-          agentResponse: agentResponse ?? undefined,
-          citations: validatedSourceRefs.map((r) => ({ title: r.kind, source: `ref_${r.citationIndex}` })),
-          remoteConversationId: remoteConversationId ?? undefined,
-          executionMeta: finalMeta ?? { requestedMode: config.mode, actualMode: config.mode, degraded: false, source: "tbox-api" },
-          warnings: agentResponseResult.warnings ?? [],
-        });
-
         // 处理 AgentResponse.task/questions → 更新会话状态
         if (agentResponse?.task || agentResponse?.questions?.length) {
           await applyAgentTaskState(conversationId, agentResponse, realProfile?.version ?? 1).catch(() => {});
         }
 
-        // ── 执行 Agent Operations（finalize 成功后，仅可信来源）──
-        // 真实 API (tbox-api) 且未降级 → 可信
-        // mock/manual 且 AGENT_OPERATIONS_V1 显式启用 → 仅测试用途
-        // degraded 或 scope 为 general_minimal/privacy → 禁止写入
+        // ── 执行 Agent Operations（先于 finalize，结果持久化到 parts）──
         const metaSource = (finalMeta as Record<string, unknown>)?.source as string | undefined;
         const metaDegraded = (finalMeta as Record<string, unknown>)?.degraded as boolean | undefined;
         const isMockSource = metaSource === "local-mock";
@@ -314,11 +294,9 @@ async function handleStatefulStream(
           && config.structuredMode !== "disabled"
           && agentContext.scope !== "general_minimal"
           && agentContext.scope !== "privacy"
-          // 真实 API 总是允许；mock 仅当 AGENT_OPERATIONS_V1 显式开启（E2E 测试）允许
           && (config.mode === "api" ? metaSource !== "local-mock" : isMockSource);
 
         if (safeForOperations && agentResponse?.operations && agentResponse.operations.length > 0) {
-          // 过滤 allowed operations：plan_draft 需 PLAN_V2_WRITE 开关
           const allowedOps = agentResponse.operations.filter((op) => {
             if (op.type === "plan_draft" && !isPlanV2WriteEnabled()) return false;
             return true;
@@ -346,6 +324,25 @@ async function handleStatefulStream(
             })),
           });
         }
+
+        // ── 短事务 B：完成轮次（parts 已含 operations + citations）──
+        await turnService.finalize({
+          turn: {
+            id: turn.id,
+            conversationId,
+            userId,
+            clientRequestId,
+            userMessageId: turn.userMessageId,
+            assistantMessageId: turn.assistantMessageId,
+          },
+          assistantText: fullContent,
+          agentResponse: agentResponse ?? undefined,
+          citations: validatedSourceRefs.map((r) => ({ title: r.kind, source: `ref_${r.citationIndex}` })),
+          parts,
+          remoteConversationId: remoteConversationId ?? undefined,
+          executionMeta: finalMeta ?? { requestedMode: config.mode, actualMode: config.mode, degraded: false, source: "tbox-api" },
+          warnings: agentResponseResult.warnings ?? [],
+        });
 
         // 发送 artifact 事件
         for (const part of parts) {

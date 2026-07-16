@@ -163,10 +163,10 @@ test("chat plan generation reaches a confirmable version and survives reload", a
 
   // 验证刚生成并确认的计划已持久化，而非只命中种子中的旧 active 计划
   await page.goto("/path");
-  await expect(page.getByRole("heading", { name: "3 年职业路径" })).toBeVisible({ timeout: 10000 });
+  await expect(page.getByRole("heading", { name: "职业路径" })).toBeVisible({ timeout: 10000 });
   // 刷新后仍能正常加载
   await page.reload();
-  await expect(page.getByRole("heading", { name: "3 年职业路径" })).toBeVisible({ timeout: 10000 });
+  await expect(page.getByRole("heading", { name: "职业路径" })).toBeVisible({ timeout: 10000 });
   const current = await page.evaluate(async () => {
     const response = await fetch("/api/plans/current");
     return response.json();

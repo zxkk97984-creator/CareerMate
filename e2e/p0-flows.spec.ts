@@ -27,9 +27,9 @@ test("chat-first persistent conversation continues across page visits", async ({
   await page.getByLabel("发送消息").click();
   await expect(page.locator(".message-assistant")).toBeVisible({ timeout: 15000 });
 
-  // 导航到职业路径页（heading "3 年职业路径" 是页面的唯一性标记）
+  // 导航到职业路径页（heading "职业路径" 是页面的唯一性标记）
   await page.goto("/path");
-  await expect(page.getByRole("heading", { name: "3 年职业路径" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "职业路径" })).toBeVisible();
 
   // 返回聊天首页，验证对话仍在
   await page.goto("/");
@@ -121,7 +121,7 @@ test("chat-first complete flow: persistent chat and conversation switching", asy
 
   // 4. 访问计划页
   await page.goto("/path");
-  await expect(page.getByRole("heading", { name: "3 年职业路径" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "职业路径" })).toBeVisible();
 
   // 5. 返回聊天首页
   await page.goto("/");

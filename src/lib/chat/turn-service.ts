@@ -42,6 +42,7 @@ export interface TurnFinalizeInput {
   assistantText: string;
   agentResponse?: AgentResponse;
   citations: CitationObservation[];
+  parts: unknown[];
   remoteConversationId?: string;
   executionMeta: Record<string, unknown>;
   warnings: string[];
@@ -75,6 +76,21 @@ function generateTurnId(): string {
   const ts = Date.now().toString(36);
   const rand = Math.random().toString(36).slice(2, 10);
   return `turn_${ts}_${rand}`;
+}
+
+// ── 辅助：区分快捷动作与用户手输 ──────────────
+
+function resolveActionAnswer(
+  actionId: string | undefined,
+  awaiting: { id: string; text: string; actions?: Array<{ id: string; label: string; value: string }> } | null,
+  userMessage: string,
+): string {
+  if (!actionId || !awaiting) return userMessage;
+  // actionId 必须匹配当前 awaitingQuestion 的某个 action
+  const actions = awaiting.actions ?? [];
+  const matched = actions.find((a) => a.id === actionId);
+  if (matched) return matched.value; // 快捷动作 → 使用 action value
+  return userMessage; // actionId 不匹配 → 用户手输
 }
 
 // ── 辅助：回答当前等待的问题 ─────────────────────
@@ -267,7 +283,7 @@ export function createTurnService(): ChatTurnService {
           },
         });
 
-        // 5. 回答当前 awaitingQuestion（如果存在）
+        // 5. 回答当前 awaitingQuestion（如果存在）——校验 actionId
         const rawState = conv.state ?? "{}";
         let state: ConversationState;
         try {
@@ -279,7 +295,10 @@ export function createTurnService(): ChatTurnService {
           state = { schemaVersion: 1, currentTask: { kind: "idle", status: "idle", answers: {} }, awaitingQuestion: null };
         }
 
-        const { newState } = await answerAwaitingQuestion(tx, conversationId, state, message, input.profileVersion ?? 1);
+        // 校验 actionId：手输1≠快捷动作
+        const resolvedAnswer = resolveActionAnswer(input.actionId, state.awaitingQuestion, message);
+
+        const { newState } = await answerAwaitingQuestion(tx, conversationId, state, resolvedAnswer, input.profileVersion ?? 1);
 
         // 更新 state
         await tx.chatConversation.update({
@@ -318,7 +337,7 @@ export function createTurnService(): ChatTurnService {
 
     // ── 短事务 B：完成轮次 ──────────────────────────
     async finalize(input) {
-      const { turn, assistantText, agentResponse, citations, remoteConversationId, executionMeta, warnings } = input;
+      const { turn, assistantText, agentResponse, citations, parts, remoteConversationId, executionMeta, warnings } = input;
 
       const result = await db.$transaction(async (tx) => {
         // 1. 再次确认 activeTurnId 匹配
@@ -334,10 +353,10 @@ export function createTurnService(): ChatTurnService {
           );
         }
 
-        // 2. 序列化 parts（citations 由 artifact-service 处理）
-        const parts: unknown[] = [];
+        // 2. 持久化 parts（operation refs + citations）——刷新/replay 完整恢复
+        const persistedParts = [...parts];
         if (warnings.length > 0) {
-          parts.push({ type: "error", code: "WARNINGS", message: warnings.join("; ").slice(0, 500) });
+          persistedParts.push({ type: "error", code: "WARNINGS", message: warnings.join("; ").slice(0, 500) });
         }
 
         // 3. 更新助手消息为 completed
@@ -345,7 +364,7 @@ export function createTurnService(): ChatTurnService {
           where: { id: turn.assistantMessageId },
           data: {
             content: assistantText,
-            parts: JSON.stringify(parts),
+            parts: JSON.stringify(persistedParts),
             status: "completed",
             executionMeta: JSON.stringify(executionMeta),
             contextMeta: JSON.stringify({ warnings }),
