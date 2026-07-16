@@ -1,5 +1,5 @@
 import { failureReason, TboxError, type TboxFailureReason } from "./errors";
-import { createManualChatAnswer, createMockChatChunks } from "./fixtures";
+import { createManualChatAnswer, createMockChatChunks, createMockStructuredResult } from "./fixtures";
 import { consumeChatResponse } from "./client";
 import { parseUpstreamSse } from "./sse";
 import { createAssistantResultAccumulator } from "./result";
@@ -44,13 +44,14 @@ function localEvents(chunks: string[], conversationId?: string): NormalizedStrea
   ];
 }
 
-function localResult(chunks: string[], conversationId?: string): NormalizedAssistantResult {
+function localResult(chunks: string[], conversationId?: string, structured?: unknown): NormalizedAssistantResult {
   return {
     text: chunks.join(""),
     conversationId,
     citations: [],
     warnings: [],
     toolCalls: [],
+    structured,
   };
 }
 
@@ -176,12 +177,13 @@ export async function streamChatWithTboxProgressive(
   // mock 模式
   if (requested === "mock") {
     const chunks = createMockChatChunks(input.question);
+    const structured = createMockStructuredResult(input.question);
     const metaObj = meta(requested, "mock", null, "local-mock");
     for (const chunk of chunks) {
       onEvent({ event: "message", data: { type: "delta", content: chunk }, meta: metaObj });
     }
     onEvent({ event: "done", data: { conversationId: input.conversationId ?? null }, meta: metaObj });
-    return { data: localResult(chunks, input.conversationId), meta: metaObj };
+    return { data: localResult(chunks, input.conversationId, structured), meta: metaObj };
   }
 
   // manual 模式
@@ -189,18 +191,20 @@ export async function streamChatWithTboxProgressive(
     const mResult = await manualResult(input, deps);
     throwIfAborted(deps.signal);
     if (mResult) {
+      const structured = createMockStructuredResult(input.question);
       const metaObj = meta(requested, "manual", null, "manual-fixture");
       onEvent({ event: "message", data: { type: "delta", content: mResult.text }, meta: metaObj });
       onEvent({ event: "done", data: { conversationId: mResult.conversationId ?? null }, meta: metaObj });
-      return { data: mResult, meta: metaObj };
+      return { data: { ...mResult, structured }, meta: metaObj };
     }
     const chunks = createMockChatChunks(input.question);
+    const fallbackStructured = createMockStructuredResult(input.question);
     const metaObj = meta(requested, "mock", "manual_unavailable", "local-mock");
     for (const chunk of chunks) {
       onEvent({ event: "message", data: { type: "delta", content: chunk }, meta: metaObj });
     }
     onEvent({ event: "done", data: { conversationId: input.conversationId ?? null }, meta: metaObj });
-    return { data: localResult(chunks, input.conversationId), meta: metaObj };
+    return { data: localResult(chunks, input.conversationId, fallbackStructured), meta: metaObj };
   }
 
   // api 模式：渐进式消费上游 SSE，经过 accumulator
@@ -259,14 +263,16 @@ export async function streamChatWithTboxProgressive(
   const metaObj = meta(requested, actualMode, reason, source);
 
   if (mResult) {
+    const fallbackStructured = createMockStructuredResult(input.question);
     onEvent({ event: "message", data: { type: "delta", content: mResult.text }, meta: metaObj });
     onEvent({ event: "done", data: { conversationId: mResult.conversationId ?? null }, meta: metaObj });
-    return { data: { ...mResult, warnings: [...mResult.warnings, reason] }, meta: metaObj };
+    return { data: { ...mResult, structured: fallbackStructured, warnings: [...mResult.warnings, reason] }, meta: metaObj };
   }
   const chunks = createMockChatChunks(input.question);
+  const fallbackStructured = createMockStructuredResult(input.question);
   for (const chunk of chunks) {
     onEvent({ event: "message", data: { type: "delta", content: chunk }, meta: metaObj });
   }
   onEvent({ event: "done", data: { conversationId: input.conversationId ?? null }, meta: metaObj });
-  return { data: { ...localResult(chunks, input.conversationId), warnings: [reason] }, meta: metaObj };
+  return { data: { ...localResult(chunks, input.conversationId, fallbackStructured), warnings: [reason] }, meta: metaObj };
 }
