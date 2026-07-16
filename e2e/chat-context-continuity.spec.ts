@@ -248,3 +248,55 @@ test.describe("DBA 开放主聊天回归（mock模式）", () => {
     expect(bodyText).not.toContain("正在连接百宝箱 AI");
   });
 });
+
+test.describe("通用职业回归——任意非种子岗位无白名单拒答", () => {
+  test("精算师（非种子职业）正常回答不拒答", async ({ page }) => {
+    await login(page);
+
+    await page.getByPlaceholder(/Enter 发送/).fill("我想做精算师，需要什么能力？");
+    await page.getByLabel("发送消息").click();
+    await expect(page.locator(".message-assistant")).toBeVisible({ timeout: 15000 });
+    await expect(page.locator(".streaming-cursor")).toHaveCount(0, { timeout: 20000 });
+
+    const text = await page.locator(".message-assistant").first().textContent();
+    expect(text?.trim().length ?? 0).toBeGreaterThan(5);
+    // 不应出现"目前仅支持"等白名单拒答文字
+    expect(text).not.toContain("目前仅支持");
+    expect(text).not.toContain("目前支持");
+  });
+
+  test("海洋生物声学研究员（非种子职业）正常回答不拒答", async ({ page }) => {
+    await login(page);
+
+    await page.getByPlaceholder(/Enter 发送/).fill("我想了解海洋生物声学研究员这个职业");
+    await page.getByLabel("发送消息").click();
+    await expect(page.locator(".message-assistant")).toBeVisible({ timeout: 15000 });
+    await expect(page.locator(".streaming-cursor")).toHaveCount(0, { timeout: 20000 });
+
+    const text = await page.locator(".message-assistant").first().textContent();
+    expect(text?.trim().length ?? 0).toBeGreaterThan(5);
+    expect(text).not.toContain("目前仅支持");
+  });
+
+  test("工业设计师追问不重复提问", async ({ page }) => {
+    await login(page);
+
+    // 第一轮：表达职业意向
+    await page.getByPlaceholder(/Enter 发送/).fill("我想做工业设计师");
+    await page.getByLabel("发送消息").click();
+    await expect(page.locator(".message-assistant")).toBeVisible({ timeout: 15000 });
+    await expect(page.locator(".streaming-cursor")).toHaveCount(0, { timeout: 20000 });
+
+    // 第二轮：自然追问
+    await page.getByPlaceholder(/Enter 发送/).fill("需要学哪些软件？");
+    await page.getByLabel("发送消息").click();
+    await expect(page.locator(".message-assistant").nth(1)).toBeVisible({ timeout: 15000 });
+    await expect(page.locator(".streaming-cursor")).toHaveCount(0, { timeout: 20000 });
+
+    // 验证有两轮对话（非死循环或拒答）
+    const userMsgs = page.locator(".message-user");
+    await expect(userMsgs).toHaveCount(2);
+    const assistantMsgs = page.locator(".message-assistant");
+    await expect(assistantMsgs).toHaveCount(2);
+  });
+});

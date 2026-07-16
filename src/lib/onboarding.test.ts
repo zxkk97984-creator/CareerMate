@@ -101,6 +101,46 @@ describe("onboarding domain", () => {
     expect(extractOnboardingDraft(message)).toMatchObject({ targetRole, targetRoleLabel });
   });
 
+  // ── 任意非种子职业（不依赖白名单）──
+  it.each([
+    ["我想做精算师", "精算师"],
+    ["我想当宠物殡葬师", "宠物殡葬师"],
+    ["我想成为海洋生物声学研究员", "海洋生物声学研究员"],
+    ["目标是工业设计师", "工业设计师"],
+    ["想做心理咨询师", "心理咨询师"],
+    // 裸角色名（后缀识别）
+    ["精算师", "精算师"],
+    ["宠物殡葬师", "宠物殡葬师"],
+  ])("extracts any career without whitelist: %s", (message, expectedLabel) => {
+    const draft = extractOnboardingDraft(message);
+    expect(draft.targetRole).toBeDefined();
+    expect(draft.targetRole).toMatch(/^custom_/);
+    expect(draft.targetRoleLabel).toBe(expectedLabel);
+  });
+
+  // ── 否定输入不误写 ──
+  it.each([
+    "还没想好",
+    "不知道",
+    "没想好",
+    "不确定",
+    "随便",
+  ])("negative input %s does not extract targetRole", (message) => {
+    const draft = extractOnboardingDraft(message);
+    expect(draft.targetRole).toBeUndefined();
+  });
+
+  // ── onboarding 追问 targetRole 时接受裸回答 ──
+  it("accepts bare role answer during onboarding targetRole ask", () => {
+    const previous: OnboardingDraft = { educationStage: "sophomore", major: "计算机科学" };
+    // missing targetRole → 短文本被视为角色名
+    const draft = extractOnboardingDraftForTurn("宠物殡葬师", previous);
+    expect(draft.targetRoleLabel).toBe("宠物殡葬师");
+    // 英文缩写裸回答
+    const draft2 = extractOnboardingDraftForTurn("UX", previous);
+    expect(draft2.targetRoleLabel).toBe("UX");
+  });
+
   it("preserves prior values and merges array facts without duplicates", () => {
     const previous: OnboardingDraft = {
       educationStage: "junior",
