@@ -1,7 +1,7 @@
 import { createChatService, type ChatService } from "./service";
 import { streamChatWithTboxProgressive } from "@/lib/tbox/streaming";
 import { parseTerminalAgentResponse } from "@/lib/tbox/structured-result";
-import { getTboxConfig, isStatefulChatTurns, isAgentOperationsEnabled } from "@/lib/env";
+import { getTboxConfig, isStatefulChatTurns, isAgentOperationsEnabled, isPlanV2WriteEnabled } from "@/lib/env";
 import { writeSseEvent } from "./sse";
 import { createTurnService, TurnServiceError } from "./turn-service";
 import { buildAgentContext, trimRecentMessages } from "./context-builder";
@@ -280,15 +280,34 @@ async function handleStatefulStream(
           await applyAgentTaskState(conversationId, agentResponse).catch(() => {});
         }
 
-        // ── 执行 Agent Operations（finalize 成功后，避免孤儿数据）──
-        if (isAgentOperationsEnabled() && agentResponse?.operations && agentResponse.operations.length > 0) {
-          const operationResults = await executeAgentOperations(
-            userId, conversationId, turn.assistantMessageId, message, agentResponse.operations,
-          );
+        // ── 执行 Agent Operations（finalize 成功后，仅可信来源）──
+        // 真实 API (tbox-api) 且未降级 → 可信
+        // mock/manual 且 AGENT_OPERATIONS_V1 显式启用 → 仅测试用途
+        // degraded 或 scope 为 general_minimal/privacy → 禁止写入
+        const metaSource = (finalMeta as Record<string, unknown>)?.source as string | undefined;
+        const metaDegraded = (finalMeta as Record<string, unknown>)?.degraded as boolean | undefined;
+        const isMockSource = metaSource === "local-mock";
+        const safeForOperations = isAgentOperationsEnabled()
+          && !metaDegraded
+          && config.structuredMode !== "disabled"
+          && agentContext.scope !== "general_minimal"
+          && agentContext.scope !== "privacy"
+          // 真实 API 总是允许；mock 仅当 AGENT_OPERATIONS_V1 显式开启（E2E 测试）允许
+          && (config.mode === "api" ? metaSource !== "local-mock" : isMockSource);
 
-          // 产出 ref parts
-          for (const ref of operationResults) {
-            parts.push(ref);
+        if (safeForOperations && agentResponse?.operations && agentResponse.operations.length > 0) {
+          // 过滤 allowed operations：plan_draft 需 PLAN_V2_WRITE 开关
+          const allowedOps = agentResponse.operations.filter((op) => {
+            if (op.type === "plan_draft" && !isPlanV2WriteEnabled()) return false;
+            return true;
+          });
+          if (allowedOps.length > 0) {
+            const operationResults = await executeAgentOperations(
+              userId, conversationId, turn.assistantMessageId, message, allowedOps,
+            );
+            for (const ref of operationResults) {
+              parts.push(ref);
+            }
           }
         }
 
@@ -516,18 +535,27 @@ async function handleLegacyStream(
 
 function buildEnhancedQuestion(userMessage: string, ctx: Record<string, unknown>): string {
   const conv = ctx.conversation as Record<string, unknown> | undefined;
-  const contextStr = JSON.stringify({
+  // 12k 总预算注入完整脱敏 AgentContext
+  const contextObj: Record<string, unknown> = {
     profile: ctx.profile,
+    profileVersion: ctx.profileVersion,
+    activePlan: ctx.activePlan,
+    memories: ctx.memories,
     conversation: {
       currentTask: conv?.currentTask,
       awaitingQuestion: conv?.awaitingQuestion,
       answeredQuestionKeys: conv?.answeredQuestionKeys,
+      summary: conv?.summary,
+      contextVersion: conv?.contextVersion,
     },
     policy: ctx.policy,
     searchPolicy: ctx.searchPolicy,
-  });
-  const trimmedContext = contextStr.length > 4000 ? contextStr.slice(0, 3997) + "…" : contextStr;
-  return `安全用户上下文：${trimmedContext}\n用户原始问题：${userMessage}`;
+    scope: ctx.scope,
+  };
+  const contextStr = JSON.stringify(contextObj);
+  const maxContext = 10_000;
+  const trimmedContext = contextStr.length > maxContext ? contextStr.slice(0, maxContext - 3) + "..." : contextStr;
+  return `你是 CareerMate 职业规划助手。以下是已授权用户上下文：\n${trimmedContext}\n\n用户原始问题：${userMessage}`;
 }
 
 // ── 辅助：校验 sourceRefs 与 citations 绑定 ──
@@ -650,16 +678,23 @@ async function executeAgentOperations(
           const r = await profileMutation.applyPatch(userId, op.patch as any);
           results.push({ type: "profile_applied", version: r.version });
         } else if (decision.action === "pending_candidate") {
-          const r = await profileMutation.createCandidate({
-            userId, conversationId,
-            patch: op.patch as any,
-            sourceKind: op.sourceKind,
-            confidence: op.confidence,
-            evidenceExcerpt: op.evidenceExcerpt,
-            reason: decision.reason,
-            sensitive: op.sensitive,
-          });
-          results.push({ type: "profile_candidate_ref", candidateId: r.candidateId });
+          // 逐字段创建候选——每个字段独立可确认
+          const patch = op.patch as Record<string, unknown>;
+          for (const [field, value] of Object.entries(patch)) {
+            if (value === undefined || value === null) continue;
+            try {
+              const r = await profileMutation.createCandidate({
+                userId, conversationId,
+                patch: { [field]: value } as any,
+                sourceKind: op.sourceKind,
+                confidence: op.confidence,
+                evidenceExcerpt: op.evidenceExcerpt,
+                reason: decision.reason,
+                sensitive: op.sensitive,
+              });
+              results.push({ type: "profile_candidate_ref", candidateId: r.candidateId });
+            } catch { /* 单字段候选创建失败不阻止其他字段 */ }
+          }
         }
       }
 

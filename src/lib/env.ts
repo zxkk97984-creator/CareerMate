@@ -81,12 +81,12 @@ export function isStatefulChatTurns(): boolean {
 }
 
 export function isAgentOperationsEnabled(): boolean {
-  // 默认 true——AGENT_OPERATIONS_V1 是紧急关闭开关，不应默认关闭
-  return readBoolean("AGENT_OPERATIONS_V1", true);
+  // fail-closed: 默认 false，只有显式设置 AGENT_OPERATIONS_V1=true 才启用
+  return readBoolean("AGENT_OPERATIONS_V1", false);
 }
 
 export function isPlanV2WriteEnabled(): boolean {
-  return readBoolean("PLAN_V2_WRITE", false);
+  return readBoolean("PLAN_V2_WRITE", true);
 }
 
 export function isConversationSummaryEnabled(): boolean {

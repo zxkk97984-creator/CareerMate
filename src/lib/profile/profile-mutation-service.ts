@@ -150,18 +150,24 @@ export function createProfileMutationService(): ProfileMutationService {
     },
 
     async createCandidate(input) {
-      // 读取当前 profile version 作为 baseProfileVersion（用于后续 stale 检查）
+      // 读取当前 profile version 作为 baseProfileVersion
       const profile = await db.userProfile.findUnique({
         where: { userId: input.userId },
         select: { version: true },
       });
+      // 确定实际字段名——从 patch 的第一个 key 提取
+      const patchObj = input.patch as Record<string, unknown>;
+      const fieldKeys = Object.keys(patchObj);
+      const field = fieldKeys.length === 1 ? fieldKeys[0] : "patch";
+      const newValue = fieldKeys.length === 1 ? patchObj[fieldKeys[0]] : JSON.stringify(patchObj);
+
       const candidate = await db.profileUpdateCandidate.create({
         data: {
           userId: input.userId,
           source: "agent_operation",
-          field: "patch",
+          field,
           oldValue: "null",
-          newValue: JSON.stringify(input.patch),
+          newValue: typeof newValue === "string" ? newValue : JSON.stringify(newValue),
           confidence: input.confidence,
           requiresConfirmation: true,
           reason: input.reason,

@@ -34,7 +34,7 @@ export function createMockStructuredResult(question: string): unknown | undefine
     ? question.split("用户原始问题：").pop()?.trim() ?? question
     : question;
 
-  // 计划请求 -> AgentResponse.plan_draft operation
+  // 计划请求 -> AgentResponse.plan_draft operation (通过 aiCareerPlanV2Schema 校验)
   if (/(?:制定|生成|调整|重做|规划|帮我).{0,10}(?:计划|路径|规划)|(?:三个月|3个月|90天|本周).{0,8}(?:计划|行动)/.test(userQuestion)) {
     return {
       schemaVersion: 1 as const,
@@ -46,13 +46,46 @@ export function createMockStructuredResult(question: string): unknown | undefine
         type: "plan_draft" as const,
         plan: {
           schemaVersion: 2 as const,
+          title: "数据分析师职业发展计划",
           targetRole: { key: "data_analyst", label: "数据分析师" },
-          horizon: "中长期",
+          summary: "通过三个阶段系统学习SQL、Python和项目实战，完成数据分析师职业转型。",
+          horizon: { value: 6, unit: "month" as const },
           phases: [
-            { name: "基础夹实", goal: "掌握数据分析核心技能", durationWeeks: 12, keyActions: [{ id: "a1", title: "学习SQL与Python", done: false }] },
-            { name: "项目实战", goal: "积累可展示的项目经验", durationWeeks: 12, keyActions: [{ id: "a2", title: "完成3个数据分析项目", done: false }] },
-            { name: "求职冲刺", goal: "准备面试和简历", durationWeeks: 8, keyActions: [{ id: "a3", title: "准备面试作品集", done: false }] },
+            {
+              id: "phase-1",
+              title: "基础夯实",
+              objective: "掌握数据分析核心技能",
+              duration: { value: 8, unit: "week" as const },
+              skills: ["SQL", "Python基础"],
+              actions: [{ id: "a1", title: "学习SQL与Python", description: "完成基础语法与练习", type: "learning" as const, status: "not_started" as const, resources: [] }],
+              outputs: ["SQL练习集", "Python基础项目"],
+              evaluationCriteria: ["能独立完成SQL查询", "Python基础语法测试通过"],
+              risks: ["时间投入不足"],
+            },
+            {
+              id: "phase-2",
+              title: "项目实战",
+              objective: "积累可展示的项目经验",
+              duration: { value: 8, unit: "week" as const },
+              skills: ["数据可视化", "统计分析"],
+              actions: [{ id: "a2", title: "完成3个数据分析项目", description: "Kaggle入门竞赛+自选项目", type: "project" as const, status: "not_started" as const, resources: [] }],
+              outputs: ["3个项目报告", "GitHub作品集"],
+              evaluationCriteria: ["项目有清晰的分析思路", "可视化可解读"],
+              risks: ["项目选题过难"],
+            },
+            {
+              id: "phase-3",
+              title: "求职冲刺",
+              objective: "准备面试和简历",
+              duration: { value: 4, unit: "week" as const },
+              skills: ["面试技巧", "简历优化"],
+              actions: [{ id: "a3", title: "准备面试作品集", description: "整理并优化项目展示", type: "review" as const, status: "not_started" as const, resources: [] }],
+              outputs: ["简历终稿", "面试准备文档"],
+              evaluationCriteria: ["简历通过初筛", "模拟面试通过"],
+              risks: ["岗位要求与所学不匹配"],
+            },
           ],
+          immediateActions: [{ id: "ia1", title: "确定本周学习目标", description: "从SQL基础开始", type: "learning" as const, status: "not_started" as const, resources: [] }],
           assumptions: ["用户具备基础计算机操作能力"],
           riskNotes: ["学习进度可能受工作/学业影响"],
         },

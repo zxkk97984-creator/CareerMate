@@ -1,7 +1,17 @@
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, unlinkSync } from "node:fs";
 
-const env = { ...process.env, DATABASE_URL: "file:./e2e.db", TBOX_MODE: "mock", NODE_ENV: "production" };
+const env = {
+  ...process.env,
+  DATABASE_URL: "file:./e2e.db",
+  TBOX_MODE: "mock",
+  TBOX_STRUCTURED_MODE: "terminal",
+  NODE_ENV: "production",
+  AGENT_OPERATIONS_V1: "true",
+  PLAN_V2_WRITE: "true",
+  STATEFUL_CHAT_TURNS: "true",
+  OPEN_CHAT_ENTRY: "true",
+};
 const windows = process.platform === "win32";
 const dbPath = "prisma/e2e.db";
 
