@@ -272,7 +272,12 @@ async function handleStatefulStream(
 
         // 归一化 citations：从真实 toolCalls 中提取引用数据
         const toolCalls = aiResponse.data.toolCalls ?? [];
-        const toolNames = new Set(toolCalls.map((tc) => tc.toolType));
+        // 同时收集 toolType 和 tool 字段——真实 API 中搜索工具的 toolType 为 "tool"（通用），
+        // 实际搜索标识在 tool 字段（web_content_extractor、query_search 等）
+        const toolNames = new Set([
+          ...toolCalls.map((tc) => tc.toolType),
+          ...toolCalls.map((tc) => tc.tool).filter((t): t is string => typeof t === "string" && t.length > 0),
+        ]);
         const hasSearchTool = detectSearchToolCall(toolNames);
         // 优先从 toolCalls 解析 citations，回退到旧 citation 事件
         let citations = normalizeCitationsFromToolCalls(toolCalls);
