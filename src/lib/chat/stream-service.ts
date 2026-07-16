@@ -324,11 +324,19 @@ async function handleStatefulStream(
           }
         }
 
-        // 添加 citation 卡片
+        // 添加 citation 卡片（截断到 schema max=12，去重）
         if (citations.length > 0) {
+          const seen = new Set<string>();
+          const deduped: typeof citations = [];
+          for (const c of citations) {
+            const key = `${c.title}|${c.source}`;
+            if (!seen.has(key)) { seen.add(key); deduped.push(c); }
+          }
+          const MAX_CITATIONS = 12;
+          const trimmed = deduped.slice(0, MAX_CITATIONS);
           parts.push({
             type: "citations",
-            items: citations.map((c) => ({
+            items: trimmed.map((c) => ({
               title: c.title,
               source: c.source,
               url: c.url,

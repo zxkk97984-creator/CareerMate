@@ -145,8 +145,10 @@ export async function consumeFrontendSseResponse(
     }
     if (parsed.event === "artifact") {
       const part = chatMessagePartSchema.safeParse(parsed.data.part);
-      if (!part.success) throw new Error("流式响应格式无效");
-      handlers.onArtifact?.(part.data);
+      if (part.success) {
+        handlers.onArtifact?.(part.data);
+      }
+      // schema 不匹配时静默跳过（如 citations 超限），不中断整个流
     }
     if (parsed.event === "context") {
       const context = careerContext(parsed.data);
