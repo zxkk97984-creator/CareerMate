@@ -88,40 +88,51 @@ export function determineScope(input: ContextBuilderInput): ContextScope {
   ) {
     return "career_full";
   }
-  // 隐私/删除/账户 → privacy
   const msg = input.userMessage.toLowerCase();
+
+  // 隐私/删除/账户 → privacy
   if (
     msg.includes("删除") || msg.includes("隐私") || msg.includes("账户") ||
     msg.includes("清除") || msg.includes("清空") || msg.includes("导出")
   ) {
     return "privacy";
   }
-  // 职业相关关键词（含开放岗位名/技术栈/学习约束等）→ career_full
-  const careerKeywords = [
-    "职业", "岗位", "工作", "招聘", "面试", "简历", "学习", "技能",
-    "规划", "计划", "转行", "能力", "发展", "成长", "薪资", "行业",
-    // 常见 IT 岗位与别名
-    "dba", "运维", "开发", "工程师", "设计师", "产品经理", "数据分析",
-    "前端", "后端", "全栈", "测试", "架构", "算法", "运营", "安全",
-    "ux", "ui", "数据库", "网络", "人工智能", "机器学习", "云计算",
-    // 学习约束关键词
+
+  // ── 通用职业表达模式（不依赖具体岗位名单）──
+  // "我想做/当/成为/目标是/转行做 + 任意文本" → career_full
+  const careerIntentPatterns = [
+    /我(想|要|打算|准备|考虑)(做|当|成为|从事|转行?做?|学)\s*.+/,
+    /我(的)?目标(是|为|岗位|职业)\s*.+/,
+    /想做?\s*.{1,15}(师|员|家|者|人|工|手|生)/,
+    /转行\s*.+/,
+  ];
+  if (careerIntentPatterns.some((re) => re.test(msg))) {
+    return "career_full";
+  }
+
+  // 学习约束/技术栈关键词（补充：捕捉纯技能讨论不含岗位名的情况）
+  const constraintKeywords = [
+    "职业", "岗位", "工作", "招聘", "面试", "简历", "技能",
+    "规划", "计划", "转行", "薪资", "行业", "实习", "秋招", "春招", "校招",
     "每周", "小时", "预算", "实践", "动手", "项目", "虚拟机",
-    "linux", "sql", "nosql",
-    "编程", "代码", "实习", "秋招", "春招", "校招",
-    // 学校与专业语境
     "专业", "大二", "大一", "大三", "大四", "研一", "研二", "研三",
     "本科", "硕士", "学期", "课程",
   ];
-  if (careerKeywords.some((k) => msg.includes(k))) {
+  if (constraintKeywords.some((k) => msg.includes(k))) {
     return "career_full";
   }
-  // 扫描历史消息中是否有职业相关信号（开放岗位识别）
-  const historyHasCareerSignal = input.conversation.recentMessages.some((m) =>
-    m.role === "user" && careerKeywords.some((k) => m.content.toLowerCase().includes(k)),
-  );
+
+  // 会话历史中已有职业信号 → 延续 career_full
+  const historyHasCareerSignal = input.conversation.recentMessages.some((m) => {
+    if (m.role !== "user") return false;
+    const hm = m.content.toLowerCase();
+    return careerIntentPatterns.some((re) => re.test(hm))
+      || constraintKeywords.some((k) => hm.includes(k));
+  });
   if (historyHasCareerSignal) {
     return "career_full";
   }
+
   // 其他 → general_minimal
   return "general_minimal";
 }

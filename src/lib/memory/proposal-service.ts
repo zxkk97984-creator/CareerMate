@@ -12,6 +12,8 @@ export interface MemoryProposalInput {
   confidence: number;
   reason: string;
   sensitivity: "normal" | "sensitive";
+  /** 幂等标记——来自 AgentResponse.operation.id */
+  operationId?: string;
 }
 
 export type MemoryDecision =
@@ -52,7 +54,7 @@ export function createMemoryProposalService(): MemoryProposalService {
           data: {
             userId,
             content: content.slice(0, 2000),
-            source: "agent_proposal",
+            source: input.operationId ? `agent_proposal:${input.operationId}` : "agent_proposal",
             sensitivity: "sensitive",
             status: "pending",
             kind,
@@ -72,7 +74,7 @@ export function createMemoryProposalService(): MemoryProposalService {
           data: {
             userId,
             content: content.slice(0, 2000),
-            source: "explicit_remember",
+            source: input.operationId ? `explicit_remember:${input.operationId}` : "explicit_remember",
             sensitivity: "normal",
             status: "confirmed",
             kind,

@@ -85,12 +85,26 @@ function resolveActionAnswer(
   awaiting: { id: string; text: string; actions?: Array<{ id: string; label: string; value: string }> } | null,
   userMessage: string,
 ): string {
-  if (!actionId || !awaiting) return userMessage;
+  // 无 actionId → 用户自由文本输入
+  if (!actionId) return userMessage;
+  // 有 actionId 但无 awaiting → 客户端状态过期
+  if (!awaiting) {
+    throw new TurnServiceError(
+      "快捷动作已过期，请重新发送消息",
+      "ACTION_EXPIRED",
+      409,
+    );
+  }
   // actionId 必须匹配当前 awaitingQuestion 的某个 action
   const actions = awaiting.actions ?? [];
   const matched = actions.find((a) => a.id === actionId);
   if (matched) return matched.value; // 快捷动作 → 使用 action value
-  return userMessage; // actionId 不匹配 → 用户手输
+  // actionId 不匹配任何可用动作 → 非法请求
+  throw new TurnServiceError(
+    "快捷动作不匹配当前可用选项",
+    "INVALID_ACTION_ID",
+    400,
+  );
 }
 
 // ── 辅助：回答当前等待的问题 ─────────────────────

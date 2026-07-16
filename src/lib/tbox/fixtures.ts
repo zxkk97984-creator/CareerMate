@@ -95,7 +95,59 @@ export function createMockStructuredResult(question: string): unknown | undefine
     };
   }
 
-  // 每周时间 -> AgentResponse.profile_patch operation
+  // 完整自我介绍 → 多字段 profile_patch（DBA/精算师等任意岗位）
+  const introRoleMatch = userQuestion.match(/(?:想做?|想当|想成为|目标是?|打算做)\s*(.{2,20}?)(?:[，,。.、\s]|$)/);
+  const hasHours = /每周.*?(\d+)\s*(个)?小时/.test(userQuestion);
+  const hasMajor = /专业.{0,10}?([一-鿿·]{2,20}?)(?:专业|[，,。.\s])/.test(userQuestion);
+  const hasEdu = /(大[一二三四五]|研[一二三]|本科|硕士|博士)/.test(userQuestion);
+  if (introRoleMatch && (hasHours || hasMajor || hasEdu)) {
+    const roleName = introRoleMatch[1]!.trim();
+    const hoursMatch = userQuestion.match(/每周.*?(\d+)\s*(个)?小时/);
+    const hours = hoursMatch ? Number(hoursMatch[1]) : undefined;
+    const majorMatch = userQuestion.match(/专业.{0,10}?([一-鿿·]{2,20}?)(?:专业|[，,。.\s])/);
+    const eduMatch = userQuestion.match(/(大[一二三四五]|研[一二三]|本科|硕士|博士)/);
+    const learningPref = /(?:喜欢|偏好|倾向).{0,10}(?:动手|实践)/.test(userQuestion) ? ["动手实践"] : [];
+    const hasBudget = /预算.{0,8}(?:不太贵|便宜|有限|少花)/.test(userQuestion);
+    const constraints: string[] = [];
+    if (hasBudget) constraints.push("预算有限");
+    if (/[Ll]inux/.test(userQuestion)) constraints.push("可用Linux虚拟机");
+    if (/[Ss][Qq][Ll]/.test(userQuestion)) constraints.push("学过SQL");
+    if (/NOSQL|NoSQL|nosql/.test(userQuestion)) constraints.push("了解NoSQL");
+
+    // 构建 patch：只包含非空字段
+    const patch: Record<string, unknown> = {};
+    if (hours !== undefined) patch.weeklyAvailableHours = hours;
+    if (eduMatch) patch.educationStage = eduMatch[1];
+    if (majorMatch) patch.major = majorMatch[1];
+    if (roleName) patch.targetRole = { key: roleName.replace(/\s/g, "_").toLowerCase(), label: roleName };
+    if (learningPref.length > 0) patch.learningPreference = learningPref;
+    if (constraints.length > 0) patch.constraints = constraints;
+
+    // 只有实际提取到字段才返回
+    if (Object.keys(patch).length <= 1 && hours !== undefined) {
+      // 仅 hours——走下面的简单路径
+    } else if (Object.keys(patch).length > 0) {
+      return {
+        schemaVersion: 1 as const,
+        intent: "career_advice" as const,
+        task: { kind: "profile_guidance" as const, status: "collecting" as const, goal: `确认${roleName}岗位信息` },
+        questions: [],
+        operations: [{
+          id: "op-patch-intro",
+          type: "profile_patch" as const,
+          patch: patch as any,
+          sourceKind: "explicit" as const,
+          confidence: 0.95,
+          evidenceExcerpt: userQuestion.slice(0, 300),
+          reason: `用户在自我介绍中明确了${roleName}岗位目标和学习背景。`,
+          sensitive: false,
+        }],
+        sourceRefs: [],
+      };
+    }
+  }
+
+  // 每周时间 -> AgentResponse.profile_patch operation（单一字段，兜底）
   if (/每周.*?(\d+)\s*(个)?小时/.test(userQuestion)) {
     const match = userQuestion.match(/每周.*?(\d+)\s*(个)?小时/);
     const hours = match ? Number(match[1]) : 8;

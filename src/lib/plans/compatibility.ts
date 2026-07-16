@@ -145,44 +145,84 @@ export function serializePlanV1(plan: CareerPlanV1) {
 
 // ── V2 到 V1 转换（填充 years/quarters/months 用于渲染）──
 
-/** 将 Plan V2 的 phases 展开为 V1 兼容的 years/quarters/months 数组 */
+/** 将 duration 转为近似月数 */
+function durationToMonths(d: { value: number; unit: string }): number {
+  const factors: Record<string, number> = { day: 1 / 30, week: 1 / 4.345, month: 1, year: 12 };
+  return Math.round(d.value * (factors[d.unit] ?? 1));
+}
+
+/** 将 Plan V2 的 phases 按真实 duration 展开为 V1 兼容的 years/quarters/months 数组 */
 export function convertV2ToV1Arrays(v2: AiCareerPlanV2): {
   years: Array<{ yearIndex: number; goal: string }>;
   quarters: Array<{ quarterIndex: number; goal: string; milestone: string }>;
   months: Array<{ monthIndex: number; goal: string; learningTasks: Array<{ id: string; title: string; type: string; status: string; dueWeek: number }>; practiceOutputs: string[]; evaluationMetrics: string[] }>;
   currentMonthIndex: number;
 } {
-  const horizonValue = v2.horizon?.value ?? v2.phases.length;
   const years: Array<{ yearIndex: number; goal: string }> = [];
   const quarters: Array<{ quarterIndex: number; goal: string; milestone: string }> = [];
   const months: Array<{ monthIndex: number; goal: string; learningTasks: Array<{ id: string; title: string; type: string; status: string; dueWeek: number }>; practiceOutputs: string[]; evaluationMetrics: string[] }> = [];
 
-  let monthCounter = 1;
+  // 计算每个 phase 的月数
+  const phaseMonths: number[] = v2.phases.map((p) =>
+    Math.max(1, durationToMonths(p.duration)),
+  );
+  const totalPhaseMonths = phaseMonths.reduce((s, m) => s + m, 0);
 
-  for (let yi = 0; yi < horizonValue; yi++) {
-    const phase = v2.phases[yi] ?? v2.phases[v2.phases.length - 1];
-    const yearGoal = phase?.objective ?? phase?.title ?? `第${yi + 1}年`;
-    years.push({ yearIndex: yi + 1, goal: yearGoal });
+  // horizon 总月数——以各 phase duration 之和为准
+  const totalMonths = totalPhaseMonths > 0 ? totalPhaseMonths : durationToMonths(v2.horizon);
 
-    for (let qi = 0; qi < 4; qi++) {
-      const quarterIndex = yi * 4 + qi + 1;
-      quarters.push({
-        quarterIndex,
-        goal: `Q${qi + 1}: ${yearGoal}`,
-        milestone: phase?.actions?.[qi]?.title ?? phase?.actions?.[0]?.title ?? "",
+  let monthIndex = 1;
+  let yearIndex = 1;
+  let quarterIndex = 1;
+  let monthsInCurrentYear = 0;
+  let monthsInCurrentQuarter = 0;
+  let currentYearGoal = "";
+
+  for (let pi = 0; pi < v2.phases.length; pi++) {
+    const phase = v2.phases[pi];
+    const pm = phaseMonths[pi];
+    const actions = phase.actions ?? [];
+
+    // 每个 phase 分配月数不低于 1，确保最小粒度
+    for (let mi = 0; mi < pm; mi++) {
+      const action = actions[mi % Math.max(1, actions.length)];
+
+      // 年份边界（每12个月）
+      if (monthsInCurrentYear === 0) {
+        currentYearGoal = phase.objective ?? phase.title;
+        years.push({ yearIndex, goal: currentYearGoal });
+      }
+
+      // 季度边界（每3个月）
+      if (monthsInCurrentQuarter === 0) {
+        quarters.push({
+          quarterIndex,
+          goal: `Q${((quarterIndex - 1) % 4) + 1}: ${currentYearGoal}`,
+          milestone: action?.title ?? "",
+        });
+      }
+
+      months.push({
+        monthIndex,
+        goal: action?.title ?? `${phase.title} M${mi + 1}`,
+        learningTasks: action
+          ? [{ id: action.id, title: action.title, type: action.type, status: action.status, dueWeek: Math.min(mi + 1, 5) }]
+          : [],
+        practiceOutputs: phase.outputs ?? [],
+        evaluationMetrics: phase.evaluationCriteria ?? [],
       });
 
-      for (let mi = 0; mi < 3; mi++) {
-        const actionIndex = qi * 3 + mi;
-        const action = phase?.actions?.[actionIndex];
-        months.push({
-          monthIndex: monthCounter,
-          goal: action?.title ?? `${yearGoal} - M${mi + 1}`,
-          learningTasks: action ? [{ id: action.id, title: action.title, type: action.type, status: action.status, dueWeek: mi + 1 }] : [],
-          practiceOutputs: phase?.outputs ?? [],
-          evaluationMetrics: phase?.evaluationCriteria ?? [],
-        });
-        monthCounter++;
+      monthIndex++;
+      monthsInCurrentYear++;
+      monthsInCurrentQuarter++;
+
+      if (monthsInCurrentQuarter >= 3) {
+        monthsInCurrentQuarter = 0;
+        quarterIndex++;
+      }
+      if (monthsInCurrentYear >= 12) {
+        monthsInCurrentYear = 0;
+        yearIndex++;
       }
     }
   }

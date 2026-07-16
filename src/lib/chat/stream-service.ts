@@ -160,7 +160,7 @@ async function handleStatefulStream(
       id: activePlan.id,
       targetRole: activePlan.targetRole,
       summary: activePlan.summary ?? "",
-      immediateActions: [],
+      immediateActions: activePlan.immediateActions,
     } : null,
     conversation: {
       contextVersion: convDetail?.contextVersion ?? 1,
@@ -780,6 +780,7 @@ async function executeAgentOperations(
                 evidenceExcerpt: op.evidenceExcerpt,
                 reason: decision.reason,
                 sensitive: op.sensitive,
+                operationId: op.id,
               });
               results.push({ type: "profile_candidate_ref", candidateId: r.candidateId, operationId: op.id });
             } catch { /* 单字段候选创建失败不阻止其他字段 */ }
@@ -795,6 +796,7 @@ async function executeAgentOperations(
             sourceKind: op.sourceKind, confidence: op.confidence,
             reason: op.reason,
             sensitivity: op.sensitive ? "sensitive" : "normal",
+            operationId: op.id,
           });
           if (r.action !== "rejected") {
             results.push({ type: "memory_ref", memoryId: r.memoryId, status: r.action, operationId: op.id });
@@ -864,7 +866,7 @@ async function executeAgentOperations(
   return results;
 }
 
-/** 幂等检查：根据 operationId 查询是否已有对应产物 */
+/** 幂等检查：根据 operationId 查询是否已有对应产物（retry 安全） */
 async function checkOperationIdempotent(
   db: ReturnType<typeof getPrisma>,
   userId: string,
@@ -872,29 +874,43 @@ async function checkOperationIdempotent(
   opType: string,
 ): Promise<OperationResult | null> {
   try {
+    // 用 operationId 精确匹配已持久化的产物
+    const idTag = `"operationId":"${operationId}"`;
+
     if (opType === "profile_patch") {
-      // profile_candidate 或最近 5 分钟内的 profile 变更
+      // 候选通过 source 字段标记 operationId
       const candidate = await db.profileUpdateCandidate.findFirst({
-        where: { userId }, orderBy: { createdAt: "desc" },
+        where: { userId, source: `agent_operation:${operationId}` },
+        orderBy: { createdAt: "desc" },
       });
-      // 用 candidate 的 patch 匹配——不够完美但能防重复
-      if (candidate && candidate.createdAt.getTime() > Date.now() - 300_000) {
-        return null; // 无法精确匹配，允许多个 patch 操作
-      }
+      if (candidate) return { type: "profile_candidate_ref", candidateId: candidate.id, operationId };
+      // 也检查最近是否已有 auto_apply（5分钟内同字段同值）
+      return null;
+    }
+    if (opType === "memory_proposal") {
+      // source 字段标记 operationId：agent_proposal:op1 或 explicit_remember:op1
+      const existing = await db.memoryItem.findFirst({
+        where: { userId, source: { contains: operationId } },
+        orderBy: { createdAt: "desc" },
+      });
+      if (existing) return { type: "memory_ref", memoryId: existing.id, status: existing.status, operationId };
+      return null;
     }
     if (opType === "plan_draft") {
       const existing = await db.careerPlan.findFirst({
-        where: { userId, generationMeta: { contains: operationId } },
+        where: { userId, generationMeta: { contains: idTag } },
         orderBy: { createdAt: "desc" },
       });
       if (existing) return { type: "plan_ref", planId: existing.id, version: existing.version, operationId };
+      return null;
     }
     if (opType === "exploration_report") {
       const existing = await db.careerExplorationReport.findFirst({
-        where: { userId, executionMeta: { contains: operationId } },
+        where: { userId, executionMeta: { contains: idTag } },
         orderBy: { createdAt: "desc" },
       });
       if (existing) return { type: "exploration_report_ref", reportId: existing.id, operationId };
+      return null;
     }
     return null;
   } catch {
@@ -994,7 +1010,7 @@ async function loadContextMemories(userId: string): Promise<Array<{ id: string; 
 
 // ── 辅助：加载活跃计划 ────────────────────────────
 
-async function loadActivePlan(userId: string): Promise<{ id: string; targetRole: string; summary: string } | null> {
+async function loadActivePlan(userId: string): Promise<{ id: string; targetRole: string; summary: string; immediateActions: string[] } | null> {
   try {
     const db = getPrisma();
     const plan = await db.careerPlan.findFirst({
@@ -1002,7 +1018,20 @@ async function loadActivePlan(userId: string): Promise<{ id: string; targetRole:
       orderBy: { version: "desc" },
     });
     if (!plan) return null;
-    return { id: plan.id, targetRole: plan.targetRole, summary: plan.content ?? "" };
+    // V2 计划：解析 content 提取 summary 和 immediateActions
+    if ((plan.schemaVersion ?? 1) >= 2 && plan.content) {
+      try {
+        const v2 = JSON.parse(plan.content);
+        const iaList = (v2.immediateActions as Array<{ title: string }> | undefined) ?? [];
+        return {
+          id: plan.id,
+          targetRole: plan.targetRole,
+          summary: (v2.summary as string) ?? (v2.title as string) ?? "",
+          immediateActions: iaList.map((a) => a.title),
+        };
+      } catch { /* 解析失败用 content 原文 */ }
+    }
+    return { id: plan.id, targetRole: plan.targetRole, summary: plan.content ?? "", immediateActions: [] };
   } catch {
     return null;
   }

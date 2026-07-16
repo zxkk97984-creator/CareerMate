@@ -20,6 +20,8 @@ export interface ProfileMutationInput {
   sensitive: boolean;
   /** 当前轮次的用户原文，用于匹配 evidenceExcerpt */
   userMessage?: string;
+  /** 幂等标记——来自 AgentResponse.operation.id */
+  operationId?: string;
 }
 
 // ── 服务 ────────────────────────────────────────
@@ -173,10 +175,10 @@ export function createProfileMutationService(): ProfileMutationService {
       const candidate = await db.profileUpdateCandidate.create({
         data: {
           userId: input.userId,
-          source: "agent_operation",
+          source: input.operationId ? `agent_operation:${input.operationId}` : "agent_operation",
           field,
           oldValue: "null",
-          newValue: typeof newValue === "string" ? newValue : JSON.stringify(newValue),
+          newValue: JSON.stringify(newValue),
           confidence: input.confidence,
           requiresConfirmation: true,
           reason: input.reason,

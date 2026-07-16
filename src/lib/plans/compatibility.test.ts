@@ -7,6 +7,7 @@ import {
   updateV1TaskStatus,
   updateV2ActionStatus,
   serializePlanV2,
+  convertV2ToV1Arrays,
 } from "./compatibility";
 import type { CareerPlanRow } from "./compatibility";
 import type { AiCareerPlanV2 } from "./schema-v2";
@@ -189,5 +190,104 @@ describe("serializePlanV2", () => {
     expect(() => JSON.parse(serialized)).not.toThrow();
     const parsed = JSON.parse(serialized);
     expect(parsed.schemaVersion).toBe(2);
+  });
+});
+
+describe("convertV2ToV1Arrays", () => {
+  it("6个月3阶段 → 不生成72个月", () => {
+    const v2 = makeV2Plan({
+      horizon: { value: 6, unit: "month" },
+      phases: [
+        {
+          id: "p1", title: "基础", objective: "入门",
+          duration: { value: 2, unit: "month" },
+          skills: [], actions: [{ id: "a1", title: "学SQL", description: "", type: "learning", status: "not_started", resources: [] }],
+          outputs: [], evaluationCriteria: [], risks: [],
+        },
+        {
+          id: "p2", title: "进阶", objective: "深入",
+          duration: { value: 2, unit: "month" },
+          skills: [], actions: [{ id: "a2", title: "学优化", description: "", type: "learning", status: "not_started", resources: [] }],
+          outputs: [], evaluationCriteria: [], risks: [],
+        },
+        {
+          id: "p3", title: "实战", objective: "项目",
+          duration: { value: 2, unit: "month" },
+          skills: [], actions: [{ id: "a3", title: "做项目", description: "", type: "project", status: "not_started", resources: [] }],
+          outputs: [], evaluationCriteria: [], risks: [],
+        },
+      ],
+    });
+    const result = convertV2ToV1Arrays(v2);
+    expect(result.months.length).toBe(6); // 不是72
+    expect(result.quarters.length).toBe(2); // 6个月 = 2季度
+    expect(result.years.length).toBe(1); // 6个月不足1年
+    expect(result.months[0].learningTasks[0].title).toBe("学SQL");
+    expect(result.months[3].learningTasks[0].title).toBe("学优化");
+  });
+
+  it("8周单阶段 → 约2个月", () => {
+    const v2 = makeV2Plan({
+      horizon: { value: 8, unit: "week" },
+      phases: [
+        {
+          id: "p1", title: "冲刺", objective: "快速入门",
+          duration: { value: 8, unit: "week" },
+          skills: [], actions: [{ id: "a1", title: "速学SQL", description: "", type: "learning", status: "not_started", resources: [] }],
+          outputs: [], evaluationCriteria: [], risks: [],
+        },
+      ],
+    });
+    const result = convertV2ToV1Arrays(v2);
+    // 8周 ≈ 2个月
+    expect(result.months.length).toBe(2);
+    expect(result.months[0].learningTasks[0].title).toBe("速学SQL");
+  });
+
+  it("3年长周期 → 36个月", () => {
+    const v2 = makeV2Plan({
+      horizon: { value: 3, unit: "year" },
+      phases: [
+        {
+          id: "p1", title: "第1年", objective: "入门",
+          duration: { value: 12, unit: "month" },
+          skills: [], actions: [{ id: "a1", title: "基础", description: "", type: "learning", status: "not_started", resources: [] }],
+          outputs: [], evaluationCriteria: [], risks: [],
+        },
+        {
+          id: "p2", title: "第2年", objective: "进阶",
+          duration: { value: 12, unit: "month" },
+          skills: [], actions: [{ id: "a2", title: "项目", description: "", type: "project", status: "not_started", resources: [] }],
+          outputs: [], evaluationCriteria: [], risks: [],
+        },
+        {
+          id: "p3", title: "第3年", objective: "精通",
+          duration: { value: 12, unit: "month" },
+          skills: [], actions: [{ id: "a3", title: "专家", description: "", type: "review", status: "not_started", resources: [] }],
+          outputs: [], evaluationCriteria: [], risks: [],
+        },
+      ],
+    });
+    const result = convertV2ToV1Arrays(v2);
+    expect(result.months.length).toBe(36);
+    expect(result.years.length).toBe(3);
+    expect(result.quarters.length).toBe(12);
+  });
+
+  it("空 actions 使用 phase 标题作为月份目标", () => {
+    const v2 = makeV2Plan({
+      horizon: { value: 1, unit: "month" },
+      phases: [
+        {
+          id: "p1", title: "准备期", objective: "准备",
+          duration: { value: 1, unit: "month" },
+          skills: [], actions: [],
+          outputs: ["准备材料"], evaluationCriteria: [], risks: [],
+        },
+      ],
+    });
+    const result = convertV2ToV1Arrays(v2);
+    expect(result.months.length).toBe(1);
+    expect(result.months[0].goal).toContain("准备");
   });
 });
