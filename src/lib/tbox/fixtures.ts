@@ -69,7 +69,7 @@ export function createMockStructuredResult(question: string): unknown | undefine
     : question;
 
   // 计划请求优先匹配（比每周时间更精确的意图）
-  if (/(?:制定|生成|调整|重做|规划).{0,10}(?:计划|路径)|(?:三个月|3个月|90天|本周).{0,8}(?:计划|行动)/.test(userQuestion)) {
+  if (/(?:制定|生成|调整|重做|规划|帮我).{0,10}(?:计划|路径|规划)|(?:三个月|3个月|90天|本周).{0,8}(?:计划|行动)/.test(userQuestion)) {
     return createMockPlanResult();
   }
 

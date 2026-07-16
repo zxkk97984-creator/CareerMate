@@ -340,9 +340,11 @@ export function ChatHomePage({ displayName, openChatEntry = true }: ChatHomePage
           }}
         />
 
-        {lastAssistantMeta?.degraded && (
+        {lastAssistantMeta && (lastAssistantMeta.source === "local-mock" || lastAssistantMeta.degraded) && (
           <div className="degradation-notice">
-            百宝箱服务本次已降级，内容来源：{lastAssistantMeta.actualMode === "manual" ? "manual" : "mock"}。
+            {lastAssistantMeta.source === "local-mock" && !lastAssistantMeta.degraded
+              ? "本地辅助模式"
+              : `百宝箱服务本次已降级，内容来源：${lastAssistantMeta.actualMode === "manual" ? "manual" : "mock"}。`}
           </div>
         )}
         {lastAssistantWarnings.includes("SCHEMA_MISMATCH") && !lastAssistantMeta?.degraded && (

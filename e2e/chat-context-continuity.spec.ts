@@ -103,32 +103,38 @@ test.describe("DBA 开放主聊天回归（mock模式）", () => {
     await expect(page.locator(".message-assistant")).toBeVisible({ timeout: 15000 });
     await expect(page.locator(".streaming-cursor")).toHaveCount(0, { timeout: 15000 });
 
-    // 验证：至少有消息内容（mock 模式下计划卡片选择性渲染）
+    // 验证：计划卡片已渲染（mock 模式通过 artifact 机制生成）
+    const planCard = page.getByRole("region", { name: /计划/ });
+    await expect(planCard).toBeVisible({ timeout: 10000 });
+    // 计划卡应有操作按钮（确认新版本）
+    await expect(planCard.getByRole("button", { name: /确认|拒绝|继续调整/ }).first()).toBeVisible();
+
+    // 验证：助手消息有实际内容（非空壳）
     const assistantText = await page.locator(".message-assistant").first().textContent();
     expect(assistantText?.trim().length ?? 0).toBeGreaterThan(0);
-
-    // 验证页面没有 crash（计划部件选择性渲染）
-    await expect(page.locator("body")).toBeVisible();
   });
 
   test("普通问题有正文且无职业副作用", async ({ page }) => {
     await login(page);
 
-    // 先记录当前 message count
-    const initialUserMsgs = await page.locator(".message-user").count();
+    // 先获取当前各种资源的计数
+    const planCardsBefore = await page.locator("[role='region'][aria-label*='计划']").count();
+    const profileCardsBefore = await page.locator("[role='region'][aria-label*='候选']").count();
 
     await page.getByPlaceholder(/Enter 发送/).fill("Python 列表推导式是什么？");
     await page.getByLabel("发送消息").click();
     await expect(page.locator(".message-assistant")).toBeVisible({ timeout: 15000 });
     await expect(page.locator(".streaming-cursor")).toHaveCount(0, { timeout: 15000 });
 
-    // 应有正文回答——验证用户消息增加了1条
-    const finalUserMsgs = await page.locator(".message-user").count();
-    expect(finalUserMsgs).toBe(initialUserMsgs + 1);
-
-    // 验证助手回复有实际内容
+    // 验证助手回复有实际内容（非空壳、非占位符）
     const assistantText = await page.locator(".message-assistant").last().textContent();
     expect(assistantText?.trim().length ?? 0).toBeGreaterThan(5);
+
+    // 验证：Python 普通问题不应产生职业候选/计划卡片
+    const planCardsAfter = await page.locator("[role='region'][aria-label*='计划']").count();
+    const profileCardsAfter = await page.locator("[role='region'][aria-label*='候选']").count();
+    expect(planCardsAfter).toBe(planCardsBefore);
+    expect(profileCardsAfter).toBe(profileCardsBefore);
   });
 
   test("发送按钮在流式期间禁用防止重复", async ({ page }) => {
@@ -165,9 +171,11 @@ test.describe("DBA 开放主聊天回归（mock模式）", () => {
     await expect(page.locator(".message-assistant")).toBeVisible({ timeout: 15000 });
     await expect(page.locator(".streaming-cursor")).toHaveCount(0, { timeout: 15000 });
 
-    // mock 模式下 AI 执行元数据应显示 mock 来源
-    const bodyText = (await page.textContent("body")) ?? "";
+    // mock 模式下应显示"本地辅助模式"标识
+    await expect(page.getByText("本地辅助模式")).toBeVisible({ timeout: 5000 });
+
     // 页面不应显示 "正在连接百宝箱" 等误导性在线标识
+    const bodyText = (await page.textContent("body")) ?? "";
     expect(bodyText).not.toContain("正在连接百宝箱 AI");
   });
 });
