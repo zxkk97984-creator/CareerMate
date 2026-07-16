@@ -52,13 +52,14 @@ describe("structured result parsing", () => {
     expect(result.text).toBe("评估完成");
   });
 
-  it("extracts JSON from markdown code block", () => {
+  it("旧 capability 路径从 Markdown 代码块提取 JSON（非主聊天）", () => {
     const result = parseStructuredAssistantResult({
       text: '这是分析结果\n```json\n{"type":"profile_assessment","targetRole":"data_analyst","scores":{"aiTooling":60,"roleFoundation":60,"dataAnalysis":70,"businessProduct":50,"communication":55,"projectPractice":45},"strengths":["分析能力强"],"gaps":["缺少产品经验"],"evidence":["完成过数据分析"],"assumptions":["具备基础SQL"],"needsConfirmation":true,"candidateUpdates":[]}\n```\n以上是评估结果',
       structured: undefined,
       citations: [],
       warnings: [],
     });
+    // 旧 capability 解析器从正文提取（仅模拟训练等旧接口使用，主聊天不调用）
     expect(result.structured).toBeDefined();
     expect(result.structured).toMatchObject({ type: "profile_assessment" });
     expect(result.text).toContain("这是分析结果");

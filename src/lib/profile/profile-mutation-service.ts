@@ -59,9 +59,12 @@ export function createProfileMutationService(): ProfileMutationService {
         return { action: "pending_candidate", reason: "inferred_content_requires_confirmation" };
       }
 
-      // 验证 evidenceExcerpt 在当前原文中
-      if (userMessage && evidenceExcerpt) {
-        if (!userMessage.includes(evidenceExcerpt)) {
+      // 验证 evidenceExcerpt：explicit 必须有在当前原文中的证据
+      if (sourceKind === "explicit") {
+        if (!evidenceExcerpt || evidenceExcerpt.trim().length === 0) {
+          return { action: "pending_candidate", reason: "explicit_requires_evidence_excerpt" };
+        }
+        if (userMessage && !userMessage.includes(evidenceExcerpt.trim())) {
           return { action: "pending_candidate", reason: "evidence_not_in_user_message" };
         }
       }
@@ -72,6 +75,10 @@ export function createProfileMutationService(): ProfileMutationService {
       });
 
       if (!profile) {
+        // 无画像时仍可创建候选（新用户首次使用场景）
+        if (sourceKind === "explicit" && evidenceExcerpt && evidenceExcerpt.trim().length > 0) {
+          return { action: "pending_candidate", reason: "new_user_profile_patch" };
+        }
         return { action: "no_op", reason: "no_profile" };
       }
 
@@ -132,6 +139,7 @@ export function createProfileMutationService(): ProfileMutationService {
       if (patch.learningPreference !== undefined) data.learningPreference = JSON.stringify(patch.learningPreference);
       if (patch.experienceSummary !== undefined) data.experienceSummary = patch.experienceSummary;
       if (patch.constraints !== undefined) data.constraints = JSON.stringify(patch.constraints);
+      if (patch.interestTags !== undefined) data.interestTags = JSON.stringify(patch.interestTags);
 
       const updated = await db.userProfile.update({
         where: { userId },
@@ -142,6 +150,11 @@ export function createProfileMutationService(): ProfileMutationService {
     },
 
     async createCandidate(input) {
+      // 读取当前 profile version 作为 baseProfileVersion（用于后续 stale 检查）
+      const profile = await db.userProfile.findUnique({
+        where: { userId: input.userId },
+        select: { version: true },
+      });
       const candidate = await db.profileUpdateCandidate.create({
         data: {
           userId: input.userId,
@@ -155,7 +168,7 @@ export function createProfileMutationService(): ProfileMutationService {
           sourceConversationId: input.conversationId,
           evidenceExcerpt: input.evidenceExcerpt,
           patch: JSON.stringify(input.patch),
-          baseProfileVersion: undefined,
+          baseProfileVersion: profile?.version ?? null,
           status: "pending",
         },
       });

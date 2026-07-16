@@ -5,6 +5,15 @@ import { getPrisma } from "@/lib/prisma";
 
 const patchSchema = z.object({ content: z.string().trim().min(1).max(4_000), sensitivity: z.enum(["normal", "sensitive"]).optional() }).strict();
 
+export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
+  const user = await requireCurrentUser().catch(() => null);
+  if (!user) return fail("UNAUTHORIZED", "未登录或登录态过期", 401);
+  const { id } = await context.params;
+  const memory = await getPrisma().memoryItem.findUnique({ where: { id } });
+  if (!memory || memory.userId !== user.id) return fail("NOT_FOUND", "记忆不存在或越权访问", 404);
+  return ok({ memory });
+}
+
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   const user = await requireCurrentUser().catch(() => null);
   if (!user) return fail("UNAUTHORIZED", "未登录或登录态过期", 401);

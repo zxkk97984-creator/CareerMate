@@ -81,7 +81,8 @@ export function isStatefulChatTurns(): boolean {
 }
 
 export function isAgentOperationsEnabled(): boolean {
-  return readBoolean("AGENT_OPERATIONS_V1", false);
+  // 默认 true——AGENT_OPERATIONS_V1 是紧急关闭开关，不应默认关闭
+  return readBoolean("AGENT_OPERATIONS_V1", true);
 }
 
 export function isPlanV2WriteEnabled(): boolean {

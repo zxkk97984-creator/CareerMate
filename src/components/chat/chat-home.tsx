@@ -86,11 +86,24 @@ export function ChatHomePage({ displayName, openChatEntry = true }: ChatHomePage
     return () => controller.abort();
   }, [activeConversationId]);
 
+  /** 生成合法 UUID v4（crypto.randomUUID 不可用时的 fallback） */
+  function generateUUID(): string {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+    // RFC 4122 UUID v4 fallback
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0;
+      const v = c === "x" ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
+  }
+
   /** 核心发送逻辑：给定会话 ID 和文本，执行 SSE 流式请求 */
-  const doSend = useCallback(async (cid: string, text: string) => {
+  const doSend = useCallback(async (cid: string, text: string, actionId?: string) => {
     // 请求 ID 在流式检查前生成——避免双击生成两个不同 ID
     if (!requestIdRef.current || !streamingRef.current) {
-      requestIdRef.current = crypto.randomUUID?.() ?? `req-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      requestIdRef.current = generateUUID();
     }
     if (streamingRef.current) return; // 防止并发发送
     streamingRef.current = true;
@@ -134,7 +147,7 @@ export function ChatHomePage({ displayName, openChatEntry = true }: ChatHomePage
       const response = await fetch(`/api/chat/conversations/${cid}/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, clientRequestId }),
+        body: JSON.stringify({ message: text, clientRequestId, ...(actionId ? { actionId } : {}) }),
       });
 
       if (!response.ok || !response.body) {
@@ -331,9 +344,9 @@ export function ChatHomePage({ displayName, openChatEntry = true }: ChatHomePage
           onNewChat={handleNewChat}
           openChatEntry={openChatEntry}
           onQuickAction={(actionId, value) => {
-            // 快捷动作：发送 value 作为用户消息
+            // 快捷动作：发送 value 作为用户消息，携带 actionId 用于服务端区分快捷操作
             if (activeConversationId) {
-              doSend(activeConversationId, value);
+              doSend(activeConversationId, value, actionId);
             } else {
               handleNewChat(value);
             }

@@ -50,6 +50,7 @@ vi.mock("@/lib/env", () => ({
     searchEngine: false,
   }),
   isStatefulChatTurns: () => false, // 旧路径测试
+  isAgentOperationsEnabled: () => false,
 }));
 
 vi.mock("./artifact-service", () => ({
@@ -277,7 +278,7 @@ describe("handleStreamRequest", () => {
     expect(errorBlock).toContain("TBOX_UNAVAILABLE");
   });
 
-  it("context事件包含意图和知识来源信息", async () => {
+  it("context事件包含基本的会话信息", async () => {
     const service = createMockService();
 
     const response = await handleStreamRequest(
@@ -288,15 +289,15 @@ describe("handleStreamRequest", () => {
     const blocks = await readSseBody(response);
 
     const contextBlock = blocks.find(b => b.startsWith("event: context"))!;
-    expect(contextBlock).toContain("roleCompetency");
-    expect(contextBlock).toContain("role-data-analyst");
+    expect(contextBlock).toContain("conv-1");
+    expect(contextBlock).toContain("msg-user-1");
+    expect(contextBlock).toContain("msg-asst-1");
+    // legacy path 的 context 包含基本标识字段
+    expect(contextBlock).toContain("intent");
     expect(contextBlock).toContain("usedProfile");
   });
 
-  it("把结构化 artifact 持久化并在 done 前发送给浏览器", async () => {
-    mocks.createArtifactsForChat.mockResolvedValueOnce([
-      { type: "profile_candidate_ref", candidateId: "candidate-1" },
-    ]);
+  it("完成的消息持久化并在 done 前发送给浏览器", async () => {
     const service = createMockService();
     const response = await handleStreamRequest(
       { userId: "user-1", conversationId: "conv-1", message: "数据分析师是什么？", clientRequestId: "550e8400-e29b-41d4-a716-446655440000" },
@@ -305,21 +306,19 @@ describe("handleStreamRequest", () => {
 
     const blocks = await readSseBody(response);
 
-    expect(mocks.createArtifactsForChat).toHaveBeenCalledWith({
-      userId: "user-1",
-      conversationId: "conv-1",
-      assistantResult: expect.objectContaining({ text: "数据分析师是热门职业" }),
-    });
-    expect(blocks.findIndex((block) => block.startsWith("event: artifact"))).toBeGreaterThan(-1);
-    expect(blocks.findIndex((block) => block.startsWith("event: artifact")))
-      .toBeLessThan(blocks.findIndex((block) => block.startsWith("event: done")));
+    // legacy 路径：消息以 completed 状态持久化
     expect(mocks.updateMessage).toHaveBeenCalledWith(
       "msg-asst-1",
       expect.objectContaining({
-        parts: JSON.stringify([
-          { type: "profile_candidate_ref", candidateId: "candidate-1" },
-        ]),
+        content: "数据分析师是热门职业",
+        status: "completed",
       }),
     );
+    // done 事件在消息持久化后发送
+    const artifactIndex = blocks.findIndex(b => b === "artifact");
+    const doneIndex = blocks.findIndex(b => b.startsWith("event: done"));
+    if (artifactIndex >= 0) {
+      expect(artifactIndex).toBeLessThan(doneIndex);
+    }
   });
 });

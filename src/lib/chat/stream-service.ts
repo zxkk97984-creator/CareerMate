@@ -1,18 +1,15 @@
-import { prepareCareerChat } from "./server";
 import { createChatService, type ChatService } from "./service";
 import { streamChatWithTboxProgressive } from "@/lib/tbox/streaming";
-import { parseStructuredAssistantResult, parseTerminalAgentResponse } from "@/lib/tbox/structured-result";
-import { getTboxConfig, isStatefulChatTurns } from "@/lib/env";
+import { parseTerminalAgentResponse } from "@/lib/tbox/structured-result";
+import { getTboxConfig, isStatefulChatTurns, isAgentOperationsEnabled } from "@/lib/env";
 import { writeSseEvent } from "./sse";
-import { createArtifactsForChat } from "./artifact-service";
-import { errorPart } from "./artifacts";
 import { createTurnService, TurnServiceError } from "./turn-service";
 import { buildAgentContext, trimRecentMessages } from "./context-builder";
 import { parseConversationState } from "./conversation-state";
 import { normalizeCitations, normalizeCitationsFromToolCalls, detectSearchToolCall } from "@/lib/tbox/citations";
 import { createProfileMutationService } from "@/lib/profile/profile-mutation-service";
 import { createMemoryProposalService } from "@/lib/memory/proposal-service";
-import type { TboxHistoryMessage } from "@/lib/tbox/types";
+import { getPrisma } from "@/lib/prisma";
 import type { AgentOperation } from "./agent-protocol";
 
 // ── 类型 ──────────────────────────────────────────────────
@@ -28,16 +25,6 @@ export interface StreamingOptions {
 
 // ── 渐进式流：ReadableStream 模式 ───────────────────────────
 
-/**
- * 处理流式聊天请求，返回 ReadableStream SSE 响应。
- *
- * 当 STATEFUL_CHAT_TURNS 启用时使用两阶段事务：
- * 1. begin() 原子认领轮次、创建消息、幂等检查
- * 2. 调用百宝箱
- * 3. finalize() 完成消息、释放锁 — 或 fail() 处理错误
- *
- * 关闭开关时回退旧编排（直接创建消息 → 调用百宝箱 → 更新消息）。
- */
 export async function handleStreamRequest(
   options: StreamingOptions,
   service?: ChatService,
@@ -45,12 +32,10 @@ export async function handleStreamRequest(
   const svc = service ?? createChatService();
   const config = getTboxConfig();
 
-  // 有状态轮次路径（STATEFUL_CHAT_TURNS 开关）
   if (isStatefulChatTurns()) {
     return handleStatefulStream(options, svc, config);
   }
 
-  // ── 旧编排路径（兼容）─────────────────────────────
   return handleLegacyStream(options, svc, config);
 }
 
@@ -63,9 +48,7 @@ async function handleStatefulStream(
   const { userId, conversationId, message, clientRequestId, signal } = options;
   const turnService = createTurnService();
 
-  // ── 短事务 A：认领轮次 ──────────────────────────
-  let beginResult: { kind: "new"; turn: { id: string; userMessageId: string; assistantMessageId: string } } | { kind: "replay"; turn: { assistantText: string } };
-  // 预加载 UserProfile（用于 profileVersion 和后续上下文构建）
+  let beginResult: { kind: "new"; turn: { id: string; userMessageId: string; assistantMessageId: string } } | { kind: "replay"; turn: { assistantText: string; parts?: unknown[]; citations?: unknown[]; executionMeta?: Record<string, unknown>; userMessageId?: string; assistantMessageId?: string; remoteConversationId?: string } };
   let realProfile: RealProfileFields | null = null;
   try {
     realProfile = await loadRealUserProfile(userId);
@@ -88,14 +71,15 @@ async function handleStatefulStream(
     throw err;
   }
 
-  // ── 重放路径 ──────────────────────────────────
+  // ── 重放路径：返回真实 messageId、parts、citations、meta ──
   if (beginResult.kind === "replay") {
+    const rt = beginResult.turn;
     const stream = new ReadableStream({
       async start(controller) {
         writeSseEvent(controller, "context", {
           conversationId,
-          userMessageId: "",
-          assistantMessageId: "",
+          userMessageId: rt.userMessageId ?? "",
+          assistantMessageId: rt.assistantMessageId ?? "",
           intent: null,
           usedProfile: false,
           usedPlan: false,
@@ -103,14 +87,22 @@ async function handleStatefulStream(
           knowledgeSources: [],
         });
         writeSseEvent(controller, "delta", {
-          messageId: "",
-          text: beginResult.turn.assistantText,
+          messageId: rt.assistantMessageId ?? "",
+          text: rt.assistantText,
         });
+        // 重放 parts/citations
+        const parts = rt.parts ?? [];
+        for (const part of parts) {
+          writeSseEvent(controller, "artifact", {
+            messageId: rt.assistantMessageId ?? "",
+            part,
+          });
+        }
         writeSseEvent(controller, "done", {
-          messageId: "",
-          remoteConversationId: null,
+          messageId: rt.assistantMessageId ?? "",
+          remoteConversationId: rt.remoteConversationId ?? null,
           status: "completed" as const,
-          meta: { requestedMode: "mock", actualMode: "mock", degraded: false, fallbackReason: null, source: "replay" },
+          meta: rt.executionMeta ?? { source: "replay" },
         });
         try { controller.close(); } catch { /* 已关闭 */ }
       },
@@ -127,7 +119,6 @@ async function handleStatefulStream(
   // ── 新轮次：加载历史 + 构建上下文 + 调用百宝箱 ──────
   const turn = beginResult.turn;
 
-  // 并行加载：ChatConversation state、记忆、计划、最近消息、QuestionLedger
   const [convDetail, messages, memories, activePlan, answeredQuestions] = await Promise.all([
     svc.getConversation(conversationId, userId).catch(() => null),
     svc.getMessages(conversationId, userId, undefined, 24).catch(() => []),
@@ -136,21 +127,16 @@ async function handleStatefulStream(
     loadAnsweredQuestionKeys(conversationId),
   ]);
 
-  // 解析会话状态
   const convState = parseConversationState(convDetail?.state ?? null);
 
-  // 构建最近消息历史（用于 tbox history）
+  // 构建最近消息历史——排除当前轮次刚持久化的用户消息（避免重复）
   const recentMessages = messages
     .filter((m) => m.status === "completed" && m.content)
     .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
 
   const trimmedHistory = trimRecentMessages(recentMessages);
-  const historyMessages: TboxHistoryMessage[] = trimmedHistory.map((m) => ({
-    role: m.role,
-    content: m.content,
-  }));
 
-  // 构建 AgentContext——使用真实的 UserProfile 字段
+  // 构建完整 AgentContext
   const agentContext = buildAgentContext({
     profile: realProfile ? {
       educationStage: realProfile.educationStage ?? undefined,
@@ -185,24 +171,13 @@ async function handleStatefulStream(
     userMessage: message,
   });
 
-  // 构建安全上下文（用于 question_prefix 模式，传入 scope 以裁剪敏感数据）
-  const prepared = await prepareCareerChat(
-    { userId, question: message, scope: agentContext.scope },
-  ).catch(() => ({
-    enhancedQuestion: message,
-    contextMeta: {
-      intent: null as string | null,
-      usedProfile: false,
-      usedPlan: false,
-      usedMemoryCount: 0,
-      knowledgeSources: [] as string[],
-    },
-  }));
+  // 默认 question_prefix 包含完整 AgentContext JSON（scope 裁剪由 buildAgentContext 处理）
+  // business_data 模式直接将 agentContext 作为结构化 context 发送
+  // TBOX_REUSE_REMOTE_CONVERSATION_ID=false 时不传远端 ID
+  const existingRemoteId: string | undefined = config.reuseRemoteConversationId
+    ? (convDetail?.remoteConversationId ?? undefined)
+    : undefined;
 
-  const existingRemoteId = convDetail?.remoteConversationId ?? undefined;
-
-  // 根据配置决定如何传输上下文
-  const hasHistory = config.historyMode === "provider" && historyMessages.length > 0;
   const hasContext = config.contextTransport === "business_data";
   const searchPolicy = agentContext.searchPolicy;
 
@@ -217,16 +192,22 @@ async function handleStatefulStream(
           conversationId,
           userMessageId: turn.userMessageId,
           assistantMessageId: turn.assistantMessageId,
-          ...prepared.contextMeta,
+          intent: null,
+          usedProfile: agentContext.profile !== null,
+          usedPlan: agentContext.activePlan !== null,
+          usedMemoryCount: agentContext.memories.length,
+          knowledgeSources: [],
         });
 
-        // 调用百宝箱——传入历史、上下文和搜索策略
+        // 构建增强问题（question_prefix 模式将上下文嵌入问题文本）
+        const enhancedQuestion = buildEnhancedQuestion(message, agentContext as unknown as Record<string, unknown>);
+
         const aiResponse = await streamChatWithTboxProgressive(
           {
-            question: prepared.enhancedQuestion,
+            question: enhancedQuestion,
             userId,
-            conversationId: existingRemoteId as string | undefined,
-            history: hasHistory ? historyMessages : undefined,
+            conversationId: existingRemoteId,
+            history: undefined, // provider history 不含本轮已持久化的用户消息
             context: hasContext ? agentContext : undefined,
             searchPolicy,
           },
@@ -250,49 +231,66 @@ async function handleStatefulStream(
         finalMeta = aiResponse.meta as unknown as Record<string, unknown>;
         remoteConversationId = aiResponse.data.conversationId ?? remoteConversationId;
 
-        // ── AgentResponse 解析（必须先于旧 capability parser，防止 structured 被清除）──
-        // 正式主聊天直接从百宝箱显式 terminal structured 字段校验 agentResponseSchema
-        // 绝不从 text/Markdown/代码块提取，正文 JSON 零副作用
-        let agentResponse: import("./agent-protocol").AgentResponse | undefined;
+        // ── AgentResponse 解析（仅从显式 terminal structured 字段，绝不自 text 提取）──
         const agentResponseResult = parseTerminalAgentResponse(aiResponse.data);
+        const agentResponse = (config.structuredMode !== "disabled")
+          ? agentResponseResult.response
+          : undefined;
 
-        // TBOX_STRUCTURED_MODE 控制：disabled 时零业务写入
-        if (config.structuredMode !== "disabled") {
-          agentResponse = agentResponseResult.response;
-          // Agent operations 延迟到 finalize 成功后执行（B12：避免 finalize 失败产生孤儿数据）
-        }
-
-        // 解析结构化结果（旧 capability parser——仅用于 artifact 卡片生成）
-        const assistantResult = parseStructuredAssistantResult(aiResponse.data);
-
-        // 将 AgentResponse warnings 合并到 assistantResult
-        if (agentResponseResult.warnings.length > 0) {
-          assistantResult.warnings.push(...agentResponseResult.warnings);
-        }
-
-        // 归一化 citations：从真实 toolCalls 中提取引用数据
+        // 归一化 citations
         const toolCalls = aiResponse.data.toolCalls ?? [];
-        // 同时收集 toolType 和 tool 字段——真实 API 中搜索工具的 toolType 为 "tool"（通用），
-        // 实际搜索标识在 tool 字段（web_content_extractor、query_search 等）
         const toolNames = new Set([
           ...toolCalls.map((tc) => tc.toolType),
           ...toolCalls.map((tc) => tc.tool).filter((t): t is string => typeof t === "string" && t.length > 0),
         ]);
         const hasSearchTool = detectSearchToolCall(toolNames);
-        // 优先从 toolCalls 解析 citations，回退到旧 citation 事件
         let citations = normalizeCitationsFromToolCalls(toolCalls);
         if (citations.length === 0) {
-          citations = normalizeCitations(assistantResult.citations, hasSearchTool);
+          citations = normalizeCitations(aiResponse.data.citations, hasSearchTool);
         }
 
-        // 创建 artifacts
-        const parts = await createArtifactsForChat({
-          userId,
-          conversationId,
-          assistantResult,
-        }).catch(() => [
-          errorPart("ARTIFACT_UNAVAILABLE", "回答已生成，但画像、计划或职业报告卡片暂未生成。"),
-        ]);
+        // 校验 AgentResponse.sourceRefs 与 citations 绑定
+        const validatedSourceRefs = validateSourceRefs(agentResponse?.sourceRefs, toolCalls, citations);
+
+        // ── 短事务 B：完成轮次（先 finalize 确保消息持久化，再执行 operations）──
+        const parts: unknown[] = [];
+        if (agentResponseResult.warnings.length > 0) {
+          parts.push({ type: "error", code: "AGENT_RESPONSE_WARNINGS", message: agentResponseResult.warnings.join("; ").slice(0, 500) });
+        }
+
+        await turnService.finalize({
+          turn: {
+            id: turn.id,
+            conversationId,
+            userId,
+            clientRequestId,
+            userMessageId: turn.userMessageId,
+            assistantMessageId: turn.assistantMessageId,
+          },
+          assistantText: fullContent,
+          agentResponse: agentResponse ?? undefined,
+          citations: validatedSourceRefs.map((r) => ({ title: r.kind, source: `ref_${r.citationIndex}` })),
+          remoteConversationId: remoteConversationId ?? undefined,
+          executionMeta: finalMeta ?? { requestedMode: config.mode, actualMode: config.mode, degraded: false, source: "tbox-api" },
+          warnings: agentResponseResult.warnings ?? [],
+        });
+
+        // 处理 AgentResponse.task/questions → 更新会话状态
+        if (agentResponse?.task || agentResponse?.questions?.length) {
+          await applyAgentTaskState(conversationId, agentResponse).catch(() => {});
+        }
+
+        // ── 执行 Agent Operations（finalize 成功后，避免孤儿数据）──
+        if (isAgentOperationsEnabled() && agentResponse?.operations && agentResponse.operations.length > 0) {
+          const operationResults = await executeAgentOperations(
+            userId, conversationId, turn.assistantMessageId, message, agentResponse.operations,
+          );
+
+          // 产出 ref parts
+          for (const ref of operationResults) {
+            parts.push(ref);
+          }
+        }
 
         // 添加 citation 卡片
         if (citations.length > 0) {
@@ -305,9 +303,10 @@ async function handleStatefulStream(
               accessedAt: c.accessedAt,
               label: c.label,
             })),
-          } as any);
+          });
         }
 
+        // 发送 artifact 事件
         for (const part of parts) {
           writeSseEvent(controller, "artifact", {
             messageId: turn.assistantMessageId,
@@ -315,31 +314,8 @@ async function handleStatefulStream(
           });
         }
 
-        // ── 短事务 B：完成轮次 ──────────────────
-        await turnService.finalize({
-          turn: {
-            id: turn.id,
-            conversationId,
-            userId,
-            clientRequestId,
-            userMessageId: turn.userMessageId,
-            assistantMessageId: turn.assistantMessageId,
-          },
-          assistantText: fullContent,
-          citations: [],
-          remoteConversationId: remoteConversationId ?? undefined,
-          executionMeta: finalMeta ?? { requestedMode: config.mode, actualMode: config.mode, degraded: false, source: "tbox-api" },
-          warnings: assistantResult.warnings ?? [],
-        });
-
-        // 非阻塞：检查是否需要触发摘要
+        // 非阻塞触发摘要
         triggerSummaryIfNeeded(conversationId).catch(() => {});
-
-        // B12: Agent operations 在 finalize 成功后执行，避免最终化失败产生孤儿数据
-        if (agentResponse?.operations && agentResponse.operations.length > 0) {
-          processAgentOperations(userId, conversationId, turn.assistantMessageId, message, agentResponse.operations)
-            .catch(() => {}); // operations 失败不影响已完成的回复
-        }
 
         writeSseEvent(controller, "done", {
           messageId: turn.assistantMessageId,
@@ -357,7 +333,6 @@ async function handleStatefulStream(
         const errMessage = err instanceof Error ? err.message : "未知错误";
         const errorCode = errMessage === "aborted" ? "ABORTED" : "TBOX_UNAVAILABLE";
 
-        // 尝试释放锁
         await turnService.fail({
           turn: {
             id: turn.id,
@@ -369,7 +344,7 @@ async function handleStatefulStream(
           },
           partialText: fullContent || "",
           code: errorCode,
-        }).catch(() => {}); // fail 本身失败也不阻塞 SSE 错误发送
+        }).catch(() => {});
 
         writeSseEvent(controller, "error", {
           messageId: turn.assistantMessageId,
@@ -403,21 +378,6 @@ async function handleLegacyStream(
 ): Promise<Response> {
   const { userId, conversationId, message, signal } = options;
 
-  // 构建安全上下文（失败时使用最小上下文回退）
-  const prepared = await prepareCareerChat(
-    { userId, question: message },
-  ).catch(() => ({
-    enhancedQuestion: message,
-    contextMeta: {
-      intent: null as string | null,
-      usedProfile: false,
-      usedPlan: false,
-      usedMemoryCount: 0,
-      knowledgeSources: [] as string[],
-    },
-  }));
-
-  // 持久化用户消息和助手占位消息
   const userMsg = await svc.createMessage(userId, {
     conversationId,
     role: "user",
@@ -434,133 +394,99 @@ async function handleLegacyStream(
 
   await svc.touchConversation(conversationId);
 
-  // 尝试用首条消息更新标题
   await svc.updateConversationTitleFromFirstMessage(
-    conversationId,
-    userId,
-    message,
+    conversationId, userId, message,
   ).catch(() => {});
 
-  // 获取已有远端会话 ID 用于多轮延续
-  const convDetail = await svc.getConversation(conversationId, userId).catch(() => null);
-  const existingRemoteId = convDetail?.remoteConversationId ?? undefined;
+  const existingRemoteId = config.reuseRemoteConversationId
+    ? (await svc.getConversation(conversationId, userId).catch(() => null))?.remoteConversationId ?? undefined
+    : undefined;
 
-  // 使用 ReadableStream 实现真正的渐进式输出
   const stream = new ReadableStream({
     async start(controller) {
       let fullContent = "";
       let remoteConversationId: string | null = null;
-      let finalMeta: {
-        requestedMode: string;
-        actualMode: string;
-        degraded: boolean;
-        fallbackReason: string | null;
-        source: string;
-      } | null = null;
+      let finalMeta: Record<string, unknown> | null = null;
 
       try {
-        // 发送 context 事件（必须是第一个）
         writeSseEvent(controller, "context", {
           conversationId,
           userMessageId: userMsg.id,
           assistantMessageId: assistantMsg.id,
-          ...prepared.contextMeta,
+          intent: null,
+          usedProfile: false,
+          usedPlan: false,
+          usedMemoryCount: 0,
+          knowledgeSources: [],
         });
 
-        // 渐进式调用百宝箱——每个事件到达后立即写入 SSE
         const aiResponse = await streamChatWithTboxProgressive(
           {
-            question: prepared.enhancedQuestion,
+            question: message,
             userId,
-            conversationId: existingRemoteId as string | undefined,
+            conversationId: existingRemoteId,
           },
           { config, signal },
           (event) => {
             if (event.meta) finalMeta = event.meta;
-
             if (event.event === "message" && event.data.type === "delta") {
               fullContent += event.data.content;
-              // 立即发送 delta 到浏览器
               writeSseEvent(controller, "delta", {
                 messageId: assistantMsg.id,
                 text: event.data.content,
               });
             }
-
             if (event.event === "done") {
               remoteConversationId = event.data.conversationId;
             }
           },
         );
-        finalMeta = aiResponse.meta;
+        finalMeta = aiResponse.meta as unknown as Record<string, unknown>;
         remoteConversationId = aiResponse.data.conversationId ?? remoteConversationId;
 
-        // 文本完成后生成结构化业务卡片。卡片失败不应抹掉已经完成的回答。
-        // 使用 parseStructuredAssistantResult 从 Agent 结果提取结构化数据
-        const assistantResult = parseStructuredAssistantResult(aiResponse.data);
-        const parts = await createArtifactsForChat({
-          userId,
-          conversationId,
-          assistantResult,
-        }).catch(() => [
-          errorPart(
-            "ARTIFACT_UNAVAILABLE",
-            "回答已生成，但这次画像、计划或职业报告卡片暂未生成，可以稍后重试。",
-          ),
-        ]);
-        for (const part of parts) {
-          writeSseEvent(controller, "artifact", {
-            messageId: assistantMsg.id,
-            part,
-          });
+        // 旧路径：只保留正文，不执行业务写入
+        // AgentResponse 解析仅用于结构化模式下的 operations
+        let operations: AgentOperation[] = [];
+        if (config.structuredMode !== "disabled" && isAgentOperationsEnabled()) {
+          const ar = parseTerminalAgentResponse(aiResponse.data);
+          operations = ar.response?.operations ?? [];
         }
 
-        // 流正常结束：持久化助手消息
+        // finalize 消息
+        const parts: unknown[] = [];
         await svc.updateMessage(assistantMsg.id, {
           content: fullContent,
           parts: JSON.stringify(parts),
           status: "completed",
           executionMeta: JSON.stringify(finalMeta ?? {}),
-          contextMeta: JSON.stringify({
-            intent: prepared.contextMeta.intent,
-            usedProfile: prepared.contextMeta.usedProfile,
-            usedPlan: prepared.contextMeta.usedPlan,
-            usedMemoryCount: prepared.contextMeta.usedMemoryCount,
-            knowledgeSources: prepared.contextMeta.knowledgeSources,
-          }),
+          contextMeta: JSON.stringify({}),
         });
 
-        // 写入远端会话 ID 到会话记录，确保下一轮多轮对话可恢复
         if (remoteConversationId) {
           await svc.touchConversation(conversationId, remoteConversationId).catch(() => {});
         }
 
-        // 发送 done 事件（携带 warnings 和 meta）
+        // 执行 operations
+        if (operations.length > 0) {
+          const opRefs = await executeAgentOperations(userId, conversationId, assistantMsg.id, message, operations);
+          for (const ref of opRefs) {
+            writeSseEvent(controller, "artifact", { messageId: assistantMsg.id, part: ref });
+          }
+        }
+
         writeSseEvent(controller, "done", {
           messageId: assistantMsg.id,
           remoteConversationId,
           status: "completed" as const,
-          warnings: assistantResult.warnings ?? [],
-          meta: finalMeta ?? {
-            requestedMode: config.mode,
-            actualMode: config.mode,
-            degraded: false,
-            fallbackReason: null,
-            source: "tbox-api",
-          },
+          meta: finalMeta ?? { source: "tbox-api" },
         });
       } catch (err) {
-        // 失败：保留用户消息，标记助手失败
         const errMessage = err instanceof Error ? err.message : "未知错误";
         const errorCode = errMessage === "aborted" ? "ABORTED" : "TBOX_UNAVAILABLE";
 
         await svc.updateMessage(assistantMsg.id, {
           content: fullContent || "",
-          parts: JSON.stringify([{
-            type: "error",
-            code: errorCode,
-            message: "这次连接没有成功，你的提问已经保留，可以稍后重试。",
-          }]),
+          parts: JSON.stringify([{ type: "error", code: errorCode, message: "连接失败，可稍后重试。" }]),
           status: "failed",
           executionMeta: JSON.stringify(finalMeta ?? {}),
         });
@@ -572,12 +498,8 @@ async function handleLegacyStream(
           retryable: errorCode !== "ABORTED",
         });
       } finally {
-        try { controller.close(); } catch { /* 可能已关闭 */ }
+        try { controller.close(); } catch { /* 已关闭 */ }
       }
-    },
-    cancel() {
-      // 客户端断开——不撤销已持久化的用户消息
-      // 如果上游仍在运行，abort signal 会处理中断
     },
   });
 
@@ -588,6 +510,231 @@ async function handleLegacyStream(
       Connection: "keep-alive",
     },
   });
+}
+
+// ── 辅助：构建增强问题（question_prefix 模式）──
+
+function buildEnhancedQuestion(userMessage: string, ctx: Record<string, unknown>): string {
+  const conv = ctx.conversation as Record<string, unknown> | undefined;
+  const contextStr = JSON.stringify({
+    profile: ctx.profile,
+    conversation: {
+      currentTask: conv?.currentTask,
+      awaitingQuestion: conv?.awaitingQuestion,
+      answeredQuestionKeys: conv?.answeredQuestionKeys,
+    },
+    policy: ctx.policy,
+    searchPolicy: ctx.searchPolicy,
+  });
+  const trimmedContext = contextStr.length > 4000 ? contextStr.slice(0, 3997) + "…" : contextStr;
+  return `安全用户上下文：${trimmedContext}\n用户原始问题：${userMessage}`;
+}
+
+// ── 辅助：校验 sourceRefs 与 citations 绑定 ──
+
+function validateSourceRefs(
+  sourceRefs: Array<{ citationIndex?: number; kind?: string }> | undefined,
+  _toolCalls: unknown[],
+  citations: unknown[],
+): Array<{ citationIndex: number; kind: string }> {
+  if (!sourceRefs || !Array.isArray(sourceRefs)) return [];
+  const valid: Array<{ citationIndex: number; kind: string }> = [];
+  for (const ref of sourceRefs) {
+    const r = ref as Record<string, unknown>;
+    const idx = typeof r.citationIndex === "number" ? r.citationIndex : -1;
+    if (idx >= 0 && idx < citations.length) {
+      valid.push({ citationIndex: idx, kind: (r.kind as string) ?? "ai_inference" });
+    }
+  }
+  return valid;
+}
+
+// ── 辅助：应用 AgentResponse.task/questions 到会话状态 ──
+
+async function applyAgentTaskState(
+  conversationId: string,
+  agentResponse: { task?: { kind: string; status: string; goal?: string }; questions?: Array<{ id: string; normalizedKey: string; text: string; profileField?: string; answerKind: string; actions?: Array<{ id: string; label: string; value: string }> }> },
+): Promise<void> {
+  try {
+    const db = getPrisma();
+    const conv = await db.chatConversation.findUnique({
+      where: { id: conversationId },
+      select: { state: true },
+    });
+    if (!conv) return;
+
+    let state: Record<string, unknown>;
+    try { state = JSON.parse(conv.state ?? "{}") as Record<string, unknown>; } catch { state = {}; }
+
+    // 更新 currentTask
+    if (agentResponse.task) {
+      state.currentTask = agentResponse.task;
+    }
+
+    // 处理 questions —— 记录 asked，生成 quick_actions
+    const question = agentResponse.questions?.[0];
+    if (question) {
+      // 记录 asked（非阻塞）
+      try {
+        await db.questionLedger.upsert({
+          where: {
+            conversationId_normalizedQuestionKey_profileVersion: {
+              conversationId,
+              normalizedQuestionKey: question.normalizedKey,
+              profileVersion: 1, // 将在下一轮 begin 时更新
+            },
+          },
+          update: {},
+          create: {
+            conversationId,
+            normalizedQuestionKey: question.normalizedKey,
+            profileVersion: 1,
+            questionText: question.text,
+            profileField: question.profileField ?? null,
+            status: "asked",
+            answerSummary: "",
+          },
+        });
+      } catch { /* 唯一约束冲突等非关键错误 */ }
+
+      state.awaitingQuestion = {
+        normalizedKey: question.normalizedKey,
+        text: question.text,
+        profileField: question.profileField ?? null,
+        askedAt: new Date().toISOString(),
+      };
+    }
+
+    await db.chatConversation.update({
+      where: { id: conversationId },
+      data: { state: JSON.stringify(state) },
+    });
+  } catch {
+    // 状态更新失败不影响主流程
+  }
+}
+
+// ── 辅助：执行 Agent Operations（finalize 后）──
+
+interface OperationResult {
+  type: string;
+  [key: string]: unknown;
+}
+
+async function executeAgentOperations(
+  userId: string,
+  conversationId: string,
+  sourceMessageId: string,
+  userMessage: string,
+  operations: AgentOperation[],
+): Promise<OperationResult[]> {
+  const profileMutation = createProfileMutationService();
+  const memoryProposal = createMemoryProposalService();
+  const results: OperationResult[] = [];
+
+  for (const op of operations) {
+    try {
+      if (op.type === "profile_patch") {
+        const decision = await profileMutation.decide({
+          userId, conversationId,
+          patch: op.patch as any,
+          sourceKind: op.sourceKind,
+          confidence: op.confidence,
+          evidenceExcerpt: op.evidenceExcerpt,
+          reason: op.reason,
+          sensitive: op.sensitive,
+          userMessage,
+        });
+
+        if (decision.action === "auto_apply") {
+          const r = await profileMutation.applyPatch(userId, op.patch as any);
+          results.push({ type: "profile_applied", version: r.version });
+        } else if (decision.action === "pending_candidate") {
+          const r = await profileMutation.createCandidate({
+            userId, conversationId,
+            patch: op.patch as any,
+            sourceKind: op.sourceKind,
+            confidence: op.confidence,
+            evidenceExcerpt: op.evidenceExcerpt,
+            reason: decision.reason,
+            sensitive: op.sensitive,
+          });
+          results.push({ type: "profile_candidate_ref", candidateId: r.candidateId });
+        }
+      }
+
+      if (op.type === "memory_proposal") {
+        try {
+          const r = await memoryProposal.processProposal({
+            userId, conversationId, sourceMessageId,
+            content: op.content, kind: op.kind,
+            sourceKind: op.sourceKind, confidence: op.confidence,
+            reason: op.reason,
+            sensitivity: op.sensitive ? "sensitive" : "normal",
+          });
+          if (r.action !== "rejected") {
+            results.push({ type: "memory_ref", memoryId: r.memoryId, status: r.action });
+          }
+        } catch (e) {
+          results.push({ type: "error", code: "MEMORY_PROPOSAL_FAILED", message: (e as Error).message.slice(0, 200) });
+        }
+      }
+
+      if (op.type === "plan_draft") {
+        try {
+          const db = getPrisma();
+          const latest = await db.careerPlan.findFirst({
+            where: { userId }, orderBy: { version: "desc" }, select: { version: true },
+          });
+          const planData = op.plan as Record<string, unknown>;
+          const targetRole = (planData.targetRole as Record<string, unknown>) ?? {};
+          const created = await db.careerPlan.create({
+            data: {
+              userId,
+              targetRole: (targetRole.key as string) ?? "unknown",
+              version: (latest?.version ?? 0) + 1,
+              status: "pending",
+              schemaVersion: 2,
+              content: JSON.stringify(op.plan),
+              targetRoleLabel: (targetRole.label as string) ?? null,
+              years: "[]", quarters: "[]", months: "[]",
+              currentMonthIndex: 0,
+              assumptions: JSON.stringify((planData.assumptions as unknown[]) ?? []),
+              riskNotes: JSON.stringify((planData.riskNotes as unknown[]) ?? []),
+              generationMeta: JSON.stringify({ triggeredBy: "chat", conversationId, source: "agent_operation" }),
+            },
+          });
+          results.push({ type: "plan_ref", planId: created.id, version: created.version });
+        } catch (e) {
+          results.push({ type: "error", code: "PLAN_DRAFT_FAILED", message: (e as Error).message.slice(0, 200) });
+        }
+      }
+
+      if (op.type === "exploration_report") {
+        try {
+          const db = getPrisma();
+          const report = op.report as Record<string, unknown>;
+          const created = await db.careerExplorationReport.create({
+            data: {
+              userId, conversationId,
+              roleName: (report.roleName as string) ?? "未知岗位",
+              status: "exploratory",
+              content: JSON.stringify(report),
+              sources: JSON.stringify((report.sources as unknown[]) ?? []),
+              executionMeta: JSON.stringify({ source: "agent_operation", sourceMessageId }),
+            },
+          });
+          results.push({ type: "exploration_report_ref", reportId: created.id });
+        } catch (e) {
+          results.push({ type: "error", code: "REPORT_CREATE_FAILED", message: (e as Error).message.slice(0, 200) });
+        }
+      }
+    } catch (e) {
+      results.push({ type: "error", code: "OPERATION_FAILED", message: (e as Error).message.slice(0, 200) });
+    }
+  }
+
+  return results;
 }
 
 // ── 辅助：加载真实 UserProfile ──────────────────────
@@ -608,7 +755,6 @@ interface RealProfileFields {
 
 async function loadRealUserProfile(userId: string): Promise<RealProfileFields | null> {
   try {
-    const { getPrisma } = await import("@/lib/prisma");
     const db = getPrisma();
     const row = await db.userProfile.findUnique({ where: { userId } });
     if (!row) return null;
@@ -634,7 +780,6 @@ async function loadRealUserProfile(userId: string): Promise<RealProfileFields | 
 
 async function loadAnsweredQuestionKeys(conversationId: string): Promise<string[]> {
   try {
-    const { getPrisma } = await import("@/lib/prisma");
     const db = getPrisma();
     const rows = await db.questionLedger.findMany({
       where: { conversationId, status: "answered" },
@@ -663,24 +808,15 @@ function parseJsonArray(raw: string | undefined | null): string[] {
 
 async function loadContextMemories(userId: string): Promise<Array<{ id: string; kind: string; content: string }>> {
   try {
-    const { getPrisma } = await import("@/lib/prisma");
     const db = getPrisma();
-
-    // 检查用户是否启用了记忆功能
     const profile = await db.userProfile.findUnique({ where: { userId }, select: { memoryEnabled: true } });
     if (!profile?.memoryEnabled) return [];
 
     const now = new Date();
     const rows = await db.memoryItem.findMany({
       where: {
-        userId,
-        status: "confirmed",
-        scope: "career",
-        sensitivity: "normal",
-        OR: [
-          { expiresAt: null },
-          { expiresAt: { gt: now } },
-        ],
+        userId, status: "confirmed", scope: "career", sensitivity: "normal",
+        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
       },
       orderBy: { createdAt: "desc" },
       take: 5,
@@ -695,7 +831,6 @@ async function loadContextMemories(userId: string): Promise<Array<{ id: string; 
 
 async function loadActivePlan(userId: string): Promise<{ id: string; targetRole: string; summary: string } | null> {
   try {
-    const { getPrisma } = await import("@/lib/prisma");
     const db = getPrisma();
     const plan = await db.careerPlan.findFirst({
       where: { userId, status: "active" },
@@ -705,122 +840,6 @@ async function loadActivePlan(userId: string): Promise<{ id: string; targetRole:
     return { id: plan.id, targetRole: plan.targetRole, summary: plan.content ?? "" };
   } catch {
     return null;
-  }
-}
-
-// ── 辅助：处理 Agent Operations ────────────────────
-
-async function processAgentOperations(
-  userId: string,
-  conversationId: string,
-  sourceMessageId: string,
-  userMessage: string,
-  operations: AgentOperation[],
-): Promise<void> {
-  const profileMutation = createProfileMutationService();
-  const memoryProposal = createMemoryProposalService();
-
-  for (const op of operations) {
-    try {
-      if (op.type === "profile_patch") {
-        const decision = await profileMutation.decide({
-          userId,
-          conversationId,
-          patch: op.patch as any,
-          sourceKind: op.sourceKind,
-          confidence: op.confidence,
-          evidenceExcerpt: op.evidenceExcerpt,
-          reason: op.reason,
-          sensitive: op.sensitive,
-          userMessage,
-        });
-
-        if (decision.action === "auto_apply") {
-          await profileMutation.applyPatch(userId, op.patch as any);
-        } else if (decision.action === "pending_candidate") {
-          await profileMutation.createCandidate({
-            userId,
-            conversationId,
-            patch: op.patch as any,
-            sourceKind: op.sourceKind,
-            confidence: op.confidence,
-            evidenceExcerpt: op.evidenceExcerpt,
-            reason: decision.reason,
-            sensitive: op.sensitive,
-          });
-        }
-      }
-
-      if (op.type === "memory_proposal") {
-        await memoryProposal.processProposal({
-          userId,
-          conversationId,
-          sourceMessageId,
-          content: op.content,
-          kind: op.kind,
-          sourceKind: op.sourceKind,
-          confidence: op.confidence,
-          reason: op.reason,
-          sensitivity: op.sensitive ? "sensitive" : "normal",
-        });
-      }
-
-      if (op.type === "plan_draft") {
-        // 持久化 Plan V2 draft → pending 状态
-        try {
-          const { getPrisma } = await import("@/lib/prisma");
-          const db = getPrisma();
-          // 获取当前最高版本号后自增
-          const latest = await db.careerPlan.findFirst({
-            where: { userId },
-            orderBy: { version: "desc" },
-            select: { version: true },
-          });
-          const planData = op.plan as Record<string, unknown>;
-          await db.careerPlan.create({
-            data: {
-              userId,
-              targetRole: (planData.targetRole as any)?.key ?? "unknown",
-              version: (latest?.version ?? 0) + 1,
-              status: "pending",
-              schemaVersion: 2,
-              content: JSON.stringify(op.plan),
-              targetRoleLabel: (planData.targetRole as any)?.label ?? null,
-              years: "[]",
-              quarters: "[]",
-              months: "[]",
-              currentMonthIndex: 0,
-              assumptions: JSON.stringify((planData as any)?.assumptions ?? []),
-              riskNotes: JSON.stringify((planData as any)?.riskNotes ?? []),
-              generationMeta: JSON.stringify({
-                triggeredBy: "chat",
-                conversationId,
-                source: "agent_operation",
-              }),
-            },
-          });
-        } catch { /* plan_draft 持久化失败不影响其他 */ }
-      }
-
-      if (op.type === "exploration_report") {
-        // 持久化探索报告到 progressLog（careerExploration 表不存在，使用 progressLog）
-        try {
-          const { getPrisma } = await import("@/lib/prisma");
-          const db = getPrisma();
-          await db.progressLog.create({
-            data: {
-              userId,
-              eventType: "exploration_report",
-              title: "职业探索报告",
-              summary: JSON.stringify(op.report).slice(0, 500),
-              metadata: JSON.stringify({ conversationId, sourceMessageId }),
-            },
-          });
-        } catch { /* exploration_report 持久化失败不影响其他 */ }
-      }
-    } catch {
-      // 单个 operation 失败不影响其他
-    }
   }
 }
 
@@ -834,13 +853,58 @@ async function triggerSummaryIfNeeded(conversationId: string): Promise<void> {
     const { createSummaryService } = await import("./summary-service");
     const summarySvc = createSummaryService();
     const { should } = await summarySvc.shouldSummarize(conversationId);
-
     if (!should) return;
 
-    // 异步触发摘要生成（不阻塞当前请求）
-    // 完整实现需要调用百宝箱主 Agent，这里先标记待处理
-    console.log(`[summary] conversation=${conversationId} summary pending`);
+    // 通过 TBox Agent 生成摘要
+    await generateSummary(conversationId, summarySvc);
   } catch {
-    // 摘要触发失败不影响主流程
+    // 摘要失败不影响主流程
+  }
+}
+
+async function generateSummary(
+  conversationId: string,
+  summarySvc: ReturnType<typeof import("./summary-service").createSummaryService>,
+): Promise<void> {
+  try {
+    const db = getPrisma();
+    // 获取需要摘要的消息
+    const messages = await db.chatMessage.findMany({
+      where: { conversationId, status: "completed", role: "assistant" },
+      orderBy: { createdAt: "desc" },
+      take: 24,
+      select: { id: true, content: true },
+    });
+    if (messages.length === 0) return;
+
+    const lastMessageId = messages[0].id;
+    const conversationText = messages.map((m) => m.content.slice(0, 500)).join("\n---\n");
+
+    // 通过 TBox 生成摘要（使用本地模型降级）
+    const summaryPrompt = `请根据以下对话内容生成结构化摘要（JSON格式）：\n${conversationText.slice(0, 8000)}\n\n返回格式：{"factsMentioned":[],"decisions":[],"openQuestions":[],"taskProgress":[]}`;
+
+    try {
+      const { streamChatWithTbox } = await import("@/lib/tbox/streaming");
+      const config = getTboxConfig();
+      const result = await streamChatWithTbox(
+        { question: summaryPrompt, userId: "summary", conversationId: undefined, searchPolicy: "off" },
+        { config },
+      );
+      const text = result.data.events
+        .filter((e) => e.event === "message")
+        .map((e) => (e.data as any).content as string)
+        .join("");
+
+      // 提取 JSON
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const raw = JSON.parse(jsonMatch[0]);
+        await summarySvc.saveSummary(conversationId, raw, lastMessageId);
+      }
+    } catch {
+      // TBox 摘要失败，保留旧摘要
+    }
+  } catch {
+    // 摘要生成失败不影响主流程
   }
 }
