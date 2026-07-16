@@ -100,7 +100,7 @@ export function createMockStructuredResult(question: string): unknown | undefine
     const match = userQuestion.match(/每周.*?(\d+)\s*(个)?小时/);
     const hours = match ? Number(match[1]) : 8;
     // 检查是否有岗位意图——任意"想做/当/成为 X"模式
-    const roleIntentMatch = userQuestion.match(/(?:想做?|想当|想成为|目标是?|打算做)\s*(.{2,20}?)(?:[，,。.、\s]|$)/);
+    const roleIntentMatch = userQuestion.match(/(?:想成为|想做|想当|目标是|打算做)\s*(.{2,20}?)(?:[，,。.、]|$)/);
     const roleName = roleIntentMatch?.[1]?.trim();
     const patch: Record<string, unknown> = { weeklyAvailableHours: hours };
     if (roleName) {

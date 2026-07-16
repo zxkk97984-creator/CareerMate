@@ -274,6 +274,35 @@ describe("convertV2ToV1Arrays", () => {
     expect(result.quarters.length).toBe(12);
   });
 
+  it("8周4阶段 → ≈2个月无负分配", () => {
+    const v2 = makeV2Plan({
+      horizon: { value: 8, unit: "week" },
+      phases: [
+        { id: "p1", title: "P1", objective: "a", duration: { value: 2, unit: "week" }, skills: [], actions: [{ id: "a1", title: "A1", description: "", type: "learning", status: "not_started", resources: [] }], outputs: [], evaluationCriteria: [], risks: [] },
+        { id: "p2", title: "P2", objective: "b", duration: { value: 2, unit: "week" }, skills: [], actions: [{ id: "a2", title: "A2", description: "", type: "learning", status: "not_started", resources: [] }], outputs: [], evaluationCriteria: [], risks: [] },
+        { id: "p3", title: "P3", objective: "c", duration: { value: 2, unit: "week" }, skills: [], actions: [{ id: "a3", title: "A3", description: "", type: "learning", status: "not_started", resources: [] }], outputs: [], evaluationCriteria: [], risks: [] },
+        { id: "p4", title: "P4", objective: "d", duration: { value: 2, unit: "week" }, skills: [], actions: [{ id: "a4", title: "A4", description: "", type: "learning", status: "not_started", resources: [] }], outputs: [], evaluationCriteria: [], risks: [] },
+      ],
+    });
+    const result = convertV2ToV1Arrays(v2);
+    expect(result.months.length).toBe(2); // 8周≈2月，不是72月
+    expect(result.months.every((m: any) => m.monthIndex > 0)).toBe(true);
+  });
+
+  it("1月3阶段 → 3个月无负分配", () => {
+    const v2 = makeV2Plan({
+      horizon: { value: 1, unit: "month" },
+      phases: [
+        { id: "p1", title: "P1", objective: "a", duration: { value: 10, unit: "day" }, skills: [], actions: [{ id: "a1", title: "A1", description: "", type: "learning", status: "not_started", resources: [] }], outputs: [], evaluationCriteria: [], risks: [] },
+        { id: "p2", title: "P2", objective: "b", duration: { value: 10, unit: "day" }, skills: [], actions: [{ id: "a2", title: "A2", description: "", type: "learning", status: "not_started", resources: [] }], outputs: [], evaluationCriteria: [], risks: [] },
+        { id: "p3", title: "P3", objective: "c", duration: { value: 10, unit: "day" }, skills: [], actions: [{ id: "a3", title: "A3", description: "", type: "learning", status: "not_started", resources: [] }], outputs: [], evaluationCriteria: [], risks: [] },
+      ],
+    });
+    const result = convertV2ToV1Arrays(v2);
+    expect(result.months.length).toBe(1); // 精确=1月
+    expect(result.months.every((m: any) => m.monthIndex > 0)).toBe(true);
+  });
+
   it("空 actions 使用 phase 标题作为月份目标", () => {
     const v2 = makeV2Plan({
       horizon: { value: 1, unit: "month" },

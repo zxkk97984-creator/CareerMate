@@ -81,13 +81,6 @@ export interface ContextBuilderInput {
 }
 
 export function determineScope(input: ContextBuilderInput): ContextScope {
-  // 有进行中的任务或等待回答 → career_full
-  if (
-    input.conversation.currentTask.kind !== "idle" ||
-    input.conversation.awaitingQuestion !== null
-  ) {
-    return "career_full";
-  }
   const msg = input.userMessage.toLowerCase();
 
   // 隐私/删除/账户 → privacy
@@ -98,24 +91,29 @@ export function determineScope(input: ContextBuilderInput): ContextScope {
     return "privacy";
   }
 
+  // ── 活跃任务或等待回答 → career_full ──
+  // 仅当任务状态非 completed/idle 时保持 career_full；避免已完成任务永久污染 scope
+  const task = input.conversation.currentTask;
+  const hasActiveTask = task.kind !== "idle" && task.status !== "completed" && task.status !== "idle";
+  const hasAwaiting = input.conversation.awaitingQuestion !== null;
+  if (hasActiveTask || hasAwaiting) {
+    return "career_full";
+  }
+
   // ── 通用职业表达模式（不依赖具体岗位名单）──
   const careerIntentPatterns = [
-    // 我想做/当/成为/从事/转行 + 任意文本（不含"学"，避免误伤"我想学英语"）
     /我(想|要|打算|准备|考虑)(做|当|成为|从事|转行?做?)\s*.+/,
     /我(的)?目标(是|为|岗位|职业)\s*.+/,
-    // 想做 + 角色后缀词（师/员/家/匠/工/手/生）——任意岗位名
     /想做?\s*.{1,15}(师|员|家|者|匠|工|手|生)/,
     /转行\s*.+/,
-    // 纯大写缩写（2-6字母）：DBA UX UI PM HR 等（保留原文大小写）
-    new RegExp(`^[A-Za-z]{2,6}$`),
-    // 含角色后缀词的短查询（≤30字）：精算师、设计师、工程师 等任意岗位
+    /^[A-Za-z]{2,6}$/,
     /^.{1,30}?(师|员|家|匠)\s*$/,
   ];
   if (careerIntentPatterns.some((re) => re.test(msg))) {
     return "career_full";
   }
 
-  // 学习约束/技术栈关键词（补充：捕捉纯技能讨论不含岗位名的情况）
+  // 学习约束/技术栈关键词
   const constraintKeywords = [
     "职业", "岗位", "工作", "招聘", "面试", "简历", "技能",
     "规划", "计划", "转行", "薪资", "行业", "实习", "秋招", "春招", "校招",
@@ -127,18 +125,19 @@ export function determineScope(input: ContextBuilderInput): ContextScope {
     return "career_full";
   }
 
-  // 会话历史中已有职业信号 → 延续 career_full
-  const historyHasCareerSignal = input.conversation.recentMessages.some((m) => {
-    if (m.role !== "user") return false;
-    const hm = m.content.toLowerCase();
-    return careerIntentPatterns.some((re) => re.test(hm))
-      || constraintKeywords.some((k) => hm.includes(k));
-  });
-  if (historyHasCareerSignal) {
-    return "career_full";
+  // 最近一条用户消息有职业信号 → 延续上下文（仅看最近1条，避免历史永久污染）
+  const recentUserMsgs = input.conversation.recentMessages.filter((m) => m.role === "user");
+  const lastUserMsg = recentUserMsgs[recentUserMsgs.length - 1];
+  if (lastUserMsg) {
+    const hm = lastUserMsg.content.toLowerCase();
+    if (careerIntentPatterns.some((re) => re.test(hm)) || constraintKeywords.some((k) => hm.includes(k))) {
+      // 仅当当前消息是对上一条的自然追问时延续（短消息、非新话题）
+      if (msg.length <= 40 || /^(?:那|那么|所以|还有|另外|具体|详细|比如|例如)/.test(msg)) {
+        return "career_full";
+      }
+    }
   }
 
-  // 其他 → general_minimal
   return "general_minimal";
 }
 
@@ -190,7 +189,7 @@ export function buildAgentContext(input: ContextBuilderInput): AgentContext {
       unrelatedQuestionsMayBeAnswered: true,
       memoryWritesAllowed: scope === "career_full",
     },
-    searchPolicy: scope === "career_full" ? "allowed" : "off",
+    searchPolicy: scope === "privacy" ? "off" : "allowed",
   };
 
   return context;

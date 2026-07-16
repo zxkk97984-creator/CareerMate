@@ -294,10 +294,7 @@ async function handleStatefulStream(
               status: "pending" as const,
             };
             parts.push(qaPart);
-            writeSseEvent(controller, "artifact", {
-              messageId: turn.assistantMessageId,
-              part: qaPart,
-            });
+            // quick_actions 通过下方统一的 artifact 循环发送（约364行），避免重复
           }
         }
 
@@ -747,13 +744,15 @@ async function executeAgentOperations(
     let opResult: OperationResult | null = null;
     let opError: string | null = null;
     try {
-      // ── 幂等检查：通过 OperationExecution 表精确匹配 ──
-      const existing = await checkOperationIdempotent(db, userId, conversationId, clientRequestId, op.id);
-      if (existing) {
-        opResult = existing;
-        results.push(existing);
+      // ── 原子 claim：唯一键保证并发安全 ──
+      const claim = await atomicClaimOperation(db, userId, conversationId, clientRequestId, op.id, op.type);
+      if (!claim.claimed) {
+        // 已完成 → 返回缓存结果
+        opResult = claim.result;
+        results.push(claim.result);
         continue;
       }
+      // claimed → 执行副作用
 
       if (op.type === "profile_patch") {
         const decision = await profileMutation.decide({
@@ -874,64 +873,64 @@ async function executeAgentOperations(
       opError = (e as Error).message.slice(0, 200);
       results.push({ type: "error", code: "OPERATION_FAILED", message: opError });
     }
-    // 记录到 OperationExecution 表（journal）
-    if (opResult || opError) {
-      await recordOperationResult(db, userId, conversationId, clientRequestId, op.id, op.type, opResult, opError);
-    }
+    // 原子 finalize
+    await finalizeOperation(db, userId, conversationId, clientRequestId, op.id, opResult, opError);
   }
 
   return results;
 }
 
-/** 幂等检查 + 记录：通过 OperationExecution 表精确匹配 (userId, conversationId, clientRequestId, operationId) */
-async function checkOperationIdempotent(
-  db: ReturnType<typeof getPrisma>,
-  userId: string,
-  conversationId: string,
-  clientRequestId: string,
-  operationId: string,
-): Promise<OperationResult | null> {
-  try {
-    const existing = await db.operationExecution.findUnique({
-      where: { userId_conversationId_clientRequestId_operationId: { userId, conversationId, clientRequestId, operationId } },
-    });
-    if (!existing) return null; // 全新操作
-    if (existing.status === "completed") {
-      // 已完成 → 返回缓存结果（idempotent）
-      try { return JSON.parse(existing.result) as OperationResult; } catch { return null; }
-    }
-    // pending 或 failed → 允许重试
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-/** 记录操作执行结果到 OperationExecution 表 */
-async function recordOperationResult(
+/**
+ * 原子 claim：通过唯一键 (userId+conversationId+clientRequestId+operationId)
+ * 尝试 create → 成功表示获得执行权；失败(唯一约束冲突)表示已被 claim。
+ * 返回 { claimed: true } 表示需要执行副作用，{ claimed: false, result } 表示已有结果。
+ */
+async function atomicClaimOperation(
   db: ReturnType<typeof getPrisma>,
   userId: string,
   conversationId: string,
   clientRequestId: string,
   operationId: string,
   opType: string,
+): Promise<{ claimed: true } | { claimed: false; result: OperationResult }> {
+  try {
+    // 原子 create——唯一约束保证只有一个请求能成功
+    await db.operationExecution.create({
+      data: { userId, conversationId, clientRequestId, operationId, opType, status: "pending", result: "{}" },
+    });
+    return { claimed: true };
+  } catch {
+    // 唯一约束冲突——已被（自己或并发请求）claim
+    const existing = await db.operationExecution.findFirst({
+      where: { userId, conversationId, clientRequestId, operationId },
+      orderBy: { createdAt: "desc" },
+    });
+    if (existing && existing.status === "completed") {
+      try { return { claimed: false, result: JSON.parse(existing.result) as OperationResult }; } catch { /* fall through */ }
+    }
+    // pending 或 failed → 等待重试时重新执行
+    return { claimed: true };
+  }
+}
+
+async function finalizeOperation(
+  db: ReturnType<typeof getPrisma>,
+  userId: string,
+  conversationId: string,
+  clientRequestId: string,
+  operationId: string,
   result: OperationResult | null,
   error: string | null,
 ): Promise<void> {
   try {
-    await db.operationExecution.upsert({
-      where: { userId_conversationId_clientRequestId_operationId: { userId, conversationId, clientRequestId, operationId } },
-      update: {
-        status: error ? "failed" : "completed",
-        result: JSON.stringify(result ?? { error }),
-      },
-      create: {
-        userId, conversationId, clientRequestId, operationId, opType,
+    await db.operationExecution.updateMany({
+      where: { userId, conversationId, clientRequestId, operationId },
+      data: {
         status: error ? "failed" : "completed",
         result: JSON.stringify(result ?? { error }),
       },
     });
-  } catch { /* 记录失败不阻塞主流程 */ }
+  } catch { /* 非关键 */ }
 }
 
 // ── 辅助：加载真实 UserProfile ──────────────────────

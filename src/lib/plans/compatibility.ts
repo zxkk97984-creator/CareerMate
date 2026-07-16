@@ -169,26 +169,33 @@ export function convertV2ToV1Arrays(v2: AiCareerPlanV2): {
   const months: Array<{ monthIndex: number; goal: string; learningTasks: Array<{ id: string; title: string; type: string; status: string; dueWeek: number }>; practiceOutputs: string[]; evaluationMetrics: string[] }> = [];
 
   // horizon 总月数作为权威值
-  const totalMonths = horizonToMonths(v2.horizon);
+  const totalMonths = Math.max(1, horizonToMonths(v2.horizon));
 
   // 按各 phase 的 duration（天数）比例分配月份，确保总和精确等于 totalMonths
   const phaseDays = v2.phases.map((p) => durationToDays(p.duration));
   const totalDays = phaseDays.reduce((s, d) => s + d, 0);
-  // 每个 phase 至少 1 个月，剩余按比例分配
-  const minAlloc = v2.phases.map(() => 1);
-  const allocated = minAlloc.reduce((s, m) => s + m, 0);
-  const remaining = totalMonths - allocated;
-  const phaseMonths = minAlloc.map((base, i) => {
-    if (remaining <= 0) return base;
-    // 按天数比例分配剩余月份（至少1个月保证）
-    const fraction = totalDays > 0 ? phaseDays[i] / totalDays : 1 / v2.phases.length;
-    const extra = Math.round(remaining * fraction);
-    return base + extra;
-  });
-  // 修正舍入误差：调整最后一个 phase 使总和精确等于 totalMonths
-  const currentSum = phaseMonths.reduce((s, m) => s + m, 0);
-  if (currentSum !== totalMonths && phaseMonths.length > 0) {
-    phaseMonths[phaseMonths.length - 1] += totalMonths - currentSum;
+  const phaseCount = v2.phases.length;
+  let phaseMonths: number[];
+
+  if (totalMonths >= phaseCount) {
+    // 正常情况：月数足够，每个 phase 至少 1 个月
+    const minAlloc = v2.phases.map(() => 1);
+    const allocated = minAlloc.reduce((s, m) => s + m, 0);
+    const remaining = totalMonths - allocated;
+    phaseMonths = minAlloc.map((base, i) => {
+      if (remaining <= 0) return base;
+      const fraction = totalDays > 0 ? phaseDays[i] / totalDays : 1 / phaseCount;
+      const extra = Math.round(remaining * fraction);
+      return base + extra;
+    });
+    // 修正舍入误差
+    const currentSum = phaseMonths.reduce((s, m) => s + m, 0);
+    if (currentSum !== totalMonths && phaseCount > 0) {
+      phaseMonths[phaseMonths.length - 1] += totalMonths - currentSum;
+    }
+  } else {
+    // 边缘情况：phase 数多于 horizon 月数，均匀分配（每个 phase ≤1 月）
+    phaseMonths = v2.phases.map((_, i) => (i < totalMonths ? 1 : 0));
   }
 
   let monthIndex = 1;

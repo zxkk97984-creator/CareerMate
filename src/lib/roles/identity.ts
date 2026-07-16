@@ -9,18 +9,25 @@ const SEED_ALIASES: Record<string, { key: string; label: string }> = {
   "数据库管理员": { key: "database_administrator", label: "数据库管理员（DBA）" },
   "数据库运维": { key: "database_administrator", label: "数据库管理员（DBA）" },
   "数据库运维工程师": { key: "database_administrator", label: "数据库管理员（DBA）" },
+  "数据库管理": { key: "database_administrator", label: "数据库管理员（DBA）" },
   "database administrator": { key: "database_administrator", label: "数据库管理员（DBA）" },
-  // AI 产品经理（种子职业，不作为白名单）
+  // AI 产品经理
+  ai_product_manager: { key: "ai_product_manager", label: "AI 产品经理" },
   "ai产品经理": { key: "ai_product_manager", label: "AI 产品经理" },
   "ai 产品经理": { key: "ai_product_manager", label: "AI 产品经理" },
+  "ai产品": { key: "ai_product_manager", label: "AI 产品经理" },
   "人工智能产品经理": { key: "ai_product_manager", label: "AI 产品经理" },
-  // 数据分析师（种子职业）
+  // 数据分析师
+  data_analyst: { key: "data_analyst", label: "数据分析师" },
   "数据分析师": { key: "data_analyst", label: "数据分析师" },
+  "数据分析": { key: "data_analyst", label: "数据分析师" },
   "data analyst": { key: "data_analyst", label: "数据分析师" },
-  // AIGC 内容运营（种子职业）
+  // AIGC 内容运营
+  aigc_operator: { key: "aigc_operator", label: "AIGC 内容运营" },
   "aigc内容运营": { key: "aigc_operator", label: "AIGC 内容运营" },
   "aigc 内容运营": { key: "aigc_operator", label: "AIGC 内容运营" },
   "aigc运营": { key: "aigc_operator", label: "AIGC 内容运营" },
+  "aigc 运营": { key: "aigc_operator", label: "AIGC 内容运营" },
   "ai内容运营": { key: "aigc_operator", label: "AIGC 内容运营" },
   "ai 内容运营": { key: "aigc_operator", label: "AIGC 内容运营" },
 };
