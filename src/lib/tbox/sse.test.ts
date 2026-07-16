@@ -146,7 +146,7 @@ describe("upstream SSE normalization", () => {
       'event: conversation.message.delta\ndata: {"role":"assistant","content_type":"text","type":"answer","content":"DBA需要掌握SQL"}\n\n',
       "event: done\ndata: [DONE]\n\n",
     ]));
-    expect(events).toContainEqual({ type: "tool_start", name: "knowledge", toolType: "knowledge", toolId: "call_123", toolDescription: "查询知识库", toolParameters: undefined });
+    expect(events).toContainEqual({ type: "tool_start", name: "knowledge", toolType: "knowledge", toolId: "call_123", tool: "", toolDescription: "查询知识库", toolParameters: undefined });
     expect(events).toContainEqual({ type: "tool_end", name: "knowledge", toolType: "knowledge", toolId: "call_123", resultSummary: "[参考资料 1] (相关度: 0.80)\nDBA技能要求", toolDescription: "查询知识库" });
     expect(events).toContainEqual({ type: "text_delta", text: "DBA需要掌握SQL" });
     expect(events[events.length - 1]).toEqual({ type: "done" });

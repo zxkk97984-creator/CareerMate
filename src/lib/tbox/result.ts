@@ -26,11 +26,12 @@ export function createAssistantResultAccumulator(): AssistantResultAccumulator {
         return "";
       }
 
-      // 工具调用开始——记录 toolType/toolId/toolDescription
+      // 工具调用开始——记录 toolType/toolId/tool/toolDescription
       if (event.type === "tool_start") {
         toolCalls.push({
           toolType: event.toolType ?? event.name ?? "unknown",
           toolId: event.toolId ?? "",
+          tool: event.tool,
           toolDescription: event.toolDescription,
           toolParameters: event.toolParameters,
         });

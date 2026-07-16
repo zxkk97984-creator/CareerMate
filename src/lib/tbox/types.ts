@@ -98,7 +98,7 @@ export type NormalizedAiEvent =
   | { type: "conversation"; conversationId: string }
   | { type: "text_delta"; text: string }
   | { type: "text_final"; text: string }
-  | { type: "tool_start"; name?: string; toolType?: string; toolId?: string; toolDescription?: string; toolParameters?: unknown }
+  | { type: "tool_start"; name?: string; toolType?: string; toolId?: string; tool?: string; toolDescription?: string; toolParameters?: unknown }
   | { type: "tool_end"; name?: string; toolType?: string; toolId?: string; resultSummary?: string; toolDescription?: string }
   | { type: "agentic_event"; subtype: string; payload?: unknown }
   | { type: "citation"; payload: unknown }
@@ -110,6 +110,8 @@ export type NormalizedAiEvent =
 export interface ToolCallRecord {
   toolType: string;
   toolId: string;
+  /** 工具名称（如 web_content_extractor、query_search、finish_subtask 等） */
+  tool?: string;
   toolDescription?: string;
   toolParameters?: unknown;
   resultSummary?: string;

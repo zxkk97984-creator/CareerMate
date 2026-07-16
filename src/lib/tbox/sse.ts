@@ -181,6 +181,7 @@ export async function* parseUpstreamSse(
           name: str(data.toolType ?? toolContent?.toolType),
           toolType: str(data.toolType ?? toolContent?.toolType),
           toolId: str(data.toolId ?? toolContent?.toolId),
+          tool: str(data.tool ?? toolContent?.tool),
           toolDescription: str(data.toolDescription ?? toolContent?.toolDescription),
           toolParameters: data.toolParameters ?? toolContent?.toolParameters,
         };

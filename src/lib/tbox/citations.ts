@@ -23,16 +23,30 @@ export interface NormalizedCitation {
   providerIndex: number;
 }
 
-// ── 已知搜索工具名称（精确匹配） ─────────────────
+// ── 已知搜索工具名称（精确匹配 toolType 或 tool 字段） ──
 
-const SEARCH_TOOL_NAMES = new Set([
+/** toolType 为搜索的类型 */
+const SEARCH_TOOL_TYPES = new Set([
   "search_engine",
   "web_search",
   "联网搜索",
   "search",
   "websearch",
   "tbox_search",
-  // 夸克搜索 MCP 插件
+  // 夸克搜索 MCP 插件（待确认实际 toolType）
+  "夸克搜索",
+  "quark_search",
+  "qsearch",
+]);
+
+/** tool 字段值为搜索工具的名称 */
+const SEARCH_TOOL_NAMES = new Set([
+  // 真实 API 搜索工具
+  "web_content_extractor",
+  "query_search",
+  // 历史兼容
+  "search_engine",
+  "web_search",
   "夸克搜索",
   "quark_search",
   "qsearch",
@@ -134,10 +148,12 @@ function parseResultSummary(summary: string): ParsedResultRef[] {
   return refs;
 }
 
-/** 判断工具类型是否为搜索类 */
+/** 判断工具是否为搜索类（检查 toolType 和 tool 字段） */
 export function isSearchToolCall(toolCalls: ToolCallRecord[]): boolean {
   for (const tc of toolCalls) {
-    if (SEARCH_TOOL_NAMES.has(tc.toolType)) return true;
+    if (SEARCH_TOOL_TYPES.has(tc.toolType)) return true;
+    // 也检查 tool 字段（如 web_content_extractor、query_search）
+    if (tc.tool && SEARCH_TOOL_NAMES.has(tc.tool)) return true;
   }
   return false;
 }
@@ -252,10 +268,11 @@ export function normalizeCitations(
   return results;
 }
 
-// ── 判断是否有搜索工具调用 ──────────────────────
+// ── 判断是否有搜索工具调用（同时检查 toolType 和 tool 字段）──
 
 export function detectSearchToolCall(toolNames: ReadonlySet<string>): boolean {
   for (const name of toolNames) {
+    if (SEARCH_TOOL_TYPES.has(name)) return true;
     if (SEARCH_TOOL_NAMES.has(name)) return true;
   }
   return false;
