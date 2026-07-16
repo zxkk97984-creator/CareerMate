@@ -7,6 +7,7 @@ import type {
   ProfileDto,
 } from "@/lib/types";
 import { parseJson } from "@/lib/json";
+import { convertV2ToV1Arrays } from "@/lib/plans/compatibility";
 
 export function userDto(user: { id: string; username: string; displayName: string; role: string }): CurrentUserDto {
   return {
@@ -76,15 +77,32 @@ export function planDto(plan: {
   createdAt: Date;
   updatedAt: Date;
 }): CareerPlanDto {
+  // V2 计划读取时若缺少 V1 数组则从 content 转换
+  let years = parseJson<Array<Record<string, unknown>>>(plan.years, []);
+  let quarters = parseJson<Array<Record<string, unknown>>>(plan.quarters, []);
+  let months = parseJson<Array<Record<string, unknown>>>(plan.months, []);
+  let currentMonthIndex = plan.currentMonthIndex;
+
+  if ((plan.schemaVersion ?? 1) >= 2 && months.length === 0 && plan.content) {
+    try {
+      const v2 = JSON.parse(plan.content);
+      const v1Arrays = convertV2ToV1Arrays(v2);
+      years = v1Arrays.years as unknown as Array<Record<string, unknown>>;
+      quarters = v1Arrays.quarters as unknown as Array<Record<string, unknown>>;
+      months = v1Arrays.months as unknown as Array<Record<string, unknown>>;
+      currentMonthIndex = v1Arrays.currentMonthIndex;
+    } catch { /* 转换失败则使用空数组 */ }
+  }
+
   return {
     id: plan.id,
     targetRole: plan.targetRole,
     version: plan.version,
     status: plan.status,
-    years: parseJson<Array<Record<string, unknown>>>(plan.years, []),
-    quarters: parseJson<Array<Record<string, unknown>>>(plan.quarters, []),
-    months: parseJson<Array<Record<string, unknown>>>(plan.months, []),
-    currentMonthIndex: plan.currentMonthIndex,
+    years,
+    quarters,
+    months,
+    currentMonthIndex,
     assumptions: parseJson<string[]>(plan.assumptions, []),
     riskNotes: parseJson<string[]>(plan.riskNotes, []),
     generationMeta: parseJson<PlanGenerationMeta>(plan.generationMeta, {

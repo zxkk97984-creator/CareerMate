@@ -89,6 +89,20 @@ function validatedProfileValue(field: string, value: unknown) {
     }
     return value;
   }
+  // targetRole 支持对象格式 { key, label }
+  if (field === "targetRole") {
+    if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+      const obj = value as Record<string, unknown>;
+      if (typeof obj.key === "string" && obj.key.trim()) {
+        return value; // { key: "dba", label: "DBA" }
+      }
+      throw new CandidateServiceError("targetRole 对象必须包含 key 字段", "INVALID_VALUE", 400);
+    }
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+    throw new CandidateServiceError("targetRole 必须是非空文本或 {key,label} 对象", "INVALID_VALUE", 400);
+  }
   if (typeof value !== "string" || !value.trim()) {
     throw new CandidateServiceError("该字段必须是非空文本", "INVALID_VALUE", 400);
   }
@@ -204,9 +218,24 @@ export function createCandidateService(): CandidateService {
           });
         } else {
           const validated = validatedProfileValue(targetField, parsed);
-          const updateData: Record<string, unknown> = {
-            [targetField]: Array.isArray(validated) ? toJson(validated) : validated,
-          };
+          const updateData: Record<string, unknown> = {};
+          // targetRole 对象格式：解包为 targetRole(key) + targetRoleLabel(label)
+          if (targetField === "targetRole" && typeof validated === "object" && validated !== null && !Array.isArray(validated)) {
+            const obj = validated as Record<string, unknown>;
+            updateData.targetRole = obj.key as string;
+            if (typeof obj.label === "string") updateData.targetRoleLabel = obj.label;
+          } else {
+            updateData[targetField] = Array.isArray(validated) ? toJson(validated) : validated;
+          }
+          // baseProfileVersion stale 检查：候选创建时的画像版本与当前不一致则拒绝
+          if (candidate.baseProfileVersion !== null && candidate.baseProfileVersion !== profile.version) {
+            throw new CandidateServiceError(
+              "画像版本已变更，该候选可能已过期，请刷新后重新确认",
+              "PROFILE_VERSION_STALE",
+              409,
+            );
+          }
+          updateData.version = { increment: 1 };
           await transaction.userProfile.update({
             where: { userId },
             data: updateData,

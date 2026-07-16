@@ -32,10 +32,10 @@ function readContextTransport(): TboxContextTransport {
 }
 
 function readStructuredMode(): TboxStructuredMode {
-  // 安全默认 disabled（terminal 和 followup 探针均未通过）
+  // ⚠️ 平台能力缺口：真实 TBox API 的 conversation.chat.completed 事件不含 structured 字段
+  // terminal 仅 mock 环境可用；生产一律 disabled
   const value = read("TBOX_STRUCTURED_MODE", "disabled").trim().toLowerCase();
   if (value === "terminal") return "terminal";
-  if (value === "followup") return "followup";
   return "disabled";
 }
 
@@ -82,7 +82,9 @@ export function isStatefulChatTurns(): boolean {
 }
 
 export function isAgentOperationsEnabled(): boolean {
-  // fail-closed: 默认 false，只有显式设置 AGENT_OPERATIONS_V1=true 才启用
+  // fail-closed: 默认 false
+  // ⚠️ 生产不可用：依赖 TBox structured 输出（平台能力缺口），仅 mock 环境有效
+  // 设置 AGENT_OPERATIONS_V1=true 前必须同时设置 TBOX_STRUCTURED_MODE=terminal + TBOX_MODE=mock
   return readBoolean("AGENT_OPERATIONS_V1", false);
 }
 

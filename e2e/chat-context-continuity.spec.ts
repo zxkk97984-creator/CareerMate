@@ -27,14 +27,41 @@ test.describe("DBA 开放主聊天回归（mock模式）", () => {
   test("完整 DBA 对话——逐字段验证画像保存，不重复提问", async ({ page }) => {
     await login(page);
 
-    // 发送用户的完整自我介绍：大二、数据科学专业、DBA目标、10小时、SQL/NoSQL
-    await page.getByPlaceholder(/Enter 发送/).fill("我是大二学生，专业数据科学与大数据技术，想做数据库运维DBA，每周可以投入10小时，学过SQL和数据库原理，了解一点NoSQL，有大概两个月空闲可以学，家里能装Linux虚拟机，预算希望不太贵");
+    // 发送用户的完整自我介绍：大二、数据科学专业、DBA目标、10小时、SQL/NoSQL/Linux/预算
+    const fullInput = "我是大二学生，专业数据科学与大数据技术，想做数据库运维DBA，每周可以投入10小时，学过SQL和数据库原理，了解一点NoSQL，有大概两个月空闲可以学，家里能装Linux虚拟机，预算希望不太贵";
+    await page.getByPlaceholder(/Enter 发送/).fill(fullInput);
     await page.getByLabel("发送消息").click();
     await expect(page.locator(".message-assistant").first()).toBeVisible({ timeout: 15000 });
     await expect(page.locator(".streaming-cursor")).toHaveCount(0, { timeout: 20000 });
 
     const firstText = await page.locator(".message-assistant").first().textContent();
     expect(firstText?.trim().length ?? 0).toBeGreaterThan(5);
+
+    // 验证第1条用户消息可见且内容完整
+    const firstUserMsg = page.locator(".message-user").first();
+    await expect(firstUserMsg).toBeVisible();
+    const userContent1 = await firstUserMsg.textContent();
+    expect(userContent1).toContain("DBA");
+    expect(userContent1).toContain("10小时");
+
+    // 逐字段 API 验证画像——种子数据已设置 6 小时
+    const meResp1 = await page.evaluate(async () => {
+      const r = await fetch("/api/me");
+      return r.json();
+    }) as { ok: boolean; data: { profile: Record<string, unknown> } | null };
+    expect(meResp1.ok).toBe(true);
+    const profile1 = meResp1.data?.profile as Record<string, unknown>;
+    expect(profile1?.weeklyAvailableHours).toBe(6); // 种子数据默认值
+    // 10小时变更应生成 pending candidate（已有字段变更需确认）
+    const candidatesResp = await page.evaluate(async () => {
+      const r = await fetch("/api/profile/candidates");
+      return r.json();
+    }) as { ok: boolean; data: { items: Array<{ field: string; newValue: unknown }> } };
+    expect(candidatesResp.ok).toBe(true);
+    const hoursCandidate = candidatesResp.data.items.find(
+      (c) => c.field === "weeklyAvailableHours" && String(c.newValue ?? "").includes("10"),
+    );
+    expect(hoursCandidate).toBeDefined();
 
     // 发送更多信息：实践偏好和约束
     await page.getByPlaceholder(/Enter 发送/).fill("我比较喜欢动手实践的方式学习，不要纯看视频");
@@ -45,12 +72,30 @@ test.describe("DBA 开放主聊天回归（mock模式）", () => {
     }).toPass({ timeout: 15000 });
     await expect(page.locator(".streaming-cursor")).toHaveCount(0, { timeout: 15000 });
 
+    // 验证第2条用户消息可见
+    const secondUserMsg = page.locator(".message-user").nth(1);
+    await expect(secondUserMsg).toBeVisible();
+    const userContent2 = await secondUserMsg.textContent();
+    expect(userContent2).toContain("动手实践");
+
     // 第三轮：确认目标（用别名）
     await page.getByPlaceholder(/Enter 发送/).fill("DBA具体需要学什么");
     await page.getByLabel("发送消息").click();
     await expect(page.locator(".streaming-cursor")).toHaveCount(0, { timeout: 20000 });
 
-    // 验证对话历史和消息完整性
+    // 验证用户消息数 = 3（不是重复或丢失）
+    const userMsgs = page.locator(".message-user");
+    await expect(userMsgs).toHaveCount(3);
+
+    // 验证所有用户消息文本与原始输入对应
+    const userTexts = await Promise.all(
+      Array.from({ length: 3 }, (_, i) => userMsgs.nth(i).textContent()),
+    );
+    expect(userTexts[0]).toContain("DBA");
+    expect(userTexts[1]).toContain("动手实践");
+    expect(userTexts[2]).toContain("学什么");
+
+    // 验证对话历史和消息完整性——每条助手回复都有正文
     const assistantMsgs = page.locator(".message-assistant");
     const msgCount = await assistantMsgs.count();
     expect(msgCount).toBeGreaterThanOrEqual(3);
@@ -59,17 +104,20 @@ test.describe("DBA 开放主聊天回归（mock模式）", () => {
       expect(text?.trim().length ?? 0).toBeGreaterThan(0);
     }
 
-    // 逐字段 API 验证画像已保存（mock 模式下 profile_patch 通过 operation 执行）
-    const meResp = await page.evaluate(async () => {
+    // 最终逐字段 API 验证
+    const meResp2 = await page.evaluate(async () => {
       const r = await fetch("/api/me");
       return r.json();
     }) as { ok: boolean; data: { profile: Record<string, unknown> } | null };
-    // 用户消息中明确了10小时——验证 operation 至少被执行
-    expect(meResp.ok).toBe(true);
-
-    // 验证用户消息数 = 3（不是重复或丢失）
-    const userMsgs = page.locator(".message-user");
-    await expect(userMsgs).toHaveCount(3);
+    expect(meResp2.ok).toBe(true);
+    const profile2 = meResp2.data?.profile as Record<string, unknown>;
+    expect(profile2?.weeklyAvailableHours).toBe(6); // 未确认候选前画像不变
+    // 验证候选记录持续存在
+    const finalCandidates = await page.evaluate(async () => {
+      const r = await fetch("/api/profile/candidates");
+      return r.json();
+    }) as { ok: boolean; data: { items: Array<{ field: string }> } };
+    expect(finalCandidates.data.items.some((c) => c.field === "weeklyAvailableHours")).toBe(true);
   });
 
   test("刷新后历史保留——消息列表完整恢复", async ({ page }) => {

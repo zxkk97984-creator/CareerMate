@@ -129,7 +129,7 @@ export function LoginForm() {
             </p>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, maxWidth: 480 }}>
-            {["动态画像", "3 年路径", "模拟训练"].map((item, i) => (
+            {["动态画像", "职业路径", "模拟训练"].map((item, i) => (
               <div
                 key={item}
                 style={{

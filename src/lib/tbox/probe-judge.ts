@@ -220,7 +220,7 @@ export function judgeTextAndResult(obs: ProbeObservation): { pass: boolean; note
     return { pass: false, note: `正文和结构化结果同轮返回，但 ${note}` };
   }
   if (hasText && obs.structured === undefined) {
-    return { pass: false, note: "仅有正文，无结构化结果——可能需要 followup 模式" };
+    return { pass: false, note: "仅有正文，无结构化结果——平台能力缺口：TBox API 不返回 structured 字段" };
   }
   if (!hasText && valid) {
     return { pass: false, note: "仅有结构化结果，无正文" };
@@ -228,18 +228,19 @@ export function judgeTextAndResult(obs: ProbeObservation): { pass: boolean; note
   return { pass: false, note: "既无正文也无合法结构化结果" };
 }
 
-// ── followup_structured 判据 ─────────────────────
+// ── structured 判据（⚠️ 平台阻塞：TBox API 不返回 structured 字段）──
 
 export function judgeFollowupStructured(obs: ProbeObservation): { pass: boolean; note: string } {
+  // ⚠️ 平台能力缺口：真实 TBox API 的 conversation.chat.completed 事件不含 structured 字段
+  // 该函数仅保留用于测试 mock 环境，生产环境始终 fail
   const { valid, note } = parseAgentResponseStrict(obs.structured);
-  // followup 允许仅有 structured 无正文（operation-only）
   if (valid) {
     return {
       pass: true,
-      note: obs.text ? "followup 返回正文+合法 AgentResponse" : "followup 返回合法 AgentResponse（operation-only）",
+      note: obs.text ? "mock 环境：正文+合法 AgentResponse" : "mock 环境：合法 AgentResponse（operation-only）",
     };
   }
-  return { pass: false, note: `followup 结构化结果不符合 AgentResponse 协议：${note}` };
+  return { pass: false, note: `平台阻塞：结构化结果不符合 AgentResponse 协议——${note}` };
 }
 
 // ── search_and_citation 判据 ────────────────────

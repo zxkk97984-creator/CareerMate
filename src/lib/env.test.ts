@@ -98,11 +98,11 @@ describe("tbox environment config", () => {
     expect(config.structuredMode).toBe("disabled");
   });
 
-  it("reads structured mode followup", async () => {
+  it("rejects followup mode (platform blocked)", async () => {
     vi.stubEnv("TBOX_STRUCTURED_MODE", "followup");
     const { getTboxConfig } = await import("./env");
     const config = getTboxConfig();
-    expect(config.structuredMode).toBe("followup");
+    expect(config.structuredMode).toBe("disabled"); // followup 已移除，兜底 disabled
   });
 
   it("rejects invalid structured mode values and defaults to disabled", async () => {

@@ -77,7 +77,7 @@ export async function POST(request?: Request) {
         data: {
           userId: user.id,
           eventType: "plan_generated",
-          title: "生成 3 年职业路径",
+          title: "生成职业路径",
           summary: note,
           relatedPlanId: created.id,
           metadata: JSON.stringify(generated.meta),

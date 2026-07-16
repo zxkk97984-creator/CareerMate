@@ -279,7 +279,7 @@ function MemoryRef({ memoryId }: { memoryId: string }) {
     fetch(`/api/memory/${encodeURIComponent(memoryId)}`)
       .then((r) => r.json())
       .then((body) => {
-        if (body.ok) setData(body.data ?? body);
+        if (body.ok) setData((body.data as Record<string, unknown>)?.memory as typeof data ?? body.data as typeof data);
       })
       .catch(() => {});
   }, [memoryId]);
@@ -294,27 +294,30 @@ function MemoryRef({ memoryId }: { memoryId: string }) {
       sensitivity={data.sensitivity as "normal" | "sensitive"}
       status="pending"
       onAccept={async (id) => {
-        await fetch(`/api/memory/${encodeURIComponent(id)}/decision`, {
+        const res = await fetch(`/api/memory/${encodeURIComponent(id)}/decision`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "accept" }),
         });
+        if (!res.ok) return;
         setData((c) => c ? { ...c, status: "confirmed" } : c);
       }}
       onReject={async (id) => {
-        await fetch(`/api/memory/${encodeURIComponent(id)}/decision`, {
+        const res = await fetch(`/api/memory/${encodeURIComponent(id)}/decision`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "reject" }),
         });
+        if (!res.ok) return;
         setData((c) => c ? { ...c, status: "rejected" } : c);
       }}
       onEdit={async (id, newContent) => {
-        await fetch(`/api/memory/${encodeURIComponent(id)}/decision`, {
+        const res = await fetch(`/api/memory/${encodeURIComponent(id)}/decision`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "edit", content: newContent }),
         });
+        if (!res.ok) return;
       }}
     />
   );
@@ -367,6 +370,9 @@ export function MessageParts({ parts, onQuickAction }: MessagePartsProps) {
               />
             );
           }
+          case "profile_applied":
+            // 自动应用的画像补丁无需前端渲染
+            return null;
           case "text":
             // text 部件已在 message-text 中渲染，这里不重复
             return null;

@@ -15,8 +15,14 @@ export type TboxHistoryMode = "provider" | "context_only";
 /** 百宝箱业务上下文传输方式 */
 export type TboxContextTransport = "provider_history" | "business_data" | "question_prefix";
 
-/** 百宝箱结构化输出模式 */
-export type TboxStructuredMode = "disabled" | "terminal" | "followup";
+/** 百宝箱结构化输出模式
+ *  - disabled: 不请求/不解析结构化输出
+ *  - terminal: 期望 conversation.chat.completed 事件携带 structured 字段
+ *  ⚠️ 平台能力缺口（2026-07）：真实 TBox API 的 completed 事件不含 structured 字段，
+ *     terminal 模式仅 mock 环境可用，生产环境务必设为 disabled。
+ *     followup 模式已移除——独立结构化请求同样不可用。
+ */
+export type TboxStructuredMode = "disabled" | "terminal";
 
 export interface TboxConfig {
   mode: AiMode;

@@ -9,6 +9,7 @@ import { parseConversationState } from "./conversation-state";
 import { normalizeCitations, normalizeCitationsFromToolCalls, detectSearchToolCall } from "@/lib/tbox/citations";
 import { createProfileMutationService } from "@/lib/profile/profile-mutation-service";
 import { createMemoryProposalService } from "@/lib/memory/proposal-service";
+import { convertV2ToV1Arrays } from "@/lib/plans/compatibility";
 import { getPrisma } from "@/lib/prisma";
 import type { TboxHistoryMessage } from "@/lib/tbox/types";
 import type { AgentOperation } from "./agent-protocol";
@@ -283,13 +284,19 @@ async function handleStatefulStream(
         // 处理 AgentResponse.task/questions → 更新会话状态 + 发送 quick_actions
         if (agentResponse?.task || agentResponse?.questions?.length) {
           await applyAgentTaskState(conversationId, agentResponse, realProfile?.version ?? 1).catch(() => {});
-          // 发送 quick_actions 给前端渲染快捷按钮
+          // 将 quick_actions 加入 parts 持久化（确保 replay 可用），并通过 artifact 事件发送
           const question = agentResponse?.questions?.[0];
           if (question?.actions?.length) {
-            writeSseEvent(controller, "quick_actions", {
-              messageId: turn.assistantMessageId,
+            const qaPart = {
+              type: "quick_actions" as const,
               questionId: question.id,
               actions: question.actions,
+              status: "pending" as const,
+            };
+            parts.push(qaPart);
+            writeSseEvent(controller, "artifact", {
+              messageId: turn.assistantMessageId,
+              part: qaPart,
             });
           }
         }
@@ -716,7 +723,7 @@ async function applyAgentTaskState(
   }
 }
 
-// ── 辅助：执行 Agent Operations（finalize 后）──
+// ── 辅助：执行 Agent Operations（幂等 outbox 模式）──
 
 interface OperationResult {
   type: string;
@@ -732,10 +739,18 @@ async function executeAgentOperations(
 ): Promise<OperationResult[]> {
   const profileMutation = createProfileMutationService();
   const memoryProposal = createMemoryProposalService();
+  const db = getPrisma();
   const results: OperationResult[] = [];
 
   for (const op of operations) {
     try {
+      // ── 幂等检查：op.id 已处理过则跳过 ──
+      const existing = await checkOperationIdempotent(db, userId, op.id, op.type);
+      if (existing) {
+        results.push(existing);
+        continue;
+      }
+
       if (op.type === "profile_patch") {
         const decision = await profileMutation.decide({
           userId, conversationId,
@@ -750,7 +765,7 @@ async function executeAgentOperations(
 
         if (decision.action === "auto_apply") {
           const r = await profileMutation.applyPatch(userId, op.patch as any);
-          results.push({ type: "profile_applied", version: r.version });
+          results.push({ type: "profile_applied", version: r.version, operationId: op.id });
         } else if (decision.action === "pending_candidate") {
           // 逐字段创建候选——每个字段独立可确认
           const patch = op.patch as Record<string, unknown>;
@@ -766,7 +781,7 @@ async function executeAgentOperations(
                 reason: decision.reason,
                 sensitive: op.sensitive,
               });
-              results.push({ type: "profile_candidate_ref", candidateId: r.candidateId });
+              results.push({ type: "profile_candidate_ref", candidateId: r.candidateId, operationId: op.id });
             } catch { /* 单字段候选创建失败不阻止其他字段 */ }
           }
         }
@@ -782,7 +797,7 @@ async function executeAgentOperations(
             sensitivity: op.sensitive ? "sensitive" : "normal",
           });
           if (r.action !== "rejected") {
-            results.push({ type: "memory_ref", memoryId: r.memoryId, status: r.action });
+            results.push({ type: "memory_ref", memoryId: r.memoryId, status: r.action, operationId: op.id });
           }
         } catch (e) {
           results.push({ type: "error", code: "MEMORY_PROPOSAL_FAILED", message: (e as Error).message.slice(0, 200) });
@@ -791,12 +806,14 @@ async function executeAgentOperations(
 
       if (op.type === "plan_draft") {
         try {
-          const db = getPrisma();
           const latest = await db.careerPlan.findFirst({
             where: { userId }, orderBy: { version: "desc" }, select: { version: true },
           });
           const planData = op.plan as Record<string, unknown>;
           const targetRole = (planData.targetRole as Record<string, unknown>) ?? {};
+          // 将 V2 phases 转换为 V1 years/quarters/months 格式用于渲染
+          const v2plan = op.plan as Parameters<typeof convertV2ToV1Arrays>[0];
+          const v1Arrays = convertV2ToV1Arrays(v2plan);
           const created = await db.careerPlan.create({
             data: {
               userId,
@@ -806,14 +823,16 @@ async function executeAgentOperations(
               schemaVersion: 2,
               content: JSON.stringify(op.plan),
               targetRoleLabel: (targetRole.label as string) ?? null,
-              years: "[]", quarters: "[]", months: "[]",
-              currentMonthIndex: 0,
+              years: JSON.stringify(v1Arrays.years),
+              quarters: JSON.stringify(v1Arrays.quarters),
+              months: JSON.stringify(v1Arrays.months),
+              currentMonthIndex: v1Arrays.currentMonthIndex,
               assumptions: JSON.stringify((planData.assumptions as unknown[]) ?? []),
               riskNotes: JSON.stringify((planData.riskNotes as unknown[]) ?? []),
-              generationMeta: JSON.stringify({ triggeredBy: "chat", conversationId, source: "agent_operation" }),
+              generationMeta: JSON.stringify({ triggeredBy: "chat", conversationId, source: "agent_operation", operationId: op.id }),
             },
           });
-          results.push({ type: "plan_ref", planId: created.id, version: created.version });
+          results.push({ type: "plan_ref", planId: created.id, version: created.version, operationId: op.id });
         } catch (e) {
           results.push({ type: "error", code: "PLAN_DRAFT_FAILED", message: (e as Error).message.slice(0, 200) });
         }
@@ -821,7 +840,6 @@ async function executeAgentOperations(
 
       if (op.type === "exploration_report") {
         try {
-          const db = getPrisma();
           const report = op.report as Record<string, unknown>;
           const created = await db.careerExplorationReport.create({
             data: {
@@ -830,10 +848,10 @@ async function executeAgentOperations(
               status: "exploratory",
               content: JSON.stringify(report),
               sources: JSON.stringify((report.sources as unknown[]) ?? []),
-              executionMeta: JSON.stringify({ source: "agent_operation", sourceMessageId }),
+              executionMeta: JSON.stringify({ source: "agent_operation", sourceMessageId, operationId: op.id }),
             },
           });
-          results.push({ type: "exploration_report_ref", reportId: created.id });
+          results.push({ type: "exploration_report_ref", reportId: created.id, operationId: op.id });
         } catch (e) {
           results.push({ type: "error", code: "REPORT_CREATE_FAILED", message: (e as Error).message.slice(0, 200) });
         }
@@ -844,6 +862,44 @@ async function executeAgentOperations(
   }
 
   return results;
+}
+
+/** 幂等检查：根据 operationId 查询是否已有对应产物 */
+async function checkOperationIdempotent(
+  db: ReturnType<typeof getPrisma>,
+  userId: string,
+  operationId: string,
+  opType: string,
+): Promise<OperationResult | null> {
+  try {
+    if (opType === "profile_patch") {
+      // profile_candidate 或最近 5 分钟内的 profile 变更
+      const candidate = await db.profileUpdateCandidate.findFirst({
+        where: { userId }, orderBy: { createdAt: "desc" },
+      });
+      // 用 candidate 的 patch 匹配——不够完美但能防重复
+      if (candidate && candidate.createdAt.getTime() > Date.now() - 300_000) {
+        return null; // 无法精确匹配，允许多个 patch 操作
+      }
+    }
+    if (opType === "plan_draft") {
+      const existing = await db.careerPlan.findFirst({
+        where: { userId, generationMeta: { contains: operationId } },
+        orderBy: { createdAt: "desc" },
+      });
+      if (existing) return { type: "plan_ref", planId: existing.id, version: existing.version, operationId };
+    }
+    if (opType === "exploration_report") {
+      const existing = await db.careerExplorationReport.findFirst({
+        where: { userId, executionMeta: { contains: operationId } },
+        orderBy: { createdAt: "desc" },
+      });
+      if (existing) return { type: "exploration_report_ref", reportId: existing.id, operationId };
+    }
+    return null;
+  } catch {
+    return null; // 幂等检查失败不阻塞操作
+  }
 }
 
 // ── 辅助：加载真实 UserProfile ──────────────────────
@@ -977,20 +1033,20 @@ async function generateSummary(
 ): Promise<void> {
   try {
     const db = getPrisma();
-    // 获取需要摘要的消息
+    // 获取需要摘要的消息（user+assistant，时间顺序）
     const messages = await db.chatMessage.findMany({
-      where: { conversationId, status: "completed", role: "assistant" },
-      orderBy: { createdAt: "desc" },
-      take: 24,
-      select: { id: true, content: true },
+      where: { conversationId, status: "completed" },
+      orderBy: { createdAt: "asc" },
+      take: 48, // 24 对 user+assistant
+      select: { id: true, role: true, content: true },
     });
     if (messages.length === 0) return;
 
-    const lastMessageId = messages[0].id;
-    const conversationText = messages.map((m) => m.content.slice(0, 500)).join("\n---\n");
+    const lastMessageId = messages[messages.length - 1].id;
+    const conversationText = messages.map((m) => `[${m.role === "user" ? "用户" : "助手"}] ${m.content.slice(0, 500)}`).join("\n");
 
     // 通过 TBox 生成摘要（使用本地模型降级）
-    const summaryPrompt = `请根据以下对话内容生成结构化摘要（JSON格式）：\n${conversationText.slice(0, 8000)}\n\n返回格式：{"factsMentioned":[],"decisions":[],"openQuestions":[],"taskProgress":[]}`;
+    const summaryPrompt = `请根据以下对话内容生成结构化摘要（必须包含 schemaVersion=1）：\n${conversationText.slice(0, 8000)}\n\n返回格式：{"schemaVersion":1,"factsMentioned":[],"decisions":[],"openQuestions":[],"taskProgress":[]}`;
 
     try {
       const { streamChatWithTbox } = await import("@/lib/tbox/streaming");

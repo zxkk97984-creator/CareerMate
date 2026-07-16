@@ -143,6 +143,53 @@ export function serializePlanV1(plan: CareerPlanV1) {
   };
 }
 
+// ── V2 到 V1 转换（填充 years/quarters/months 用于渲染）──
+
+/** 将 Plan V2 的 phases 展开为 V1 兼容的 years/quarters/months 数组 */
+export function convertV2ToV1Arrays(v2: AiCareerPlanV2): {
+  years: Array<{ yearIndex: number; goal: string }>;
+  quarters: Array<{ quarterIndex: number; goal: string; milestone: string }>;
+  months: Array<{ monthIndex: number; goal: string; learningTasks: Array<{ id: string; title: string; type: string; status: string; dueWeek: number }>; practiceOutputs: string[]; evaluationMetrics: string[] }>;
+  currentMonthIndex: number;
+} {
+  const horizonValue = v2.horizon?.value ?? v2.phases.length;
+  const years: Array<{ yearIndex: number; goal: string }> = [];
+  const quarters: Array<{ quarterIndex: number; goal: string; milestone: string }> = [];
+  const months: Array<{ monthIndex: number; goal: string; learningTasks: Array<{ id: string; title: string; type: string; status: string; dueWeek: number }>; practiceOutputs: string[]; evaluationMetrics: string[] }> = [];
+
+  let monthCounter = 1;
+
+  for (let yi = 0; yi < horizonValue; yi++) {
+    const phase = v2.phases[yi] ?? v2.phases[v2.phases.length - 1];
+    const yearGoal = phase?.objective ?? phase?.title ?? `第${yi + 1}年`;
+    years.push({ yearIndex: yi + 1, goal: yearGoal });
+
+    for (let qi = 0; qi < 4; qi++) {
+      const quarterIndex = yi * 4 + qi + 1;
+      quarters.push({
+        quarterIndex,
+        goal: `Q${qi + 1}: ${yearGoal}`,
+        milestone: phase?.actions?.[qi]?.title ?? phase?.actions?.[0]?.title ?? "",
+      });
+
+      for (let mi = 0; mi < 3; mi++) {
+        const actionIndex = qi * 3 + mi;
+        const action = phase?.actions?.[actionIndex];
+        months.push({
+          monthIndex: monthCounter,
+          goal: action?.title ?? `${yearGoal} - M${mi + 1}`,
+          learningTasks: action ? [{ id: action.id, title: action.title, type: action.type, status: action.status, dueWeek: mi + 1 }] : [],
+          practiceOutputs: phase?.outputs ?? [],
+          evaluationMetrics: phase?.evaluationCriteria ?? [],
+        });
+        monthCounter++;
+      }
+    }
+  }
+
+  return { years, quarters, months, currentMonthIndex: 1 };
+}
+
 // ── 辅助 ────────────────────────────────────────
 
 function safeJsonParse<T>(raw: string, fallback: T): T {

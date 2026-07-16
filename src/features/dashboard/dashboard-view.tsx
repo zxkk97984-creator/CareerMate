@@ -38,14 +38,14 @@ export function DashboardView({ data, refresh, setNotice }: DashboardViewProps) 
   async function generatePlan() {
     if (generating) return;
     setGenerating(true);
-    setNotice("正在生成 3 年路径...");
+    setNotice("正在生成职业路径...");
     try {
       const r = await fetchApi("/api/plans/generate", { method: "POST" });
       if (!r.ok) {
         setNotice(r.error?.message ?? "路径生成失败，请稍后重试。");
         return;
       }
-      setNotice("3 年路径已生成，当前月任务已刷新。");
+      setNotice("职业路径已生成，当前月任务已刷新。");
       await refresh();
     } catch {
       setNotice("网络异常，路径生成失败，请检查网络后重试。");

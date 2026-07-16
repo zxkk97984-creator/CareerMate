@@ -96,12 +96,30 @@ export function determineScope(input: ContextBuilderInput): ContextScope {
   ) {
     return "privacy";
   }
-  // 职业相关关键词 → career_full
+  // 职业相关关键词（含开放岗位名/技术栈/学习约束等）→ career_full
   const careerKeywords = [
     "职业", "岗位", "工作", "招聘", "面试", "简历", "学习", "技能",
     "规划", "计划", "转行", "能力", "发展", "成长", "薪资", "行业",
+    // 常见 IT 岗位与别名
+    "dba", "运维", "开发", "工程师", "设计师", "产品经理", "数据分析",
+    "前端", "后端", "全栈", "测试", "架构", "算法", "运营", "安全",
+    "ux", "ui", "数据库", "网络", "人工智能", "机器学习", "云计算",
+    // 学习约束关键词
+    "每周", "小时", "预算", "实践", "动手", "项目", "虚拟机",
+    "linux", "sql", "nosql",
+    "编程", "代码", "实习", "秋招", "春招", "校招",
+    // 学校与专业语境
+    "专业", "大二", "大一", "大三", "大四", "研一", "研二", "研三",
+    "本科", "硕士", "学期", "课程",
   ];
   if (careerKeywords.some((k) => msg.includes(k))) {
+    return "career_full";
+  }
+  // 扫描历史消息中是否有职业相关信号（开放岗位识别）
+  const historyHasCareerSignal = input.conversation.recentMessages.some((m) =>
+    m.role === "user" && careerKeywords.some((k) => m.content.toLowerCase().includes(k)),
+  );
+  if (historyHasCareerSignal) {
     return "career_full";
   }
   // 其他 → general_minimal
