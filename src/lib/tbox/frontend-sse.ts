@@ -9,7 +9,7 @@ export interface FrontendSseBlock {
 
 interface FrontendSseHandlers {
   onDelta: (content: string) => void;
-  onContext?: (context: CareerChatContextMeta) => void;
+  onContext?: (context: CareerChatContextMeta & { userMessageId?: string; assistantMessageId?: string }) => void;
   onArtifact?: (part: ChatMessagePart) => void;
 }
 
@@ -151,7 +151,12 @@ export async function consumeFrontendSseResponse(
     if (parsed.event === "context") {
       const context = careerContext(parsed.data);
       if (!context) throw new Error("流式响应格式无效");
-      handlers.onContext?.(context);
+      const data = parsed.data as Record<string, unknown> | undefined;
+      handlers.onContext?.({
+        ...context,
+        userMessageId: typeof data?.userMessageId === "string" ? data.userMessageId : undefined,
+        assistantMessageId: typeof data?.assistantMessageId === "string" ? data.assistantMessageId : undefined,
+      });
     }
     if (parsed.event === "done") {
       const remoteConversationId =

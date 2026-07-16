@@ -280,9 +280,18 @@ async function handleStatefulStream(
           parts.push({ type: "error", code: "AGENT_RESPONSE_WARNINGS", message: agentResponseResult.warnings.join("; ").slice(0, 500) });
         }
 
-        // 处理 AgentResponse.task/questions → 更新会话状态
+        // 处理 AgentResponse.task/questions → 更新会话状态 + 发送 quick_actions
         if (agentResponse?.task || agentResponse?.questions?.length) {
           await applyAgentTaskState(conversationId, agentResponse, realProfile?.version ?? 1).catch(() => {});
+          // 发送 quick_actions 给前端渲染快捷按钮
+          const question = agentResponse?.questions?.[0];
+          if (question?.actions?.length) {
+            writeSseEvent(controller, "quick_actions", {
+              messageId: turn.assistantMessageId,
+              questionId: question.id,
+              actions: question.actions,
+            });
+          }
         }
 
         // ── 执行 Agent Operations（先于 finalize，结果持久化到 parts）──

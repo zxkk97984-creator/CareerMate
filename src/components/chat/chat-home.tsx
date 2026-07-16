@@ -30,7 +30,8 @@ export function ChatHomePage({ displayName, openChatEntry = true }: ChatHomePage
   // 用 ref 追踪当前活跃会话和流式状态，避免闭包过期
   const activeCidRef = useRef<string | null>(null);
   const streamingRef = useRef(false);
-  const requestIdRef = useRef<string | null>(null); // 稳定的请求 ID，用于幂等
+  const requestIdRef = useRef<string | null>(null);
+  const activeAsstIdRef = useRef<string>(""); // 当前助手消息 ID（可能被 context 事件替换）
 
   // 加载会话列表
   const loadConversations = useCallback(async () => {
@@ -138,8 +139,9 @@ export function ChatHomePage({ displayName, openChatEntry = true }: ChatHomePage
       createdAt: new Date().toISOString(),
     };
     setMessages(prev => [...prev, assistantMsg]);
+    activeAsstIdRef.current = assistantMsg.id;
 
-    // 发起SSE流式请求（整个 fetch + SSE 消费在 try/finally 内，防止网络异常导致永久 streaming=true）
+    // 发起SSE流式请求
     let assistantContent = "";
     let sseResult: FrontendSseResult | null = null;
 
@@ -151,54 +153,52 @@ export function ChatHomePage({ displayName, openChatEntry = true }: ChatHomePage
       });
 
       if (!response.ok || !response.body) {
-        const errorMessage = response.status === 409
-          ? "当前回复仍在生成，请稍候"
-          : "发送失败";
-        const errorCode = response.status === 409 ? "TURN_IN_PROGRESS" : "HTTP_ERROR";
-        setMessages(prev =>
-          prev.map(m => m.id === assistantMsg.id
-            ? { ...m, status: "failed", parts: [{ type: "error", code: errorCode, message: errorMessage }] }
-            : m,
-          ),
-        );
-        // 不 throw，直接返回；finally 会清理 streaming 状态
+        if (response.status === 409) {
+          setMessages(prev => prev.filter(m => m.id !== userMsg.id && m.id !== assistantMsg.id));
+        } else {
+          setMessages(prev =>
+            prev.map(m => m.id === assistantMsg.id
+              ? { ...m, status: "failed", parts: [{ type: "error", code: "HTTP_ERROR", message: "发送失败" }] }
+              : m,
+            ),
+          );
+        }
       } else {
 
-      // 使用共享 SSE 消费器
       sseResult = await consumeFrontendSseResponse(response, {
+        onContext(ctx) {
+          if (ctx.assistantMessageId) {
+            activeAsstIdRef.current = ctx.assistantMessageId;
+            setMessages(prev =>
+              prev.map(m => m.id === assistantMsg.id ? { ...m, id: ctx.assistantMessageId! } : m),
+            );
+          }
+        },
         onDelta(content) {
           assistantContent += content;
-          setMessages(prev =>
-            prev.map(m => m.id === assistantMsg.id
-              ? { ...m, content: assistantContent }
-              : m,
-            ),
-          );
+          const aid = activeAsstIdRef.current || assistantMsg.id;
+          setMessages(prev => prev.map(m => m.id === aid ? { ...m, content: assistantContent } : m));
         },
         onArtifact(part) {
-          if (part.type === "profile_candidate_ref") {
-            setPendingCandidateCount((count) => count + 1);
-          }
-          setMessages(prev =>
-            prev.map(m => m.id === assistantMsg.id
-              ? { ...m, parts: [...m.parts, part] }
-              : m,
-            ),
-          );
+          if (part.type === "profile_candidate_ref") setPendingCandidateCount((c) => c + 1);
+          const aid = activeAsstIdRef.current || assistantMsg.id;
+          setMessages(prev => prev.map(m => m.id === aid ? { ...m, parts: [...m.parts, part] } : m));
         },
       });
       setLastAssistantMeta(sseResult.meta);
       setLastAssistantWarnings(sseResult.warnings);
+      const doneAid = activeAsstIdRef.current || assistantMsg.id;
       setMessages(prev =>
-        prev.map(m => m.id === assistantMsg.id
+        prev.map(m => m.id === doneAid
           ? { ...m, content: assistantContent, status: "completed" }
           : m,
         ),
       );
     } // end else (response.ok)
     } catch {
+      const errAid = activeAsstIdRef.current || assistantMsg.id;
       setMessages(prev =>
-        prev.map(m => m.id === assistantMsg.id
+        prev.map(m => m.id === errAid
           ? { ...m, status: "failed", content: assistantContent }
           : m,
         ),

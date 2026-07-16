@@ -82,17 +82,26 @@ export function createProfileMutationService(): ProfileMutationService {
         return { action: "no_op", reason: "no_profile" };
       }
 
-      // 检查 targetRole 变更（需要确认）
+      // 检查 targetRole 变更——支持 {key,label} 对象和字符串两种格式
       if (patch.targetRole !== undefined && patch.targetRole !== null) {
-        if (profile.targetRole && profile.targetRole !== patch.targetRole.key) {
+        const newKey = typeof patch.targetRole === "object" && patch.targetRole !== null
+          ? (patch.targetRole as Record<string, unknown>).key as string | undefined
+          : String(patch.targetRole);
+        const newLabel = typeof patch.targetRole === "object" && patch.targetRole !== null
+          ? (patch.targetRole as Record<string, unknown>).label as string | undefined
+          : undefined;
+        if (!newKey) return { action: "no_op", reason: "invalid_target_role_format" };
+        if (profile.targetRole && profile.targetRole !== newKey) {
           return { action: "pending_candidate", reason: "target_role_change_requires_confirmation" };
         }
-        // 空字段 + explicit → auto
         if (!profile.targetRole) {
           return { action: "auto_apply", reason: "empty_target_role_filled" };
         }
-        // 同值 → no-op
-        if (profile.targetRole === patch.targetRole.key) {
+        if (profile.targetRole === newKey) {
+          // key 相同但 label 可能不同 → 更新 label
+          if (newLabel && profile.targetRoleLabel !== newLabel) {
+            return { action: "auto_apply", reason: "target_role_label_updated" };
+          }
           return { action: "no_op", reason: "same_target_role" };
         }
       }
