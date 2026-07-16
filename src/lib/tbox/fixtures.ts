@@ -88,6 +88,7 @@ export function createMockStructuredResult(question: string): unknown | undefine
           immediateActions: [{ id: "ia1", title: "确定本周学习目标", description: "从SQL基础开始", type: "learning" as const, status: "not_started" as const, resources: [] }],
           assumptions: ["用户具备基础计算机操作能力"],
           riskNotes: ["学习进度可能受工作/学业影响"],
+          evidenceRefs: [],
         },
       }],
       sourceRefs: [],
