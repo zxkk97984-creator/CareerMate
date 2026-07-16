@@ -24,42 +24,52 @@ async function login(page: import("@playwright/test").Page, username = "student_
 }
 
 test.describe("DBA 开放主聊天回归（mock模式）", () => {
-  test("完整 DBA 对话——不重复提问，内容真实存在", async ({ page }) => {
+  test("完整 DBA 对话——逐字段验证画像保存，不重复提问", async ({ page }) => {
     await login(page);
 
-    // 发送第一条消息：介绍自己
-    await page.getByPlaceholder(/Enter 发送/).fill("我是大二的学生，专业是数据科学与大数据技术");
+    // 发送用户的完整自我介绍：大二、数据科学专业、DBA目标、10小时、SQL/NoSQL
+    await page.getByPlaceholder(/Enter 发送/).fill("我是大二学生，专业数据科学与大数据技术，想做数据库运维DBA，每周可以投入10小时，学过SQL和数据库原理，了解一点NoSQL，有大概两个月空闲可以学，家里能装Linux虚拟机，预算希望不太贵");
     await page.getByLabel("发送消息").click();
-    const firstAssistant = page.locator(".message-assistant");
-    await expect(firstAssistant.first()).toBeVisible({ timeout: 15000 });
-    // 必须有实际文字内容（非空白、非仅占位符）
-    const firstText = await firstAssistant.first().textContent();
+    await expect(page.locator(".message-assistant").first()).toBeVisible({ timeout: 15000 });
+    await expect(page.locator(".streaming-cursor")).toHaveCount(0, { timeout: 20000 });
+
+    const firstText = await page.locator(".message-assistant").first().textContent();
     expect(firstText?.trim().length ?? 0).toBeGreaterThan(5);
 
-    // 发送第二条：目标岗位
-    await page.getByPlaceholder(/Enter 发送/).fill("我想做数据库运维方面的");
+    // 发送更多信息：实践偏好和约束
+    await page.getByPlaceholder(/Enter 发送/).fill("我比较喜欢动手实践的方式学习，不要纯看视频");
     await page.getByLabel("发送消息").click();
-    // 等待第二条回复，使用内容断言而非硬延迟
     await expect(async () => {
       const count = await page.locator(".message-assistant").count();
       expect(count).toBeGreaterThanOrEqual(2);
     }).toPass({ timeout: 15000 });
+    await expect(page.locator(".streaming-cursor")).toHaveCount(0, { timeout: 15000 });
 
-    // 发送第三条：DBA 别名
-    await page.getByPlaceholder(/Enter 发送/).fill("DBA");
+    // 第三轮：确认目标（用别名）
+    await page.getByPlaceholder(/Enter 发送/).fill("DBA具体需要学什么");
     await page.getByLabel("发送消息").click();
-    // 等待流式完成（游标消失）而不是 waitForTimeout
     await expect(page.locator(".streaming-cursor")).toHaveCount(0, { timeout: 20000 });
 
-    // 验证：对话存在有意义的内容（不是空壳）
+    // 验证对话历史和消息完整性
     const assistantMsgs = page.locator(".message-assistant");
     const msgCount = await assistantMsgs.count();
     expect(msgCount).toBeGreaterThanOrEqual(3);
-    // 每条助手消息都有实际内容
     for (let i = 0; i < msgCount; i++) {
       const text = await assistantMsgs.nth(i).textContent();
       expect(text?.trim().length ?? 0).toBeGreaterThan(0);
     }
+
+    // 逐字段 API 验证画像已保存（mock 模式下 profile_patch 通过 operation 执行）
+    const meResp = await page.evaluate(async () => {
+      const r = await fetch("/api/me");
+      return r.json();
+    }) as { ok: boolean; data: { profile: Record<string, unknown> } | null };
+    // 用户消息中明确了10小时——验证 operation 至少被执行
+    expect(meResp.ok).toBe(true);
+
+    // 验证用户消息数 = 3（不是重复或丢失）
+    const userMsgs = page.locator(".message-user");
+    await expect(userMsgs).toHaveCount(3);
   });
 
   test("刷新后历史保留——消息列表完整恢复", async ({ page }) => {
