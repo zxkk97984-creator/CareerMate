@@ -4,9 +4,9 @@ import {
   CareerMateContextTokenError,
   signCareerMateContextToken,
   verifyCareerMateContextToken,
-} from "./agent-context-token";
+} from "./agent-context-auth";
 
-const secret = "test-context-token-secret-with-at-least-32-bytes";
+const signingKey = "test-context-token-secret-with-at-least-32-bytes";
 const now = () => 1_700_000_000;
 const randomUUID = () => "00000000-0000-4000-8000-000000000001";
 const claims = {
@@ -17,8 +17,8 @@ const claims = {
 
 describe("CareerMate context token", () => {
   it("signs and verifies a minimal, privacy-safe context token", () => {
-    const token = signCareerMateContextToken(claims, { secret, now, randomUUID });
-    const verified = verifyCareerMateContextToken(token, { secret, now });
+    const token = signCareerMateContextToken(claims, { secret: signingKey, now, randomUUID });
+    const verified = verifyCareerMateContextToken(token, { secret: signingKey, now });
 
     expect(verified).toEqual({
       schemaVersion: "1",
@@ -39,27 +39,27 @@ describe("CareerMate context token", () => {
   });
 
   it("rejects a tampered token with a non-revealing security error", () => {
-    const token = signCareerMateContextToken(claims, { secret, now, randomUUID });
+    const token = signCareerMateContextToken(claims, { secret: signingKey, now, randomUUID });
     const tampered = `${token.slice(0, -1)}${token.endsWith("a") ? "b" : "a"}`;
 
-    expect(() => verifyCareerMateContextToken(tampered, { secret, now })).toThrow(CareerMateContextTokenError);
-    expect(() => verifyCareerMateContextToken(tampered, { secret, now })).toThrow("Invalid context token");
+    expect(() => verifyCareerMateContextToken(tampered, { secret: signingKey, now })).toThrow(CareerMateContextTokenError);
+    expect(() => verifyCareerMateContextToken(tampered, { secret: signingKey, now })).toThrow("Invalid context token");
   });
 
   it("rejects expired tokens", () => {
     const token = signCareerMateContextToken(claims, {
-      secret,
+      secret: signingKey,
       now,
       randomUUID,
       ttlSeconds: 60,
     });
 
-    expect(() => verifyCareerMateContextToken(token, { secret, now: () => 1_700_000_061 })).toThrow("Context token expired");
+    expect(() => verifyCareerMateContextToken(token, { secret: signingKey, now: () => 1_700_000_061 })).toThrow("Context token expired");
   });
 
   it("refuses token TTLs above ten minutes", () => {
     expect(() => signCareerMateContextToken(claims, {
-      secret,
+      secret: signingKey,
       now,
       randomUUID,
       ttlSeconds: 601,
@@ -68,7 +68,7 @@ describe("CareerMate context token", () => {
 
   it("rejects claims with scopes outside the fixed allowlist", () => {
     expect(() => signCareerMateContextToken({ ...claims, scopes: ["profile:write"] as never }, {
-      secret,
+      secret: signingKey,
       now,
       randomUUID,
     })).toThrow("Invalid context token claims");
@@ -76,54 +76,55 @@ describe("CareerMate context token", () => {
 
   it("rejects a token issued in the future", () => {
     const token = signCareerMateContextToken(claims, {
-      secret,
+      secret: signingKey,
       now: () => 1_700_000_100,
       randomUUID,
     });
 
-    expect(() => verifyCareerMateContextToken(token, { secret, now })).toThrow("Invalid context token");
+    expect(() => verifyCareerMateContextToken(token, { secret: signingKey, now })).toThrow("Invalid context token");
   });
 
   it("rejects every future iat and expires exactly at exp", () => {
     const futureToken = signCareerMateContextToken(claims, {
-      secret,
+      secret: signingKey,
       now: () => 1_700_000_001,
       randomUUID,
       ttlSeconds: 600,
     });
-    expect(() => verifyCareerMateContextToken(futureToken, { secret, now })).toThrow("Invalid context token");
+    expect(() => verifyCareerMateContextToken(futureToken, { secret: signingKey, now })).toThrow("Invalid context token");
 
-    const expiringToken = signCareerMateContextToken(claims, { secret, now, randomUUID, ttlSeconds: 600 });
-    expect(() => verifyCareerMateContextToken(expiringToken, { secret, now: () => 1_700_000_600 }))
+    const expiringToken = signCareerMateContextToken(claims, { secret: signingKey, now, randomUUID, ttlSeconds: 600 });
+    expect(() => verifyCareerMateContextToken(expiringToken, { secret: signingKey, now: () => 1_700_000_600 }))
       .toThrow("Context token expired");
   });
 
   it("uses Date inputs as epoch milliseconds and rejects duplicate scopes", () => {
     const token = signCareerMateContextToken(claims, {
-      secret,
+      secret: signingKey,
       now: () => new Date(1_700_000_000_000),
       randomUUID,
     });
-    expect(verifyCareerMateContextToken(token, { secret, now })).toMatchObject({ iat: 1_700_000_000 });
+    expect(verifyCareerMateContextToken(token, { secret: signingKey, now })).toMatchObject({ iat: 1_700_000_000 });
     expect(() => signCareerMateContextToken({ ...claims, scopes: ["profile:read", "profile:read"] }, {
-      secret,
+      secret: signingKey,
       now,
       randomUUID,
     })).toThrow("Invalid context token claims");
   });
 
   it("rejects wrong-secret, malformed, and non-canonical base64url tokens", () => {
-    const token = signCareerMateContextToken(claims, { secret, now, randomUUID });
+    const token = signCareerMateContextToken(claims, { secret: signingKey, now, randomUUID });
+    const alternateSigningKey = "a-different-strong-context-token-secret-value";
     expect(() => verifyCareerMateContextToken(token, {
-      secret: "a-different-strong-context-token-secret-value",
+      secret: alternateSigningKey,
       now,
     })).toThrow("Invalid context token");
-    expect(() => verifyCareerMateContextToken("v1.%%%%.%%%%", { secret, now })).toThrow("Invalid context token");
+    expect(() => verifyCareerMateContextToken("v1.%%%%.%%%%", { secret: signingKey, now })).toThrow("Invalid context token");
 
     const [version, encodedClaims] = token.split(".");
     const nonCanonicalPayload = `${version}.${encodedClaims}=`;
-    const signature = createHmac("sha256", secret).update(nonCanonicalPayload).digest("base64url");
-    expect(() => verifyCareerMateContextToken(`${nonCanonicalPayload}.${signature}`, { secret, now }))
+    const signature = createHmac("sha256", signingKey).update(nonCanonicalPayload).digest("base64url");
+    expect(() => verifyCareerMateContextToken(`${nonCanonicalPayload}.${signature}`, { secret: signingKey, now }))
       .toThrow("Invalid context token");
   });
 

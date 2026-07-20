@@ -5,7 +5,7 @@ import {
   verifyCareerMateContextToken,
   type CareerMateContextTokenClaims,
   type CareerMateContextTokenScope,
-} from "@/lib/agent-context-token";
+} from "@/lib/agent-context-auth";
 import {
   AGENT_ARTIFACT_CANDIDATE_TYPES,
   AgentArtifactCandidateError,
