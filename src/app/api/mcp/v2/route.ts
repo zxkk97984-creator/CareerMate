@@ -13,6 +13,7 @@ const JSON_RPC_VERSION = "2.0" as const;
 const DEFAULT_PROTOCOL_VERSION = "2025-03-26";
 const SUPPORTED_PROTOCOL_VERSIONS = new Set([DEFAULT_PROTOCOL_VERSION, "2025-11-25"]);
 const MAX_REQUEST_BYTES = 1024 * 1024;
+const MAX_BATCH_ITEMS = 100;
 const RESPONSE_MEDIA_TYPES = ["application/json", "text/event-stream"] as const;
 
 type JsonRpcRequestId = string | number;
@@ -460,7 +461,11 @@ export function createCareerMateMcpV2Handlers(
       }
 
       if (Array.isArray(parsedBody.value)) {
-        if (parsedBody.value.length === 0 || protocolVersion === "2025-11-25") {
+        if (
+          parsedBody.value.length === 0
+          || parsedBody.value.length > MAX_BATCH_ITEMS
+          || protocolVersion === "2025-11-25"
+        ) {
           return rpcError(null, -32600, "Invalid Request");
         }
         const batchKinds = parsedBody.value.map((message) => classifyMessage(message).kind);

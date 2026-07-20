@@ -22,20 +22,22 @@ function registry(overrides: Partial<CareerMateMcpV2Registry> = {}): CareerMateM
 
 function setup(options: {
   registry?: CareerMateMcpV2Registry;
+  createRegistry?: () => CareerMateMcpV2Registry;
   token?: string;
   origins?: readonly string[];
   authorize?: (header: string | null, token: string) => boolean;
 } = {}) {
   const toolRegistry = options.registry ?? registry();
+  const createRegistry = options.createRegistry ?? vi.fn(() => toolRegistry);
   const handlers = createCareerMateMcpV2Handlers({
-    createRegistry: () => toolRegistry,
+    createRegistry,
     authorize: options.authorize,
     environment: {
       getPluginToken: () => options.token ?? STATIC_TOKEN,
       getAllowedOrigins: () => options.origins ?? [ALLOWED_ORIGIN],
     },
   });
-  return { handlers, toolRegistry };
+  return { handlers, toolRegistry, createRegistry };
 }
 
 function request(body: string | object, options: {
@@ -291,6 +293,37 @@ describe("CareerMate MCP V2 transport negotiation", () => {
     ], { protocolVersion: "2025-11-25" }));
     expect(response.status).toBe(200);
     expect((await body(response)).error.code).toBe(-32600);
+  });
+
+  it.each([99, 100])("accepts a 2025-03-26 batch containing %i requests", async (count) => {
+    const { handlers, createRegistry } = setup();
+    const response = await handlers.POST(request(
+      Array.from({ length: count }, (_, id) => ({ jsonrpc: "2.0", id, method: "ping" })),
+      { protocolVersion: "2025-03-26" },
+    ));
+    expect(response.status).toBe(200);
+    const result = await body(response) as unknown as unknown[];
+    expect(result).toHaveLength(count);
+    expect(createRegistry).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects 101 batch items before classifying messages or creating a registry", async () => {
+    const toolRegistry = registry();
+    const createRegistry = vi.fn(() => toolRegistry);
+    const { handlers } = setup({ registry: toolRegistry, createRegistry });
+    const response = await handlers.POST(request(
+      Array.from({ length: 101 }, (_, id) => ({
+        jsonrpc: "2.0",
+        id,
+        method: "tools/call",
+        params: { name: "profile.read", arguments: {} },
+      })),
+      { protocolVersion: "2025-03-26" },
+    ));
+    expect(response.status).toBe(200);
+    expect((await body(response)).error).toEqual({ code: -32600, message: "Invalid Request" });
+    expect(createRegistry).not.toHaveBeenCalled();
+    expect(toolRegistry.call).not.toHaveBeenCalled();
   });
 
   it("accepts supported protocol headers and rejects unsupported values", async () => {
