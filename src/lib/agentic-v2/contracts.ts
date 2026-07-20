@@ -1,12 +1,6 @@
 import { z } from "zod";
 
 const shortText = z.string().trim().min(1).max(500);
-const MAX_JSON_DEPTH = 12;
-const MAX_JSON_NODES = 1_000;
-const MAX_JSON_STRING_LENGTH = 10_000;
-const MAX_JSON_ARRAY_LENGTH = 100;
-const MAX_JSON_OBJECT_PROPERTIES = 100;
-const MAX_JSON_OBJECT_KEY_LENGTH = 120;
 
 export type SerializableJsonValue =
   | null
@@ -18,8 +12,7 @@ export type SerializableJsonValue =
 
 function isSerializableJsonValue(value: unknown): value is SerializableJsonValue {
   const ancestors = new Set<object>();
-  const stack: Array<{ value: unknown; depth: number; leaving?: object }> = [{ value, depth: 0 }];
-  let nodeCount = 0;
+  const stack: Array<{ value: unknown; leaving?: object }> = [{ value }];
 
   while (stack.length > 0) {
     const current = stack.pop();
@@ -29,13 +22,8 @@ function isSerializableJsonValue(value: unknown): value is SerializableJsonValue
       continue;
     }
 
-    nodeCount += 1;
-    if (nodeCount > MAX_JSON_NODES || current.depth > MAX_JSON_DEPTH) return false;
     if (current.value === null || typeof current.value === "boolean") continue;
-    if (typeof current.value === "string") {
-      if (current.value.length > MAX_JSON_STRING_LENGTH) return false;
-      continue;
-    }
+    if (typeof current.value === "string") continue;
     if (typeof current.value === "number") {
       if (!Number.isFinite(current.value)) return false;
       continue;
@@ -43,15 +31,14 @@ function isSerializableJsonValue(value: unknown): value is SerializableJsonValue
     if (typeof current.value !== "object" || ancestors.has(current.value)) return false;
 
     ancestors.add(current.value);
-    stack.push({ value: null, depth: current.depth, leaving: current.value });
+    stack.push({ value: null, leaving: current.value });
 
     if (Array.isArray(current.value)) {
-      if (current.value.length > MAX_JSON_ARRAY_LENGTH) return false;
       for (let index = current.value.length - 1; index >= 0; index -= 1) {
         if (!(index in current.value)) return false;
         const descriptor = Object.getOwnPropertyDescriptor(current.value, String(index));
         if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) return false;
-        stack.push({ value: descriptor.value, depth: current.depth + 1 });
+        stack.push({ value: descriptor.value });
       }
       if (Reflect.ownKeys(current.value).some((key) => key !== "length" && !/^0$|^[1-9]\d*$/.test(String(key)))) return false;
       continue;
@@ -60,12 +47,11 @@ function isSerializableJsonValue(value: unknown): value is SerializableJsonValue
     const prototype = Object.getPrototypeOf(current.value);
     if (prototype !== Object.prototype && prototype !== null) return false;
     const keys = Reflect.ownKeys(current.value);
-    if (keys.length > MAX_JSON_OBJECT_PROPERTIES) return false;
     for (const key of keys) {
-      if (typeof key !== "string" || key.length > MAX_JSON_OBJECT_KEY_LENGTH) return false;
+      if (typeof key !== "string") return false;
       const descriptor = Object.getOwnPropertyDescriptor(current.value, key);
       if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) return false;
-      stack.push({ value: descriptor.value, depth: current.depth + 1 });
+      stack.push({ value: descriptor.value });
     }
   }
 
@@ -82,7 +68,7 @@ const serializableJsonObjectSchema = serializableJsonValueSchema.refine(
   (value) => value !== null && !Array.isArray(value) && typeof value === "object",
   { message: "Expected a serializable JSON object" },
 );
-const platformArray = z.array(serializableJsonValueSchema).max(MAX_JSON_ARRAY_LENGTH);
+const platformArray = z.array(serializableJsonValueSchema);
 
 export const interactionV1Schema = z.object({
   surface: z.string().trim().min(1).max(80).optional(),
@@ -135,37 +121,7 @@ export const evidenceBundleV1Schema = z.object({
   }).strict().refine((market) => market.searched || market.skipReason !== null, {
     message: "marketEvidence must be searched or include a skipReason",
   }),
-}).strict().superRefine((bundle, ctx) => {
-  const invalid = (path: (string | number)[], message: string) => ctx.addIssue({
-    code: z.ZodIssueCode.custom,
-    path,
-    message,
-  });
-
-  if (bundle.profileSnapshot.available) {
-    if (bundle.profileSnapshot.version === null || bundle.profileSnapshot.data === null) {
-      invalid(["profileSnapshot"], "An available profileSnapshot requires version and data");
-    }
-  } else if (bundle.profileSnapshot.version !== null || bundle.profileSnapshot.data !== null) {
-    invalid(["profileSnapshot"], "An unavailable profileSnapshot must use null version and data");
-  }
-
-  if (bundle.historySnapshot.available) {
-    if (bundle.historySnapshot.through === null || bundle.historySnapshot.data === null) {
-      invalid(["historySnapshot"], "An available historySnapshot requires through and data");
-    }
-  } else if (bundle.historySnapshot.through !== null || bundle.historySnapshot.data !== null) {
-    invalid(["historySnapshot"], "An unavailable historySnapshot must use null through and data");
-  }
-
-  if (bundle.marketEvidence.searched) {
-    if (bundle.marketEvidence.collectedAt === null || bundle.marketEvidence.skipReason !== null) {
-      invalid(["marketEvidence"], "Searched marketEvidence requires collectedAt and no skipReason");
-    }
-  } else if (bundle.marketEvidence.collectedAt !== null || bundle.marketEvidence.skipReason === null) {
-    invalid(["marketEvidence"], "Skipped marketEvidence requires skipReason and no collectedAt");
-  }
-});
+}).strict();
 
 export type EvidenceBundleV1 = z.infer<typeof evidenceBundleV1Schema>;
 

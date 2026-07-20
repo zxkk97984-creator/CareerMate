@@ -84,19 +84,18 @@ describe("CareerMate context token", () => {
     expect(() => verifyCareerMateContextToken(token, { secret, now })).toThrow("Invalid context token");
   });
 
-  it("allows only a small future clock skew and expires exactly at exp", () => {
-    const token = signCareerMateContextToken(claims, {
+  it("rejects every future iat and expires exactly at exp", () => {
+    const futureToken = signCareerMateContextToken(claims, {
       secret,
-      now: () => 1_700_000_029,
+      now: () => 1_700_000_001,
       randomUUID,
       ttlSeconds: 600,
     });
+    expect(() => verifyCareerMateContextToken(futureToken, { secret, now })).toThrow("Invalid context token");
 
-    expect(verifyCareerMateContextToken(token, { secret, now })).toMatchObject({ exp: 1_700_000_629 });
-    expect(() => verifyCareerMateContextToken(token, { secret, now: () => 1_700_000_629 }))
+    const expiringToken = signCareerMateContextToken(claims, { secret, now, randomUUID, ttlSeconds: 600 });
+    expect(() => verifyCareerMateContextToken(expiringToken, { secret, now: () => 1_700_000_600 }))
       .toThrow("Context token expired");
-    expect(() => verifyCareerMateContextToken(token, { secret, now: () => 1_699_999_998 }))
-      .toThrow("Invalid context token");
   });
 
   it("uses Date inputs as epoch milliseconds and rejects duplicate scopes", () => {

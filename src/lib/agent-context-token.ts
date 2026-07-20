@@ -65,7 +65,6 @@ export class CareerMateContextTokenError extends Error {
 
 const MAX_TTL_SECONDS = 600;
 const DEFAULT_TTL_SECONDS = 300;
-const MAX_CLOCK_SKEW_SECONDS = 30;
 const MIN_CONTEXT_TOKEN_SECRET_BYTES = 32;
 const KNOWN_CONTEXT_TOKEN_SECRET_PLACEHOLDERS = new Set([
   "placeholder",
@@ -169,7 +168,7 @@ export function verifyCareerMateContextToken(
     if (!parsed.success || parsed.data.exp - parsed.data.iat > MAX_TTL_SECONDS || parsed.data.exp <= parsed.data.iat) return invalidToken();
 
     const current = epochSeconds(options.now);
-    if (parsed.data.iat > current + MAX_CLOCK_SKEW_SECONDS) return invalidToken();
+    if (parsed.data.iat > current) return invalidToken();
     if (parsed.data.exp <= current) throw new CareerMateContextTokenError("Context token expired");
     return parsed.data;
   } catch (error) {

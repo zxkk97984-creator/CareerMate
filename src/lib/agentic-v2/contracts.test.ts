@@ -57,7 +57,7 @@ describe("Agentic V2 platform contracts", () => {
     }).success).toBe(true);
   });
 
-  it("rejects contradictory snapshot and market availability metadata", () => {
+  it("does not add availability metadata coupling beyond the platform plan", () => {
     const evidence = {
       schemaVersion: "1.0",
       request: {},
@@ -70,19 +70,19 @@ describe("Agentic V2 platform contracts", () => {
     expect(evidenceBundleV1Schema.safeParse({
       ...evidence,
       profileSnapshot: { available: false, version: 1, data: {} },
-    }).success).toBe(false);
+    }).success).toBe(true);
     expect(evidenceBundleV1Schema.safeParse({
       ...evidence,
       historySnapshot: { available: true, through: null, data: [] },
-    }).success).toBe(false);
+    }).success).toBe(true);
     expect(evidenceBundleV1Schema.safeParse({
       ...evidence,
       marketEvidence: { ...marketEvidence, searched: true, skipReason: "not searched" },
-    }).success).toBe(false);
+    }).success).toBe(true);
     expect(evidenceBundleV1Schema.safeParse({
       ...evidence,
       marketEvidence: { ...marketEvidence, searched: false, skipReason: "disabled", collectedAt: marketEvidence.collectedAt },
-    }).success).toBe(false);
+    }).success).toBe(true);
   });
 
   it("requires serializable JSON data in every snapshot and artifact", () => {
@@ -129,7 +129,7 @@ describe("Agentic V2 platform contracts", () => {
     expect(agentArtifactV1Schema.safeParse({ ...artifact, data: () => "not JSON" }).success).toBe(false);
   });
 
-  it("rejects non-JSON values and bounded-size violations across every platform boundary", () => {
+  it("rejects non-JSON values without imposing arbitrary JSON content limits", () => {
     const sparse = new Array(1);
     let tooDeep: unknown = null;
     for (let index = 0; index < 13; index += 1) tooDeep = { nested: tooDeep };
@@ -166,8 +166,8 @@ describe("Agentic V2 platform contracts", () => {
       ...evidence,
       marketEvidence: { ...marketEvidence, findings: sparse },
     }).success).toBe(false);
-    expect(agentArtifactV1Schema.safeParse({ ...artifact, sources: [tooDeep] }).success).toBe(false);
-    expect(agentArtifactV1Schema.safeParse({ ...artifact, warnings: ["x".repeat(10_001)] }).success).toBe(false);
+    expect(agentArtifactV1Schema.safeParse({ ...artifact, sources: [tooDeep] }).success).toBe(true);
+    expect(agentArtifactV1Schema.safeParse({ ...artifact, warnings: ["x".repeat(10_001)] }).success).toBe(true);
     expect(() => agentArtifactV1Schema.safeParse({ ...artifact, nextActions: [tooDeep] })).not.toThrow();
   });
 
