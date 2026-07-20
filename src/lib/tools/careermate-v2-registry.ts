@@ -319,6 +319,23 @@ function deriveIdempotencyKey(
     .digest("hex");
 }
 
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  return `{${Object.entries(value as Record<string, unknown>)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, nested]) => `${JSON.stringify(key)}:${canonicalJson(nested)}`)
+    .join(",")}}`;
+}
+
+function deriveSimulationAppendFingerprint(input: {
+  expectedTurnCount: number;
+  userMessage: string;
+  assistantMessage: string;
+}) {
+  return createHash("sha256").update(canonicalJson(input)).digest("hex");
+}
+
 function mapCandidateError(error: unknown): never {
   if (error instanceof AgentArtifactCandidateError || (
     error instanceof Error && "code" in error && "status" in error
@@ -676,7 +693,12 @@ export function createCareerMateV2ToolRegistry(
     }, ["sessionId", "expectedTurnCount", "userMessage", "assistantMessage"]),
     async handler(rawInput, context) {
       const input = simulationAppendInput.parse(rawInput);
-      const operationId = `simulation_turn.append:${input.sessionId}`;
+      const operationId = `simulation_turn.append:${input.sessionId}:${input.expectedTurnCount}`;
+      const fingerprint = deriveSimulationAppendFingerprint({
+        expectedTurnCount: input.expectedTurnCount,
+        userMessage: input.userMessage,
+        assistantMessage: input.assistantMessage,
+      });
       const ledgerIdentity = {
         userId: context.userId,
         conversationId: context.sessionId,
@@ -690,7 +712,7 @@ export function createCareerMateV2ToolRegistry(
               ...ledgerIdentity,
               opType: "simulation_turn.append",
               status: "pending",
-              result: "{}",
+              result: JSON.stringify({ fingerprint }),
             },
             select: { id: true },
           });
@@ -784,7 +806,10 @@ export function createCareerMateV2ToolRegistry(
           const result = mapSimulationState(persisted);
           await transaction.operationExecution.update({
             where: { id: execution.id },
-            data: { status: "completed", result: JSON.stringify(result) },
+            data: {
+              status: "completed",
+              result: JSON.stringify({ fingerprint, response: result }),
+            },
           });
           return result;
         });
@@ -798,7 +823,17 @@ export function createCareerMateV2ToolRegistry(
           },
           select: { status: true, result: true },
         });
-        if (!existing) throw error;
+        if (!existing || typeof existing.result !== "string") throw error;
+        const stored = parseJson<unknown>(existing.result, null);
+        if (!stored || typeof stored !== "object" || Array.isArray(stored)) throw error;
+        const storedRecord = stored as Record<string, unknown>;
+        if (storedRecord.fingerprint !== fingerprint) {
+          throw new CareerMateV2McpError(
+            "SIMULATION_APPEND_IDEMPOTENCY_CONFLICT",
+            "同一训练轮次请求标识对应了不同消息内容",
+            409,
+          );
+        }
         if (existing.status === "pending") {
           throw new CareerMateV2McpError(
             "SIMULATION_APPEND_IN_PROGRESS",
@@ -813,10 +848,10 @@ export function createCareerMateV2ToolRegistry(
             500,
           );
         }
-        if (existing.status !== "completed" || typeof existing.result !== "string") throw error;
-        const replay = parseJson<unknown>(existing.result, null);
-        if (!replay || typeof replay !== "object" || Array.isArray(replay)) throw error;
-        return replay;
+        if (existing.status !== "completed") throw error;
+        const response = storedRecord.response;
+        if (!response || typeof response !== "object" || Array.isArray(response)) throw error;
+        return response;
       }
     },
   });

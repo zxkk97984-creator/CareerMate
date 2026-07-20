@@ -38,6 +38,15 @@ const artifact: AgentArtifactV1 = {
   nextActions: [],
 };
 
+function appendFingerprint(input: {
+  expectedTurnCount: number;
+  userMessage: string;
+  assistantMessage: string;
+}) {
+  const canonical = `{"assistantMessage":${JSON.stringify(input.assistantMessage)},"expectedTurnCount":${input.expectedTurnCount},"userMessage":${JSON.stringify(input.userMessage)}}`;
+  return createHash("sha256").update(canonical).digest("hex");
+}
+
 function setup() {
   const db = {
     userProfile: {
@@ -560,6 +569,11 @@ describe("CareerMate business MCP V2 registry", () => {
 
   it("atomically appends one actual user/assistant turn for the bound owner", async () => {
     const { db, registry } = setup();
+    const fingerprint = appendFingerprint({
+      expectedTurnCount: 0,
+      userMessage: "我会先澄清目标和验收标准",
+      assistantMessage: "请继续说明关键依赖。",
+    });
     const expectedTranscript = [
       { role: "assistant", content: "开始" },
       { role: "user", content: "我会先澄清目标和验收标准" },
@@ -595,10 +609,10 @@ describe("CareerMate business MCP V2 registry", () => {
         userId: "user-1",
         conversationId: "conversation-1",
         clientRequestId: "request-1",
-        operationId: "simulation_turn.append:simulation-1",
+        operationId: "simulation_turn.append:simulation-1:0",
         opType: "simulation_turn.append",
         status: "pending",
-        result: "{}",
+        result: JSON.stringify({ fingerprint }),
       },
       select: { id: true },
     });
@@ -619,7 +633,10 @@ describe("CareerMate business MCP V2 registry", () => {
     });
     expect(db.operationExecution.update).toHaveBeenCalledWith({
       where: { id: "execution-1" },
-      data: { status: "completed", result: JSON.stringify(result) },
+      data: {
+        status: "completed",
+        result: JSON.stringify({ fingerprint, response: result }),
+      },
     });
     expect(result).toMatchObject({
       id: "simulation-1",
@@ -687,6 +704,11 @@ describe("CareerMate business MCP V2 registry", () => {
 
   it("replays a completed append result after a P2002 response-loss retry", async () => {
     const { db, registry } = setup();
+    const fingerprint = appendFingerprint({
+      expectedTurnCount: 0,
+      userMessage: "实际回答",
+      assistantMessage: "下一题",
+    });
     const replay = {
       id: "simulation-1",
       scenarioKey: "cross_role_communication",
@@ -705,7 +727,7 @@ describe("CareerMate business MCP V2 registry", () => {
     db.$transaction.mockRejectedValue({ code: "P2002" });
     db.operationExecution.findUnique.mockResolvedValue({
       status: "completed",
-      result: JSON.stringify(replay),
+      result: JSON.stringify({ fingerprint, response: replay }),
     });
 
     await expect(registry.call("simulation_turn.append", {
@@ -721,10 +743,88 @@ describe("CareerMate business MCP V2 registry", () => {
           userId: "user-1",
           conversationId: "conversation-1",
           clientRequestId: "request-1",
-          operationId: "simulation_turn.append:simulation-1",
+          operationId: "simulation_turn.append:simulation-1:0",
         },
       },
       select: { status: true, result: true },
+    });
+    expect(db.simulationSession.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("allows the same token request ID to append the next expected turn under a distinct operation ID", async () => {
+    const { db, registry } = setup();
+    await registry.call("simulation_turn.append", {
+      context_token: "signed",
+      sessionId: "simulation-1",
+      expectedTurnCount: 0,
+      userMessage: "第一轮回答",
+      assistantMessage: "第二轮问题",
+    });
+
+    db.simulationSession.findFirst.mockResolvedValue({
+      ...(await db.simulationSession.findFirst()),
+      transcript: JSON.stringify([
+        { role: "assistant", content: "开始" },
+        { role: "user", content: "第一轮回答" },
+        {
+          role: "assistant",
+          content: "第二轮问题",
+          meta: {
+            requestedMode: "api",
+            actualMode: "api",
+            degraded: false,
+            fallbackReason: null,
+            source: "tbox-agentic-v2",
+          },
+        },
+      ]),
+      turnCount: 1,
+    });
+    db.simulationSession.findUnique.mockResolvedValue({
+      ...(await db.simulationSession.findUnique()),
+      turnCount: 2,
+    });
+    await registry.call("simulation_turn.append", {
+      context_token: "signed",
+      sessionId: "simulation-1",
+      expectedTurnCount: 1,
+      userMessage: "第二轮回答",
+      assistantMessage: "第三轮问题",
+    });
+
+    expect(db.operationExecution.create.mock.calls.map((call) => call[0].data.operationId))
+      .toEqual([
+        "simulation_turn.append:simulation-1:0",
+        "simulation_turn.append:simulation-1:1",
+      ]);
+    expect(db.simulationSession.updateMany).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns 409 instead of replaying when the same turn key carries changed messages", async () => {
+    const { db, registry } = setup();
+    const originalFingerprint = appendFingerprint({
+      expectedTurnCount: 0,
+      userMessage: "原始回答",
+      assistantMessage: "原始下一题",
+    });
+    db.$transaction.mockRejectedValue({ code: "P2002" });
+    db.operationExecution.findUnique.mockResolvedValue({
+      status: "completed",
+      result: JSON.stringify({
+        fingerprint: originalFingerprint,
+        response: { id: "simulation-1", turnCount: 1 },
+      }),
+    });
+
+    await expect(registry.call("simulation_turn.append", {
+      context_token: "signed",
+      sessionId: "simulation-1",
+      expectedTurnCount: 0,
+      userMessage: "被修改的回答",
+      assistantMessage: "原始下一题",
+    })).rejects.toMatchObject({
+      code: "SIMULATION_APPEND_IDEMPOTENCY_CONFLICT",
+      status: 409,
     });
     expect(db.simulationSession.updateMany).not.toHaveBeenCalled();
   });
@@ -734,10 +834,15 @@ describe("CareerMate business MCP V2 registry", () => {
     ["failed", "SIMULATION_APPEND_FAILED", 500],
   ])("handles a duplicate %s ledger safely", async (ledgerStatus, code, status) => {
     const { db, registry } = setup();
+    const fingerprint = appendFingerprint({
+      expectedTurnCount: 0,
+      userMessage: "实际回答",
+      assistantMessage: "下一题",
+    });
     db.$transaction.mockRejectedValue({ code: "P2002" });
     db.operationExecution.findUnique.mockResolvedValue({
       status: ledgerStatus,
-      result: "{}",
+      result: JSON.stringify({ fingerprint }),
     });
 
     await expect(registry.call("simulation_turn.append", {
