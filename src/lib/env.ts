@@ -100,3 +100,8 @@ export function isConversationSummaryEnabled(): boolean {
 export function getPluginToken() {
   return read("CAREERMATE_PLUGIN_TOKEN");
 }
+
+/** Server-only HMAC key for short-lived Agentic V2 context tokens. */
+export function getCareerMateContextTokenSecret() {
+  return read("CAREERMATE_CONTEXT_TOKEN_SECRET");
+}
