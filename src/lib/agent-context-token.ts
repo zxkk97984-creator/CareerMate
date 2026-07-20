@@ -1,3 +1,4 @@
+import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { getCareerMateContextTokenSecret } from "@/lib/env";
@@ -56,7 +57,7 @@ export interface ContextTokenSignOptions extends ContextTokenOptions {
 }
 
 export class CareerMateContextTokenError extends Error {
-  constructor(message: "Invalid context token" | "Context token expired" | "Invalid context token claims" | "Context token TTL must not exceed 600 seconds" | "Context token secret is not configured") {
+  constructor(message: "Invalid context token" | "Context token expired" | "Invalid context token claims" | "Context token TTL must not exceed 600 seconds" | "Context token secret is not configured" | "Context token secret is invalid") {
     super(message);
     this.name = "CareerMateContextTokenError";
   }
@@ -64,16 +65,31 @@ export class CareerMateContextTokenError extends Error {
 
 const MAX_TTL_SECONDS = 600;
 const DEFAULT_TTL_SECONDS = 300;
+const MAX_CLOCK_SKEW_SECONDS = 30;
+const MIN_CONTEXT_TOKEN_SECRET_BYTES = 32;
+const KNOWN_CONTEXT_TOKEN_SECRET_PLACEHOLDERS = new Set([
+  "placeholder",
+  "replace-with-a-long-random-server-secret",
+  "change-me",
+  "your-secret-here",
+]);
 
 function getSecret(options: ContextTokenOptions): string {
   const secret = (options.secret ?? getCareerMateContextTokenSecret()).trim();
   if (!secret) throw new CareerMateContextTokenError("Context token secret is not configured");
+  if (
+    Buffer.byteLength(secret, "utf8") < MIN_CONTEXT_TOKEN_SECRET_BYTES
+    || KNOWN_CONTEXT_TOKEN_SECRET_PLACEHOLDERS.has(secret.toLowerCase())
+  ) {
+    throw new CareerMateContextTokenError("Context token secret is invalid");
+  }
   return secret;
 }
 
 function epochSeconds(now?: ContextTokenOptions["now"]): number {
   const value = now ? now() : Date.now();
-  const milliseconds = value instanceof Date ? value.getTime() : value;
+  if (value instanceof Date) return Math.floor(value.getTime() / 1000);
+  const milliseconds = value;
   return Math.floor(milliseconds > 10_000_000_000 ? milliseconds / 1000 : milliseconds);
 }
 
@@ -87,6 +103,11 @@ function decode(value: string): string {
 
 function signature(payload: string, secret: string): string {
   return createHmac("sha256", secret).update(payload).digest("base64url");
+}
+
+function isCanonicalBase64url(value: string): boolean {
+  return /^[A-Za-z0-9_-]+$/.test(value)
+    && Buffer.from(value, "base64url").toString("base64url") === value;
 }
 
 function invalidToken(): never {
@@ -134,6 +155,7 @@ export function verifyCareerMateContextToken(
   try {
     const [version, encodedClaims, providedSignature, ...extra] = token.split(".");
     if (version !== "v1" || !encodedClaims || !providedSignature || extra.length > 0) return invalidToken();
+    if (!isCanonicalBase64url(encodedClaims) || !isCanonicalBase64url(providedSignature)) return invalidToken();
 
     const signedPayload = `${version}.${encodedClaims}`;
     const expectedSignature = signature(signedPayload, getSecret(options));
@@ -147,7 +169,7 @@ export function verifyCareerMateContextToken(
     if (!parsed.success || parsed.data.exp - parsed.data.iat > MAX_TTL_SECONDS || parsed.data.exp <= parsed.data.iat) return invalidToken();
 
     const current = epochSeconds(options.now);
-    if (parsed.data.iat > current) return invalidToken();
+    if (parsed.data.iat > current + MAX_CLOCK_SKEW_SECONDS) return invalidToken();
     if (parsed.data.exp <= current) throw new CareerMateContextTokenError("Context token expired");
     return parsed.data;
   } catch (error) {

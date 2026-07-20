@@ -17,6 +17,10 @@ const marketEvidence = {
   confidence: "medium",
 };
 
+function withoutData(value: Record<string, unknown>) {
+  return Object.fromEntries(Object.entries(value).filter(([key]) => key !== "data"));
+}
+
 describe("Agentic V2 platform contracts", () => {
   it("accepts the four-route evidence bundle specified by the platform plan", () => {
     const result = evidenceBundleV1Schema.safeParse({
@@ -44,8 +48,41 @@ describe("Agentic V2 platform contracts", () => {
     }).success).toBe(false);
     expect(evidenceBundleV1Schema.safeParse({
       ...common,
-      marketEvidence: { ...marketEvidence, searched: false, skipReason: "No market search requested" },
+      marketEvidence: {
+        ...marketEvidence,
+        searched: false,
+        skipReason: "No market search requested",
+        collectedAt: null,
+      },
     }).success).toBe(true);
+  });
+
+  it("rejects contradictory snapshot and market availability metadata", () => {
+    const evidence = {
+      schemaVersion: "1.0",
+      request: {},
+      profileSnapshot: { available: true, version: 1, data: {} },
+      historySnapshot: { available: true, through: "message-1", data: [] },
+      careerBaseline: { roleKey: "data_analyst", templateVersion: "2026.07", evidence: [] },
+      marketEvidence,
+    };
+
+    expect(evidenceBundleV1Schema.safeParse({
+      ...evidence,
+      profileSnapshot: { available: false, version: 1, data: {} },
+    }).success).toBe(false);
+    expect(evidenceBundleV1Schema.safeParse({
+      ...evidence,
+      historySnapshot: { available: true, through: null, data: [] },
+    }).success).toBe(false);
+    expect(evidenceBundleV1Schema.safeParse({
+      ...evidence,
+      marketEvidence: { ...marketEvidence, searched: true, skipReason: "not searched" },
+    }).success).toBe(false);
+    expect(evidenceBundleV1Schema.safeParse({
+      ...evidence,
+      marketEvidence: { ...marketEvidence, searched: false, skipReason: "disabled", collectedAt: marketEvidence.collectedAt },
+    }).success).toBe(false);
   });
 
   it("requires serializable JSON data in every snapshot and artifact", () => {
@@ -72,9 +109,9 @@ describe("Agentic V2 platform contracts", () => {
       nextActions: [],
     };
 
-    const { data: _profileData, ...withoutProfileData } = evidence.profileSnapshot;
-    const { data: _historyData, ...withoutHistoryData } = evidence.historySnapshot;
-    const { data: _artifactData, ...withoutArtifactData } = artifact;
+    const withoutProfileData = withoutData(evidence.profileSnapshot);
+    const withoutHistoryData = withoutData(evidence.historySnapshot);
+    const withoutArtifactData = withoutData(artifact);
 
     expect(evidenceBundleV1Schema.safeParse({
       ...evidence,
@@ -90,6 +127,48 @@ describe("Agentic V2 platform contracts", () => {
       profileSnapshot: { ...evidence.profileSnapshot, data: new Date() },
     }).success).toBe(false);
     expect(agentArtifactV1Schema.safeParse({ ...artifact, data: () => "not JSON" }).success).toBe(false);
+  });
+
+  it("rejects non-JSON values and bounded-size violations across every platform boundary", () => {
+    const sparse = new Array(1);
+    let tooDeep: unknown = null;
+    for (let index = 0; index < 13; index += 1) tooDeep = { nested: tooDeep };
+
+    const evidence = {
+      schemaVersion: "1.0",
+      request: { action: "career_exploration" },
+      profileSnapshot: { available: true, version: 1, data: {} },
+      historySnapshot: { available: true, through: "message-1", data: [] },
+      careerBaseline: { roleKey: "data_analyst", templateVersion: "2026.07", evidence: [] },
+      marketEvidence,
+    };
+    const artifact = {
+      schemaVersion: "1.0",
+      taskType: "career_plan",
+      status: "success",
+      summary: "A plan was generated.",
+      data: {},
+      evidence: [],
+      sources: [],
+      assumptions: [],
+      warnings: [],
+      requiresUserConfirmation: false,
+      baseVersion: 1,
+      nextActions: [],
+    };
+
+    expect(evidenceBundleV1Schema.safeParse({ ...evidence, request: { when: new Date() } }).success).toBe(false);
+    expect(evidenceBundleV1Schema.safeParse({
+      ...evidence,
+      careerBaseline: { ...evidence.careerBaseline, evidence: [() => "not JSON"] },
+    }).success).toBe(false);
+    expect(evidenceBundleV1Schema.safeParse({
+      ...evidence,
+      marketEvidence: { ...marketEvidence, findings: sparse },
+    }).success).toBe(false);
+    expect(agentArtifactV1Schema.safeParse({ ...artifact, sources: [tooDeep] }).success).toBe(false);
+    expect(agentArtifactV1Schema.safeParse({ ...artifact, warnings: ["x".repeat(10_001)] }).success).toBe(false);
+    expect(() => agentArtifactV1Schema.safeParse({ ...artifact, nextActions: [tooDeep] })).not.toThrow();
   });
 
   it("accepts only platform-plan artifact task types and statuses, with optional id", () => {
