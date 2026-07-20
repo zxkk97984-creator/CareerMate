@@ -105,3 +105,13 @@ export function getPluginToken() {
 export function getCareerMateContextTokenSecret() {
   return read("CAREERMATE_CONTEXT_TOKEN_SECRET");
 }
+
+/** Exact browser Origin allow-list for the public CareerMate MCP V2 endpoint. */
+export function getCareerMateMcpAllowedOrigins(): string[] {
+  return [...new Set(
+    read("CAREERMATE_MCP_ALLOWED_ORIGINS")
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean),
+  )];
+}
