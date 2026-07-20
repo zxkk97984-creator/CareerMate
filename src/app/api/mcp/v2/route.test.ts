@@ -225,12 +225,11 @@ describe("CareerMate MCP V2 transport negotiation", () => {
     }
   });
 
-  it("accepts a non-empty 2025-03-26 batch and omits notification or response results", async () => {
+  it("accepts a 2025-03-26 request plus notification batch", async () => {
     const { handlers } = setup();
     const response = await handlers.POST(request([
       { jsonrpc: "2.0", id: "ping-1", method: "ping" },
       { jsonrpc: "2.0", method: "notifications/initialized", params: {} },
-      { jsonrpc: "2.0", id: 9, result: { acknowledged: true } },
     ], { protocolVersion: "2025-03-26" }));
     expect(response.status).toBe(200);
     expect(await body(response)).toEqual([
@@ -238,14 +237,44 @@ describe("CareerMate MCP V2 transport negotiation", () => {
     ]);
   });
 
-  it("returns 202 with an empty body when every batch item is a notification or response", async () => {
+  it("returns 202 with an empty body when every batch item is a notification", async () => {
     const { handlers } = setup();
     const response = await handlers.POST(request([
       { jsonrpc: "2.0", method: "notifications/initialized", params: {} },
-      { jsonrpc: "2.0", id: null, result: {} },
+      { jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 1 } },
     ]));
     expect(response.status).toBe(202);
     expect(await response.text()).toBe("");
+  });
+
+  it("returns 202 with an empty body for an all-response batch", async () => {
+    const { handlers } = setup();
+    const response = await handlers.POST(request([
+      { jsonrpc: "2.0", id: null, result: {} },
+      { jsonrpc: "2.0", id: 2, error: { code: -32603, message: "remote failure" } },
+    ]));
+    expect(response.status).toBe(202);
+    expect(await response.text()).toBe("");
+  });
+
+  it.each([
+    { messages: [
+        { jsonrpc: "2.0", id: "ping-1", method: "ping" },
+        { jsonrpc: "2.0", id: 9, result: { acknowledged: true } },
+      ] },
+    { messages: [
+        { jsonrpc: "2.0", method: "notifications/initialized", params: {} },
+        { jsonrpc: "2.0", id: 9, result: { acknowledged: true } },
+      ] },
+  ])("rejects a response mixed with a request or notification as one invalid batch", async ({ messages }) => {
+    const { handlers } = setup();
+    const response = await handlers.POST(request(messages, { protocolVersion: "2025-03-26" }));
+    expect(response.status).toBe(200);
+    expect(await body(response)).toEqual({
+      jsonrpc: "2.0",
+      id: null,
+      error: { code: -32600, message: "Invalid Request" },
+    });
   });
 
   it("rejects an empty batch for 2025-03-26", async () => {

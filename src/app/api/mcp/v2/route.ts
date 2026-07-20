@@ -463,6 +463,10 @@ export function createCareerMateMcpV2Handlers(
         if (parsedBody.value.length === 0 || protocolVersion === "2025-11-25") {
           return rpcError(null, -32600, "Invalid Request");
         }
+        const batchKinds = parsedBody.value.map((message) => classifyMessage(message).kind);
+        const responseCount = batchKinds.filter((kind) => kind === "response").length;
+        if (responseCount === parsedBody.value.length) return emptyResponse(202);
+        if (responseCount > 0) return rpcError(null, -32600, "Invalid Request");
         return dispatchBatch(parsedBody.value, createRegistry);
       }
 
