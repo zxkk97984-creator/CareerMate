@@ -48,6 +48,50 @@ describe("Agentic V2 platform contracts", () => {
     }).success).toBe(true);
   });
 
+  it("requires serializable JSON data in every snapshot and artifact", () => {
+    const evidence = {
+      schemaVersion: "1.0",
+      request: {},
+      profileSnapshot: { available: true, version: 1, data: {} },
+      historySnapshot: { available: true, through: "message-1", data: [] },
+      careerBaseline: { roleKey: "data_analyst", templateVersion: "2026.07", evidence: [] },
+      marketEvidence,
+    };
+    const artifact = {
+      schemaVersion: "1.0",
+      taskType: "career_plan",
+      status: "success",
+      summary: "A plan was generated.",
+      data: {},
+      evidence: [],
+      sources: [],
+      assumptions: [],
+      warnings: [],
+      requiresUserConfirmation: false,
+      baseVersion: 1,
+      nextActions: [],
+    };
+
+    const { data: _profileData, ...withoutProfileData } = evidence.profileSnapshot;
+    const { data: _historyData, ...withoutHistoryData } = evidence.historySnapshot;
+    const { data: _artifactData, ...withoutArtifactData } = artifact;
+
+    expect(evidenceBundleV1Schema.safeParse({
+      ...evidence,
+      profileSnapshot: withoutProfileData,
+    }).success).toBe(false);
+    expect(evidenceBundleV1Schema.safeParse({
+      ...evidence,
+      historySnapshot: withoutHistoryData,
+    }).success).toBe(false);
+    expect(agentArtifactV1Schema.safeParse(withoutArtifactData).success).toBe(false);
+    expect(evidenceBundleV1Schema.safeParse({
+      ...evidence,
+      profileSnapshot: { ...evidence.profileSnapshot, data: new Date() },
+    }).success).toBe(false);
+    expect(agentArtifactV1Schema.safeParse({ ...artifact, data: () => "not JSON" }).success).toBe(false);
+  });
+
   it("accepts only platform-plan artifact task types and statuses, with optional id", () => {
     const value = {
       schemaVersion: "1.0",

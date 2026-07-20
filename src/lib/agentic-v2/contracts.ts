@@ -4,6 +4,44 @@ const shortText = z.string().trim().min(1).max(500);
 const platformValue = z.unknown();
 const platformArray = z.array(platformValue).max(100);
 
+export type SerializableJsonValue =
+  | null
+  | boolean
+  | number
+  | string
+  | SerializableJsonValue[]
+  | { [key: string]: SerializableJsonValue };
+
+function isSerializableJsonValue(value: unknown, ancestors = new Set<object>()): value is SerializableJsonValue {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value !== "object") return false;
+  if (ancestors.has(value)) return false;
+
+  ancestors.add(value);
+  try {
+    if (Array.isArray(value)) return value.every((item) => isSerializableJsonValue(item, ancestors));
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) return false;
+
+    for (const key of Reflect.ownKeys(value)) {
+      if (typeof key !== "string") return false;
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) return false;
+      if (!isSerializableJsonValue(descriptor.value, ancestors)) return false;
+    }
+    return true;
+  } finally {
+    ancestors.delete(value);
+  }
+}
+
+/** Required arbitrary JSON data; rejects undefined, functions, Date, cycles, and non-finite numbers. */
+export const serializableJsonValueSchema = z.custom<SerializableJsonValue>(
+  (value) => isSerializableJsonValue(value),
+  { message: "Expected a serializable JSON value" },
+);
+
 export const interactionV1Schema = z.object({
   surface: z.string().trim().min(1).max(80).optional(),
   action: z.string().trim().min(1).max(120).optional(),
@@ -31,12 +69,12 @@ export const evidenceBundleV1Schema = z.object({
   profileSnapshot: z.object({
     available: z.boolean(),
     version: z.number().int().nonnegative().nullable(),
-    data: platformValue,
+    data: serializableJsonValueSchema,
   }).strict(),
   historySnapshot: z.object({
     available: z.boolean(),
     through: z.string().trim().min(1).max(256).nullable(),
-    data: platformValue,
+    data: serializableJsonValueSchema,
   }).strict(),
   careerBaseline: z.object({
     roleKey: z.string().trim().min(1).max(160),
@@ -83,7 +121,7 @@ export const agentArtifactV1Schema = z.object({
   taskType: z.enum(AGENT_ARTIFACT_V1_TASK_TYPES),
   status: z.enum(AGENT_ARTIFACT_V1_STATUSES),
   summary: z.string().trim().min(1).max(10_000),
-  data: platformValue,
+  data: serializableJsonValueSchema,
   evidence: platformArray,
   sources: platformArray,
   assumptions: platformArray,
