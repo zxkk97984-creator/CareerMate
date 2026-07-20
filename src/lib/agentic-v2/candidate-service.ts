@@ -15,6 +15,24 @@ export type AgentArtifactCandidateType = (typeof AGENT_ARTIFACT_CANDIDATE_TYPES)
 
 const allowedCandidateTypes = new Set<string>(AGENT_ARTIFACT_CANDIDATE_TYPES);
 
+const COMPATIBLE_TASK_TYPES: Record<AgentArtifactCandidateType, readonly AgentArtifactV1["taskType"][]> = {
+  profile_patch: ["profile_assessment"],
+  ability_evidence: ["profile_assessment", "simulation_report", "resume_review", "growth_review"],
+  career_plan: ["career_plan"],
+  learning_route: ["learning_route"],
+  growth_replan: ["growth_review"],
+  memory_item: ["memory_item"],
+  career_template_draft: ["career_exploration", "career_template_draft"],
+};
+
+const VERSIONED_CANDIDATE_TYPES = new Set<AgentArtifactCandidateType>([
+  "profile_patch",
+  "ability_evidence",
+  "career_plan",
+  "learning_route",
+  "growth_replan",
+]);
+
 export class AgentArtifactCandidateError extends Error {
   constructor(
     message: string,
@@ -34,18 +52,36 @@ interface CandidateTransaction {
     }): Promise<{ id: string } | null>;
   };
   agentArtifactCandidate: {
-    create(args: {
-      data: {
+    upsert(args: {
+      where: {
+        userId_idempotencyKey: { userId: string; idempotencyKey: string };
+      };
+      create: {
         userId: string;
+        idempotencyKey: string;
         candidateType: AgentArtifactCandidateType;
         status: "pending";
         artifact: string;
         baseVersion: number | null;
-        sourceSessionId: string;
         sourceConversationId: string | null;
       };
-      select: { id: true; status: true; candidateType: true };
-    }): Promise<{ id: string; status: string; candidateType: string }>;
+      update: Record<string, never>;
+      select: {
+        id: true;
+        status: true;
+        candidateType: true;
+        artifact: true;
+        baseVersion: true;
+        sourceConversationId: true;
+      };
+    }): Promise<{
+      id: string;
+      status: string;
+      candidateType: string;
+      artifact: string;
+      baseVersion: number | null;
+      sourceConversationId: string | null;
+    }>;
   };
 }
 
@@ -58,6 +94,7 @@ export interface CreateAgentArtifactCandidateInput {
   context: {
     sessionId: string;
     conversationId?: string | null;
+    idempotencyKey: string;
   };
   candidateType: AgentArtifactCandidateType;
   artifact: AgentArtifactV1 | unknown;
@@ -106,6 +143,23 @@ function validateArtifact(value: unknown): AgentArtifactV1 {
   return result.data;
 }
 
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  return `{${Object.entries(value as Record<string, unknown>)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, nested]) => `${JSON.stringify(key)}:${canonicalJson(nested)}`)
+    .join(",")}}`;
+}
+
+function artifactsMatch(stored: string, expected: AgentArtifactV1): boolean {
+  try {
+    return canonicalJson(JSON.parse(stored)) === canonicalJson(expected);
+  } catch {
+    return false;
+  }
+}
+
 export function createAgentArtifactCandidateService(
   dependencies: { db?: CandidateDatabase } = {},
 ): AgentArtifactCandidateService {
@@ -114,7 +168,11 @@ export function createAgentArtifactCandidateService(
   return {
     async createCandidate(input) {
       const userId = requiredIdentifier(input.userId, "userId");
-      const sourceSessionId = requiredIdentifier(input.context?.sessionId, "context.sessionId");
+      requiredIdentifier(input.context?.sessionId, "context.sessionId");
+      const idempotencyKey = requiredIdentifier(
+        input.context?.idempotencyKey,
+        "context.idempotencyKey",
+      );
       if (!allowedCandidateTypes.has(input.candidateType)) {
         throw new AgentArtifactCandidateError(
           "Candidate type is not allowed",
@@ -124,6 +182,20 @@ export function createAgentArtifactCandidateService(
       }
       const candidateType = input.candidateType as AgentArtifactCandidateType;
       const artifact = validateArtifact(input.artifact);
+      if (!COMPATIBLE_TASK_TYPES[candidateType].includes(artifact.taskType)) {
+        throw new AgentArtifactCandidateError(
+          "Candidate type is incompatible with artifact task type",
+          "TASK_TYPE_MISMATCH",
+          400,
+        );
+      }
+      if (VERSIONED_CANDIDATE_TYPES.has(candidateType) && artifact.baseVersion === null) {
+        throw new AgentArtifactCandidateError(
+          "This candidate type requires a base version",
+          "BASE_VERSION_REQUIRED",
+          400,
+        );
+      }
       const sourceConversationId = input.context.conversationId?.trim() || null;
 
       return db.$transaction(async (transaction) => {
@@ -141,18 +213,45 @@ export function createAgentArtifactCandidateService(
           }
         }
 
-        return transaction.agentArtifactCandidate.create({
-          data: {
+        const stored = await transaction.agentArtifactCandidate.upsert({
+          where: { userId_idempotencyKey: { userId, idempotencyKey } },
+          create: {
             userId,
+            idempotencyKey,
             candidateType,
             status: "pending",
             artifact: JSON.stringify(artifact),
             baseVersion: artifact.baseVersion,
-            sourceSessionId,
             sourceConversationId,
           },
-          select: { id: true, status: true, candidateType: true },
+          update: {},
+          select: {
+            id: true,
+            status: true,
+            candidateType: true,
+            artifact: true,
+            baseVersion: true,
+            sourceConversationId: true,
+          },
         });
+
+        if (
+          stored.candidateType !== candidateType
+          || !artifactsMatch(stored.artifact, artifact)
+          || stored.sourceConversationId !== sourceConversationId
+        ) {
+          throw new AgentArtifactCandidateError(
+            "Idempotency key was already used for a different candidate",
+            "IDEMPOTENCY_CONFLICT",
+            409,
+          );
+        }
+
+        return {
+          id: stored.id,
+          status: stored.status,
+          candidateType: stored.candidateType,
+        };
       });
     },
   };

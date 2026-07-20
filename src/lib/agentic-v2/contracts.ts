@@ -134,6 +134,8 @@ export const AGENT_ARTIFACT_V1_TASK_TYPES = [
   "simulation_report",
   "resume_review",
   "growth_review",
+  "memory_item",
+  "career_template_draft",
 ] as const;
 
 export const AGENT_ARTIFACT_V1_STATUSES = [

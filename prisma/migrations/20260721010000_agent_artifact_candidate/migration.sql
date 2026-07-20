@@ -2,11 +2,11 @@
 CREATE TABLE "AgentArtifactCandidate" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "userId" TEXT NOT NULL,
+    "idempotencyKey" TEXT NOT NULL,
     "candidateType" TEXT NOT NULL,
     "status" TEXT NOT NULL DEFAULT 'pending',
     "artifact" TEXT NOT NULL,
     "baseVersion" INTEGER,
-    "sourceSessionId" TEXT NOT NULL,
     "sourceConversationId" TEXT,
     "resolvedAt" DATETIME,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -20,3 +20,6 @@ CREATE INDEX "AgentArtifactCandidate_userId_status_createdAt_idx" ON "AgentArtif
 
 -- CreateIndex
 CREATE INDEX "AgentArtifactCandidate_sourceConversationId_idx" ON "AgentArtifactCandidate"("sourceConversationId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "AgentArtifactCandidate_userId_idempotencyKey_key" ON "AgentArtifactCandidate"("userId", "idempotencyKey");

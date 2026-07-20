@@ -289,11 +289,11 @@ model ChatConversation {
 model AgentArtifactCandidate {
   id                   String    @id @default(cuid())
   userId               String
+  idempotencyKey       String
   candidateType        String
   status               String    @default("pending")
   artifact             String
   baseVersion          Int?
-  sourceSessionId      String
   sourceConversationId String?
   resolvedAt           DateTime?
   createdAt            DateTime  @default(now())
@@ -304,6 +304,7 @@ model AgentArtifactCandidate {
 
   @@index([userId, status, createdAt])
   @@index([sourceConversationId])
+  @@unique([userId, idempotencyKey])
 }
 
 model ChatMessage {
