@@ -15,7 +15,8 @@ const SUPPORTED_PROTOCOL_VERSIONS = new Set([DEFAULT_PROTOCOL_VERSION, "2025-11-
 const MAX_REQUEST_BYTES = 1024 * 1024;
 const RESPONSE_MEDIA_TYPES = ["application/json", "text/event-stream"] as const;
 
-type JsonRpcId = string | number | null;
+type JsonRpcRequestId = string | number;
+type JsonRpcResponseId = JsonRpcRequestId | null;
 type JsonObject = Record<string, unknown>;
 
 export interface CareerMateMcpV2Registry {
@@ -40,7 +41,7 @@ export interface CareerMateMcpV2HandlerDependencies {
 
 interface JsonRpcRequest {
   jsonrpc: typeof JSON_RPC_VERSION;
-  id?: JsonRpcId;
+  id: JsonRpcRequestId;
   method: string;
   params?: unknown;
 }
@@ -65,12 +66,12 @@ function emptyResponse(status: number, headers: HeadersInit = {}): Response {
   return new Response(null, { status, headers: { ...SECURE_HEADERS, ...headers } });
 }
 
-function rpcResult(id: JsonRpcId, result: unknown): Response {
+function rpcResult(id: JsonRpcResponseId, result: unknown): Response {
   return jsonResponse({ jsonrpc: JSON_RPC_VERSION, id, result });
 }
 
 function rpcError(
-  id: JsonRpcId,
+  id: JsonRpcResponseId,
   code: number,
   message: string,
   status = 200,
@@ -86,10 +87,14 @@ function isRecord(value: unknown): value is JsonObject {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function isJsonRpcId(value: unknown): value is JsonRpcId {
-  return value === null || typeof value === "string" || (
+function isJsonRpcRequestId(value: unknown): value is JsonRpcRequestId {
+  return typeof value === "string" || (
     typeof value === "number" && Number.isFinite(value)
   );
+}
+
+function isJsonRpcResponseId(value: unknown): value is JsonRpcResponseId {
+  return value === null || isJsonRpcRequestId(value);
 }
 
 function classifyMessage(value: unknown):
@@ -101,7 +106,7 @@ function classifyMessage(value: unknown):
 
   if ("method" in value) {
     if (typeof value.method !== "string" || !value.method) return { kind: "invalid" };
-    if ("id" in value && !isJsonRpcId(value.id)) return { kind: "invalid" };
+    if ("id" in value && !isJsonRpcRequestId(value.id)) return { kind: "invalid" };
     if (
       value.params !== undefined
       && !isRecord(value.params)
@@ -112,14 +117,14 @@ function classifyMessage(value: unknown):
       kind: "request",
       value: {
         jsonrpc: JSON_RPC_VERSION,
-        id: value.id as JsonRpcId,
+        id: value.id as JsonRpcRequestId,
         method: value.method,
         ...(value.params === undefined ? {} : { params: value.params }),
       },
     };
   }
 
-  if (!("id" in value) || !isJsonRpcId(value.id)) return { kind: "invalid" };
+  if (!("id" in value) || !isJsonRpcResponseId(value.id)) return { kind: "invalid" };
   const hasResult = "result" in value;
   const hasError = "error" in value;
   if (hasResult === hasError) return { kind: "invalid" };
@@ -197,9 +202,11 @@ function acceptsUtf8Json(contentType: string | null): boolean {
   return true;
 }
 
-function hasSupportedProtocolHeader(request: Request): boolean {
+function protocolVersionFor(request: Request): string | null {
   const version = request.headers.get("MCP-Protocol-Version");
-  return !version || SUPPORTED_PROTOCOL_VERSIONS.has(version.trim());
+  if (!version) return DEFAULT_PROTOCOL_VERSION;
+  const normalized = version.trim();
+  return SUPPORTED_PROTOCOL_VERSIONS.has(normalized) ? normalized : null;
 }
 
 async function readJsonBody(request: Request): Promise<
@@ -244,7 +251,16 @@ async function readJsonBody(request: Request): Promise<
 }
 
 function negotiatedProtocolVersion(params: unknown): string | null {
-  if (!isRecord(params) || typeof params.protocolVersion !== "string") return null;
+  if (
+    !isRecord(params)
+    || typeof params.protocolVersion !== "string"
+    || !isRecord(params.capabilities)
+    || !isRecord(params.clientInfo)
+    || typeof params.clientInfo.name !== "string"
+    || !params.clientInfo.name
+    || typeof params.clientInfo.version !== "string"
+    || !params.clientInfo.version
+  ) return null;
   return SUPPORTED_PROTOCOL_VERSIONS.has(params.protocolVersion)
     ? params.protocolVersion
     : DEFAULT_PROTOCOL_VERSION;
@@ -279,6 +295,34 @@ function mapDomainError(error: unknown): { code: number; message: string } {
   }
 }
 
+function isJsonRpcToolError(error: unknown): boolean {
+  return error instanceof CareerMateV2McpError && [
+    "TOOL_NOT_FOUND",
+    "CONTEXT_TOKEN_INVALID",
+    "CONTEXT_TOKEN_EXPIRED",
+    "CONTEXT_SESSION_NOT_FOUND",
+    "INSUFFICIENT_SCOPE",
+  ].includes(error.code);
+}
+
+function safeToolExecutionError(error: unknown): { code: string; message: string } {
+  if (error instanceof CareerMateV2McpError) {
+    if (error.status === 400) return { code: "INVALID_PARAMS", message: "Invalid params" };
+    if (error.status === 404 || error.status === 409) {
+      return { code: "BUSINESS_ERROR", message: "Business conflict or resource not found" };
+    }
+  }
+  return { code: "INTERNAL_ERROR", message: "Internal error" };
+}
+
+function toolErrorResult(id: JsonRpcRequestId, error: unknown): Response {
+  const safeError = safeToolExecutionError(error);
+  return rpcResult(id, {
+    content: [{ type: "text", text: JSON.stringify(safeError) }],
+    isError: true,
+  });
+}
+
 function structuredContentFor(value: unknown): Record<string, unknown> {
   return isRecord(value) ? value : { result: value };
 }
@@ -287,7 +331,7 @@ async function dispatchRequest(
   request: JsonRpcRequest,
   registry: CareerMateMcpV2Registry,
 ): Promise<Response> {
-  const id = request.id ?? null;
+  const id = request.id;
   switch (request.method) {
     case "initialize": {
       const version = negotiatedProtocolVersion(request.params);
@@ -306,23 +350,70 @@ async function dispatchRequest(
       if (!isRecord(request.params) || typeof request.params.name !== "string" || !request.params.name) {
         return rpcError(id, -32602, "Invalid params");
       }
+      const callParams = request.params;
+      const toolName = callParams.name as string;
+      let tools: ReturnType<CareerMateMcpV2Registry["listForMcp"]>;
+      try {
+        tools = registry.listForMcp();
+      } catch (error) {
+        const mapped = mapDomainError(error);
+        return rpcError(id, mapped.code, mapped.message);
+      }
+      if (!tools.some((tool) => tool.name === toolName)) {
+        return rpcError(id, -32601, "Tool not found");
+      }
       try {
         const toolResult = await registry.call(
-          request.params.name,
-          request.params.arguments ?? {},
+          toolName,
+          callParams.arguments ?? {},
         );
         return rpcResult(id, {
           content: [{ type: "text", text: JSON.stringify(toolResult) }],
           structuredContent: structuredContentFor(toolResult),
         });
       } catch (error) {
-        const mapped = mapDomainError(error);
-        return rpcError(id, mapped.code, mapped.message);
+        if (isJsonRpcToolError(error)) {
+          const mapped = mapDomainError(error);
+          return rpcError(id, mapped.code, mapped.message);
+        }
+        return toolErrorResult(id, error);
       }
     }
     default:
       return rpcError(id, -32601, "Method not found");
   }
+}
+
+async function responsePayload(response: Response): Promise<unknown> {
+  return response.json();
+}
+
+async function dispatchBatch(
+  messages: unknown[],
+  createRegistry: () => CareerMateMcpV2Registry,
+): Promise<Response> {
+  const results: unknown[] = [];
+  let registry: CareerMateMcpV2Registry | undefined;
+  for (const message of messages) {
+    const classified = classifyMessage(message);
+    if (classified.kind === "notification" || classified.kind === "response") continue;
+    if (classified.kind === "invalid") {
+      results.push(await responsePayload(rpcError(null, -32600, "Invalid Request")));
+      continue;
+    }
+    try {
+      registry ??= createRegistry();
+      results.push(await responsePayload(await dispatchRequest(classified.value, registry)));
+    } catch (error) {
+      const mapped = mapDomainError(error);
+      results.push(await responsePayload(rpcError(
+        classified.value.id,
+        mapped.code,
+        mapped.message,
+      )));
+    }
+  }
+  return results.length === 0 ? emptyResponse(202) : jsonResponse(results);
 }
 
 export function createCareerMateMcpV2Handlers(
@@ -335,15 +426,22 @@ export function createCareerMateMcpV2Handlers(
     getAllowedOrigins: getCareerMateMcpAllowedOrigins,
   };
 
+  function validateOriginAndAuth(request: Request): Response | null {
+    if (!isAllowedOrigin(request.headers.get("Origin"), environment.getAllowedOrigins())) {
+      return rpcError(null, -32001, "Origin not allowed", 403);
+    }
+    if (!authorize(request.headers.get("Authorization"), environment.getPluginToken())) {
+      return rpcError(null, -32001, "Authentication failed", 401);
+    }
+    return null;
+  }
+
   return {
     async POST(request: Request): Promise<Response> {
-      if (!isAllowedOrigin(request.headers.get("Origin"), environment.getAllowedOrigins())) {
-        return rpcError(null, -32001, "Origin not allowed", 403);
-      }
-      if (!authorize(request.headers.get("Authorization"), environment.getPluginToken())) {
-        return rpcError(null, -32001, "Authentication failed", 401);
-      }
-      if (!hasSupportedProtocolHeader(request)) {
+      const securityFailure = validateOriginAndAuth(request);
+      if (securityFailure) return securityFailure;
+      const protocolVersion = protocolVersionFor(request);
+      if (!protocolVersion) {
         return rpcError(null, -32600, "Unsupported MCP protocol version", 400);
       }
       if (!acceptsUtf8Json(request.headers.get("Content-Type"))) {
@@ -361,6 +459,13 @@ export function createCareerMateMcpV2Handlers(
         return rpcError(null, -32700, "Parse error");
       }
 
+      if (Array.isArray(parsedBody.value)) {
+        if (parsedBody.value.length === 0 || protocolVersion === "2025-11-25") {
+          return rpcError(null, -32600, "Invalid Request");
+        }
+        return dispatchBatch(parsedBody.value, createRegistry);
+      }
+
       const classified = classifyMessage(parsedBody.value);
       if (classified.kind === "invalid") return rpcError(null, -32600, "Invalid Request");
       if (classified.kind === "notification" || classified.kind === "response") {
@@ -374,11 +479,15 @@ export function createCareerMateMcpV2Handlers(
       }
     },
 
-    async GET(): Promise<Response> {
+    async GET(request: Request): Promise<Response> {
+      const securityFailure = validateOriginAndAuth(request);
+      if (securityFailure) return securityFailure;
       return emptyResponse(405, { Allow: "POST" });
     },
 
-    async DELETE(): Promise<Response> {
+    async DELETE(request: Request): Promise<Response> {
+      const securityFailure = validateOriginAndAuth(request);
+      if (securityFailure) return securityFailure;
       return emptyResponse(405, { Allow: "POST" });
     },
   };

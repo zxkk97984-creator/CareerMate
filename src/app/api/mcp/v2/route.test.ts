@@ -59,6 +59,17 @@ function request(body: string | object, options: {
   });
 }
 
+function methodRequest(method: "GET" | "DELETE", options: {
+  authorization?: string;
+  origin?: string;
+} = {}) {
+  const headers = new Headers({
+    Authorization: options.authorization ?? `Bearer ${STATIC_TOKEN}`,
+  });
+  if (options.origin) headers.set("Origin", options.origin);
+  return new Request("https://example.test/api/mcp/v2", { method, headers });
+}
+
 async function body(response: Response) {
   return response.json() as Promise<Record<string, any>>;
 }
@@ -66,7 +77,7 @@ async function body(response: Response) {
 describe("CareerMate MCP V2 transport methods", () => {
   it("rejects GET with Allow POST", async () => {
     const { handlers } = setup();
-    const response = await handlers.GET();
+    const response = await handlers.GET(methodRequest("GET"));
     expect(response.status).toBe(405);
     expect(response.headers.get("Allow")).toBe("POST");
     expect(response.headers.get("Cache-Control")).toBe("no-store");
@@ -74,9 +85,23 @@ describe("CareerMate MCP V2 transport methods", () => {
 
   it("rejects DELETE with Allow POST", async () => {
     const { handlers } = setup();
-    const response = await handlers.DELETE();
+    const response = await handlers.DELETE(methodRequest("DELETE"));
     expect(response.status).toBe(405);
     expect(response.headers.get("Allow")).toBe("POST");
+  });
+
+  it.each(["GET", "DELETE"] as const)("rejects a disallowed Origin before %s handling", async (method) => {
+    const { handlers } = setup();
+    const response = await handlers[method](methodRequest(method, { origin: "https://evil.example" }));
+    expect(response.status).toBe(403);
+    expect((await body(response)).error.message).toBe("Origin not allowed");
+  });
+
+  it.each(["GET", "DELETE"] as const)("authenticates %s before method rejection", async (method) => {
+    const { handlers } = setup();
+    const response = await handlers[method](methodRequest(method, { authorization: "" }));
+    expect(response.status).toBe(401);
+    expect((await body(response)).error.code).toBe(-32001);
   });
 });
 
@@ -188,9 +213,9 @@ describe("CareerMate MCP V2 transport negotiation", () => {
   it("returns invalid request for batches and malformed JSON-RPC", async () => {
     const { handlers } = setup();
     for (const rpcBody of [
-      [],
       { jsonrpc: "1.0", id: 1, method: "ping" },
       { jsonrpc: "2.0", id: {}, method: "ping" },
+      { jsonrpc: "2.0", id: null, method: "ping" },
       { jsonrpc: "2.0", id: 1, method: "ping", params: "not-structured" },
       { jsonrpc: "2.0", id: 1, error: { message: "missing numeric code" } },
     ]) {
@@ -198,6 +223,45 @@ describe("CareerMate MCP V2 transport negotiation", () => {
       expect(response.status).toBe(200);
       expect((await body(response)).error.code).toBe(-32600);
     }
+  });
+
+  it("accepts a non-empty 2025-03-26 batch and omits notification or response results", async () => {
+    const { handlers } = setup();
+    const response = await handlers.POST(request([
+      { jsonrpc: "2.0", id: "ping-1", method: "ping" },
+      { jsonrpc: "2.0", method: "notifications/initialized", params: {} },
+      { jsonrpc: "2.0", id: 9, result: { acknowledged: true } },
+    ], { protocolVersion: "2025-03-26" }));
+    expect(response.status).toBe(200);
+    expect(await body(response)).toEqual([
+      { jsonrpc: "2.0", id: "ping-1", result: {} },
+    ]);
+  });
+
+  it("returns 202 with an empty body when every batch item is a notification or response", async () => {
+    const { handlers } = setup();
+    const response = await handlers.POST(request([
+      { jsonrpc: "2.0", method: "notifications/initialized", params: {} },
+      { jsonrpc: "2.0", id: null, result: {} },
+    ]));
+    expect(response.status).toBe(202);
+    expect(await response.text()).toBe("");
+  });
+
+  it("rejects an empty batch for 2025-03-26", async () => {
+    const { handlers } = setup();
+    const response = await handlers.POST(request([]));
+    expect(response.status).toBe(200);
+    expect((await body(response)).error.code).toBe(-32600);
+  });
+
+  it("rejects every batch under the 2025-11-25 single-message protocol", async () => {
+    const { handlers } = setup();
+    const response = await handlers.POST(request([
+      { jsonrpc: "2.0", id: 1, method: "ping" },
+    ], { protocolVersion: "2025-11-25" }));
+    expect(response.status).toBe(200);
+    expect((await body(response)).error.code).toBe(-32600);
   });
 
   it("accepts supported protocol headers and rejects unsupported values", async () => {
@@ -236,6 +300,22 @@ describe("CareerMate MCP V2 JSON-RPC behavior", () => {
     });
     expect(fallbackBody.result.protocolVersion).toBe("2025-03-26");
     expect(supported.headers.has("Mcp-Session-Id")).toBe(false);
+  });
+
+  it.each([
+    undefined,
+    {},
+    { protocolVersion: "2025-03-26" },
+    { protocolVersion: "2025-03-26", capabilities: [] as unknown[], clientInfo: { name: "test", version: "1" } },
+    { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "test" } },
+    { protocolVersion: 20250326, capabilities: {}, clientInfo: { name: "test", version: "1" } },
+  ])("rejects malformed initialize params with -32602", async (params) => {
+    const { handlers } = setup();
+    const response = await handlers.POST(request({
+      jsonrpc: "2.0", id: 1, method: "initialize", ...(params === undefined ? {} : { params }),
+    }));
+    expect(response.status).toBe(200);
+    expect((await body(response)).error.code).toBe(-32602);
   });
 
   it("uses 2025-03-26 when a subsequent request omits the protocol header", async () => {
@@ -300,14 +380,18 @@ describe("CareerMate MCP V2 JSON-RPC behavior", () => {
     expect(JSON.parse(json.result.content[0].text)).toEqual(["one", "two"]);
   });
 
-  it("does not expose internal errors", async () => {
+  it("returns safe isError CallToolResult for execution failures", async () => {
     const toolRegistry = registry({ call: vi.fn(async () => { throw new Error("database password secret"); }) });
     const { handlers } = setup({ registry: toolRegistry });
     const response = await handlers.POST(request({
       jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "profile.read", arguments: {} },
     }));
     const json = await body(response);
-    expect(json.error).toEqual({ code: -32603, message: "Internal error" });
+    expect(json.result.isError).toBe(true);
+    expect(JSON.parse(json.result.content[0].text)).toEqual({
+      code: "INTERNAL_ERROR",
+      message: "Internal error",
+    });
     expect(JSON.stringify(json)).not.toContain("database password secret");
   });
 
@@ -328,17 +412,10 @@ describe("CareerMate MCP V2 JSON-RPC behavior", () => {
 
 describe("CareerMate MCP V2 error mapping", () => {
   it.each([
-    ["INVALID_PARAMS", 400, -32602, "Invalid params"],
-    ["CANDIDATE_INVALID_ARTIFACT", 400, -32602, "Invalid params"],
-    ["TOOL_NOT_FOUND", 404, -32601, "Tool not found"],
     ["CONTEXT_TOKEN_INVALID", 401, -32001, "Authentication failed"],
     ["CONTEXT_TOKEN_EXPIRED", 401, -32001, "Authentication failed"],
     ["CONTEXT_SESSION_NOT_FOUND", 403, -32001, "Authentication failed"],
     ["INSUFFICIENT_SCOPE", 403, -32002, "Insufficient scope"],
-    ["SIMULATION_NOT_FOUND", 404, -32003, "Business conflict or resource not found"],
-    ["SIMULATION_TURN_CONFLICT", 409, -32003, "Business conflict or resource not found"],
-    ["INTERNAL_ERROR", 500, -32603, "Internal error"],
-    ["UNEXPECTED_DOMAIN_FAILURE", 500, -32603, "Internal error"],
   ])("maps %s to stable JSON-RPC error %i", async (domainCode, status, rpcCode, message) => {
     const toolRegistry = registry({
       call: vi.fn(async () => {
@@ -353,6 +430,41 @@ describe("CareerMate MCP V2 error mapping", () => {
     expect(response.status).toBe(200);
     expect(json.error).toEqual({ code: rpcCode, message });
     expect(JSON.stringify(json)).not.toContain("sensitive implementation detail");
+  });
+
+  it.each([
+    ["INVALID_PARAMS", 400, "INVALID_PARAMS", "Invalid params"],
+    ["CANDIDATE_INVALID_ARTIFACT", 400, "INVALID_PARAMS", "Invalid params"],
+    ["PROFILE_NOT_FOUND", 404, "BUSINESS_ERROR", "Business conflict or resource not found"],
+    ["SIMULATION_TURN_CONFLICT", 409, "BUSINESS_ERROR", "Business conflict or resource not found"],
+    ["INTERNAL_ERROR", 500, "INTERNAL_ERROR", "Internal error"],
+    ["UNEXPECTED_DOMAIN_FAILURE", 500, "INTERNAL_ERROR", "Internal error"],
+  ])("maps executed tool failure %s to safe isError result", async (domainCode, status, code, message) => {
+    const toolRegistry = registry({
+      call: vi.fn(async () => {
+        throw new CareerMateV2McpError(domainCode, "sensitive implementation detail", status);
+      }),
+    });
+    const { handlers } = setup({ registry: toolRegistry });
+    const response = await handlers.POST(request({
+      jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "profile.read", arguments: {} },
+    }));
+    const json = await body(response);
+    expect(response.status).toBe(200);
+    expect(json.error).toBeUndefined();
+    expect(json.result.isError).toBe(true);
+    expect(JSON.parse(json.result.content[0].text)).toEqual({ code, message });
+    expect(JSON.stringify(json)).not.toContain("sensitive implementation detail");
+  });
+
+  it("returns method-not-found before executing an unknown tool", async () => {
+    const toolRegistry = registry();
+    const { handlers } = setup({ registry: toolRegistry });
+    const response = await handlers.POST(request({
+      jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "unknown.tool", arguments: {} },
+    }));
+    expect((await body(response)).error).toEqual({ code: -32601, message: "Tool not found" });
+    expect(toolRegistry.call).not.toHaveBeenCalled();
   });
 
   it("uses method-not-found and invalid-params for JSON-RPC dispatch errors", async () => {
