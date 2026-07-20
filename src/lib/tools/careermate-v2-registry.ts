@@ -74,6 +74,12 @@ interface V2Database {
   };
   roleTemplate: { findMany(args: unknown): Promise<Array<Record<string, unknown>>> };
   resourceItem: { findMany(args: unknown): Promise<Array<Record<string, unknown>>> };
+  operationExecution: {
+    findUnique(args: unknown): Promise<Record<string, unknown> | null>;
+    create(args: unknown): Promise<{ id: string }>;
+    update(args: unknown): Promise<unknown>;
+  };
+  $transaction<T>(operation: (transaction: V2Database) => Promise<T>): Promise<T>;
 }
 
 export interface CareerMateV2RegistryDependencies {
@@ -148,8 +154,6 @@ const simulationAppendInput = z.object({
   expectedTurnCount: z.number().int().min(0).max(6),
   userMessage: z.string().trim().min(1).max(4_000),
   assistantMessage: z.string().trim().min(1).max(8_000),
-  executionMeta: z.record(z.unknown()).optional(),
-  remoteConversationId: z.string().trim().min(1).max(512).optional(),
 }).strict();
 
 function contextFromClaims(claims: CareerMateContextTokenClaims): CareerMateV2ToolContext {
@@ -230,7 +234,7 @@ function mapProfile(profile: Record<string, unknown>) {
   };
 }
 
-function mapPlan(plan: Record<string, unknown> | null) {
+function mapPlanSummary(plan: Record<string, unknown> | null) {
   if (!plan) return null;
   return {
     id: plan.id,
@@ -239,35 +243,41 @@ function mapPlan(plan: Record<string, unknown> | null) {
     version: plan.version,
     status: plan.status,
     schemaVersion: plan.schemaVersion,
-    content: parseField(plan, "content", {}),
-    years: parseField(plan, "years", []),
-    quarters: parseField(plan, "quarters", []),
-    months: parseField(plan, "months", []),
     currentMonthIndex: plan.currentMonthIndex,
-    assumptions: parseField(plan, "assumptions", []),
-    riskNotes: parseField(plan, "riskNotes", []),
-    generationMeta: parseField(plan, "generationMeta", {}),
     createdAt: iso(plan.createdAt),
     updatedAt: iso(plan.updatedAt),
   };
 }
 
-function mapSimulation(session: Record<string, unknown>) {
+function publicTranscript(value: unknown) {
+  if (typeof value !== "string") return [];
+  return parseSimulationTranscript(value).map(({ role, content }) => ({ role, content }));
+}
+
+function mapSimulationState(session: Record<string, unknown>) {
   return {
     id: session.id,
     scenarioKey: session.scenarioKey,
     scenarioTitle: session.scenarioTitle,
-    transcript: typeof session.transcript === "string"
-      ? parseSimulationTranscript(session.transcript)
-      : [],
+    transcript: publicTranscript(session.transcript),
     score: session.score ?? null,
     feedback: parseField(session, "feedback", {}),
     status: session.status,
     turnCount: session.turnCount,
-    requestedMode: session.requestedMode,
-    actualMode: session.actualMode,
-    remoteConversationId: session.remoteConversationId ?? null,
-    candidateId: session.candidateId ?? null,
+    createdAt: iso(session.createdAt),
+    updatedAt: iso(session.updatedAt),
+  };
+}
+
+function mapSimulationSummary(session: Record<string, unknown>) {
+  return {
+    id: session.id,
+    scenarioKey: session.scenarioKey,
+    scenarioTitle: session.scenarioTitle,
+    score: session.score ?? null,
+    feedback: parseField(session, "feedback", {}),
+    status: session.status,
+    turnCount: session.turnCount,
     createdAt: iso(session.createdAt),
     updatedAt: iso(session.updatedAt),
   };
@@ -300,22 +310,12 @@ function mapRoleTemplate(template: Record<string, unknown>) {
   return mapped;
 }
 
-function canonicalJson(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  return `{${Object.entries(value as Record<string, unknown>)
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([key, nested]) => `${JSON.stringify(key)}:${canonicalJson(nested)}`)
-    .join(",")}}`;
-}
-
 function deriveIdempotencyKey(
   context: CareerMateV2ToolContext,
   candidateType: string,
-  artifact: unknown,
 ): string {
   return createHash("sha256")
-    .update(`${context.requestId}\n${candidateType}\n${canonicalJson(artifact)}`)
+    .update(`${context.requestId}\n${candidateType}`)
     .digest("hex");
 }
 
@@ -331,12 +331,56 @@ function mapCandidateError(error: unknown): never {
         403,
       );
     }
-    throw new CareerMateV2McpError(
-      `CANDIDATE_${candidateError.code}`,
-      candidateError.message,
-      candidateError.status,
-      candidateError.detail,
-    );
+    const publicFailures: Record<string, { code: string; message: string; status: number }> = {
+      CANDIDATE_TYPE_NOT_ALLOWED: {
+        code: "CANDIDATE_TYPE_NOT_ALLOWED",
+        message: "候选类型不受支持",
+        status: 400,
+      },
+      INVALID_ARTIFACT: {
+        code: "CANDIDATE_INVALID_ARTIFACT",
+        message: "候选内容不符合 V2 结构协议",
+        status: 400,
+      },
+      ARTIFACT_NOT_PENDING: {
+        code: "CANDIDATE_NOT_PENDING",
+        message: "只有待确认结果可以保存为候选",
+        status: 400,
+      },
+      CONFIRMATION_REQUIRED: {
+        code: "CANDIDATE_CONFIRMATION_REQUIRED",
+        message: "候选必须明确要求用户确认",
+        status: 400,
+      },
+      INVALID_CONTEXT: {
+        code: "CANDIDATE_INVALID_CONTEXT",
+        message: "候选来源上下文无效",
+        status: 400,
+      },
+      TASK_TYPE_MISMATCH: {
+        code: "CANDIDATE_TASK_TYPE_MISMATCH",
+        message: "候选类型与任务类型不匹配",
+        status: 400,
+      },
+      BASE_VERSION_REQUIRED: {
+        code: "CANDIDATE_BASE_VERSION_REQUIRED",
+        message: "该候选缺少正式数据基础版本",
+        status: 400,
+      },
+      IDEMPOTENCY_CONFLICT: {
+        code: "CANDIDATE_IDEMPOTENCY_CONFLICT",
+        message: "同一请求已生成不同内容的该类候选",
+        status: 409,
+      },
+    };
+    const publicFailure = publicFailures[candidateError.code];
+    if (publicFailure) {
+      throw new CareerMateV2McpError(
+        publicFailure.code,
+        publicFailure.message,
+        publicFailure.status,
+      );
+    }
   }
   throw error;
 }
@@ -415,36 +459,73 @@ export function createCareerMateV2ToolRegistry(
     }),
     async handler(rawInput, context) {
       const input = historyInput.parse(rawInput);
+      const planSummarySelect = {
+        id: true,
+        targetRole: true,
+        targetRoleLabel: true,
+        version: true,
+        status: true,
+        schemaVersion: true,
+        currentMonthIndex: true,
+        createdAt: true,
+        updatedAt: true,
+      };
       const [currentPlan, planHistory, progressLogs, simulations] = await Promise.all([
         db.careerPlan.findFirst({
           where: { userId: context.userId, status: "active" },
           orderBy: [{ version: "desc" }, { updatedAt: "desc" }],
+          select: planSummarySelect,
         }),
         db.careerPlan.findMany({
           where: { userId: context.userId },
           orderBy: { updatedAt: "desc" },
           take: input.limit,
+          select: planSummarySelect,
         }),
         db.progressLog.findMany({
           where: { userId: context.userId },
           orderBy: { createdAt: "desc" },
           take: input.limit,
+          select: {
+            id: true,
+            eventType: true,
+            title: true,
+            summary: true,
+            relatedPlanId: true,
+            relatedTaskId: true,
+            createdAt: true,
+          },
         }),
         db.simulationSession.findMany({
           where: { userId: context.userId },
           orderBy: { updatedAt: "desc" },
           take: input.limit,
+          select: {
+            id: true,
+            scenarioKey: true,
+            scenarioTitle: true,
+            score: true,
+            feedback: true,
+            status: true,
+            turnCount: true,
+            createdAt: true,
+            updatedAt: true,
+          },
         }),
       ]);
       return {
-        currentPlan: mapPlan(currentPlan),
-        planHistory: planHistory.map(mapPlan),
+        currentPlan: mapPlanSummary(currentPlan),
+        planHistory: planHistory.map(mapPlanSummary),
         progressLogs: progressLogs.map((log) => ({
-          ...log,
-          metadata: parseField(log, "metadata", {}),
+          id: log.id,
+          eventType: log.eventType,
+          title: log.title,
+          summary: log.summary,
+          relatedPlanId: log.relatedPlanId ?? null,
+          relatedTaskId: log.relatedTaskId ?? null,
           createdAt: iso(log.createdAt),
         })),
-        simulations: simulations.map(mapSimulation),
+        simulations: simulations.map(mapSimulationSummary),
       };
     },
   });
@@ -531,11 +612,23 @@ export function createCareerMateV2ToolRegistry(
           userId: context.userId,
         },
         orderBy: input.sessionId ? undefined : { updatedAt: "desc" },
+        select: {
+          id: true,
+          scenarioKey: true,
+          scenarioTitle: true,
+          transcript: true,
+          score: true,
+          feedback: true,
+          status: true,
+          turnCount: true,
+          createdAt: true,
+          updatedAt: true,
+        },
       });
       if (!session) {
         throw new CareerMateV2McpError("SIMULATION_NOT_FOUND", "训练会话不存在", 404);
       }
-      return mapSimulation(session);
+      return mapSimulationState(session);
     },
   });
 
@@ -561,7 +654,6 @@ export function createCareerMateV2ToolRegistry(
             idempotencyKey: deriveIdempotencyKey(
               context,
               input.candidateType,
-              input.artifact,
             ),
           },
         });
@@ -581,73 +673,151 @@ export function createCareerMateV2ToolRegistry(
       expectedTurnCount: { type: "integer", minimum: 0, maximum: 6 },
       userMessage: { type: "string" },
       assistantMessage: { type: "string" },
-      executionMeta: { type: "object", additionalProperties: true },
-      remoteConversationId: { type: "string" },
     }, ["sessionId", "expectedTurnCount", "userMessage", "assistantMessage"]),
     async handler(rawInput, context) {
       const input = simulationAppendInput.parse(rawInput);
-      const session = await db.simulationSession.findFirst({
-        where: { id: input.sessionId, userId: context.userId },
-      });
-      if (!session) {
-        throw new CareerMateV2McpError("SIMULATION_NOT_FOUND", "训练会话不存在", 404);
+      const operationId = `simulation_turn.append:${input.sessionId}`;
+      const ledgerIdentity = {
+        userId: context.userId,
+        conversationId: context.sessionId,
+        clientRequestId: context.requestId,
+        operationId,
+      };
+      try {
+        return await db.$transaction(async (transaction) => {
+          const execution = await transaction.operationExecution.create({
+            data: {
+              ...ledgerIdentity,
+              opType: "simulation_turn.append",
+              status: "pending",
+              result: "{}",
+            },
+            select: { id: true },
+          });
+          const session = await transaction.simulationSession.findFirst({
+            where: { id: input.sessionId, userId: context.userId },
+            select: {
+              id: true,
+              scenarioKey: true,
+              scenarioTitle: true,
+              transcript: true,
+              score: true,
+              feedback: true,
+              status: true,
+              turnCount: true,
+              createdAt: true,
+              updatedAt: true,
+            },
+          });
+          if (!session) {
+            throw new CareerMateV2McpError("SIMULATION_NOT_FOUND", "训练会话不存在", 404);
+          }
+          if (session.status !== "active") {
+            throw new CareerMateV2McpError("SIMULATION_NOT_ACTIVE", "训练会话已经结束", 409);
+          }
+          const currentTurnCount = Number(session.turnCount);
+          if (currentTurnCount >= 6) {
+            throw new CareerMateV2McpError("SIMULATION_MAX_TURNS", "训练已达到最多 6 轮", 409);
+          }
+          if (currentTurnCount !== input.expectedTurnCount) {
+            throw new CareerMateV2McpError(
+              "SIMULATION_TURN_CONFLICT",
+              "训练轮次已变化，请重新读取状态后重试",
+              409,
+            );
+          }
+          const transcript = typeof session.transcript === "string"
+            ? parseSimulationTranscript(session.transcript)
+            : [];
+          const nextTranscript = [
+            ...transcript,
+            { role: "user" as const, content: input.userMessage },
+            {
+              role: "assistant" as const,
+              content: input.assistantMessage,
+              meta: {
+                requestedMode: "api" as const,
+                actualMode: "api" as const,
+                degraded: false,
+                fallbackReason: null,
+                source: "tbox-agentic-v2",
+              },
+            },
+          ];
+          const winner = await transaction.simulationSession.updateMany({
+            where: {
+              id: input.sessionId,
+              userId: context.userId,
+              status: "active",
+              turnCount: input.expectedTurnCount,
+            },
+            data: {
+              transcript: JSON.stringify(nextTranscript),
+              turnCount: currentTurnCount + 1,
+            },
+          });
+          if (winner.count !== 1) {
+            throw new CareerMateV2McpError(
+              "SIMULATION_TURN_CONFLICT",
+              "训练会话发生并发更新，请重新读取状态后重试",
+              409,
+            );
+          }
+          const persisted = await transaction.simulationSession.findUnique({
+            where: { id: input.sessionId },
+            select: {
+              id: true,
+              scenarioKey: true,
+              scenarioTitle: true,
+              transcript: true,
+              score: true,
+              feedback: true,
+              status: true,
+              turnCount: true,
+              createdAt: true,
+              updatedAt: true,
+            },
+          });
+          if (!persisted) {
+            throw new CareerMateV2McpError("SIMULATION_NOT_FOUND", "训练会话不存在", 404);
+          }
+          const result = mapSimulationState(persisted);
+          await transaction.operationExecution.update({
+            where: { id: execution.id },
+            data: { status: "completed", result: JSON.stringify(result) },
+          });
+          return result;
+        });
+      } catch (error) {
+        if (!error || typeof error !== "object" || !("code" in error) || error.code !== "P2002") {
+          throw error;
+        }
+        const existing = await db.operationExecution.findUnique({
+          where: {
+            userId_conversationId_clientRequestId_operationId: ledgerIdentity,
+          },
+          select: { status: true, result: true },
+        });
+        if (!existing) throw error;
+        if (existing.status === "pending") {
+          throw new CareerMateV2McpError(
+            "SIMULATION_APPEND_IN_PROGRESS",
+            "该训练轮次正在保存，请稍后重试",
+            409,
+          );
+        }
+        if (existing.status === "failed") {
+          throw new CareerMateV2McpError(
+            "SIMULATION_APPEND_FAILED",
+            "该训练轮次保存失败，请使用新的请求重试",
+            500,
+          );
+        }
+        if (existing.status !== "completed" || typeof existing.result !== "string") throw error;
+        const replay = parseJson<unknown>(existing.result, null);
+        if (!replay || typeof replay !== "object" || Array.isArray(replay)) throw error;
+        return replay;
       }
-      if (session.status !== "active") {
-        throw new CareerMateV2McpError("SIMULATION_NOT_ACTIVE", "训练会话已经结束", 409);
-      }
-      const currentTurnCount = Number(session.turnCount);
-      if (currentTurnCount >= 6) {
-        throw new CareerMateV2McpError("SIMULATION_MAX_TURNS", "训练已达到最多 6 轮", 409);
-      }
-      if (currentTurnCount !== input.expectedTurnCount) {
-        throw new CareerMateV2McpError(
-          "SIMULATION_TURN_CONFLICT",
-          "训练轮次已变化，请重新读取状态后重试",
-          409,
-        );
-      }
-      const transcript = typeof session.transcript === "string"
-        ? parseSimulationTranscript(session.transcript)
-        : [];
-      const nextTranscript = [
-        ...transcript,
-        { role: "user" as const, content: input.userMessage },
-        {
-          role: "assistant" as const,
-          content: input.assistantMessage,
-          ...(input.executionMeta ? { meta: input.executionMeta } : {}),
-        },
-      ];
-      const nextTurnCount = currentTurnCount + 1;
-      const winner = await db.simulationSession.updateMany({
-        where: {
-          id: input.sessionId,
-          userId: context.userId,
-          status: "active",
-          turnCount: input.expectedTurnCount,
-        },
-        data: {
-          transcript: JSON.stringify(nextTranscript),
-          turnCount: nextTurnCount,
-          ...(input.remoteConversationId
-            ? { remoteConversationId: input.remoteConversationId }
-            : {}),
-        },
-      });
-      if (winner.count !== 1) {
-        throw new CareerMateV2McpError(
-          "SIMULATION_TURN_CONFLICT",
-          "训练会话发生并发更新，请重新读取状态后重试",
-          409,
-        );
-      }
-      const persisted = await db.simulationSession.findUnique({
-        where: { id: input.sessionId },
-      });
-      if (!persisted) {
-        throw new CareerMateV2McpError("SIMULATION_NOT_FOUND", "训练会话不存在", 404);
-      }
-      return mapSimulation(persisted);
     },
   });
 
@@ -668,11 +838,28 @@ export function createCareerMateV2ToolRegistry(
       if (!tool) {
         throw new CareerMateV2McpError("TOOL_NOT_FOUND", `未知 V2 工具: ${name}`, 404);
       }
-      const token = tokenFromRawInput(input);
-      const context = verifyContext(token, verifyToken);
-      requireScope(context, tool.requiredScope);
-      const parsed = parseInput(tool.inputSchema, input);
-      return tool.handler(parsed, context);
+      try {
+        const token = tokenFromRawInput(input);
+        const context = verifyContext(token, verifyToken);
+        requireScope(context, tool.requiredScope);
+        const parsed = parseInput(tool.inputSchema, input);
+        return await tool.handler(parsed, context);
+      } catch (error) {
+        if (error instanceof CareerMateV2McpError) throw error;
+        const internalCode = error && typeof error === "object" && "code" in error
+          ? String(error.code)
+          : undefined;
+        console.error("CareerMate V2 MCP tool failed", {
+          tool: tool.name,
+          errorName: error instanceof Error ? error.name : typeof error,
+          ...(internalCode ? { internalCode } : {}),
+        });
+        throw new CareerMateV2McpError(
+          "INTERNAL_ERROR",
+          "CareerMate 业务工具暂时不可用",
+          500,
+        );
+      }
     },
   };
 }

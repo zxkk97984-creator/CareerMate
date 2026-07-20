@@ -135,7 +135,14 @@ function setup() {
     },
     roleTemplate: { findMany: vi.fn().mockResolvedValue([]) },
     resourceItem: { findMany: vi.fn().mockResolvedValue([]) },
+    operationExecution: {
+      findUnique: vi.fn().mockResolvedValue(null),
+      create: vi.fn().mockResolvedValue({ id: "execution-1" }),
+      update: vi.fn().mockResolvedValue({ id: "execution-1", status: "completed" }),
+    },
+    $transaction: vi.fn(),
   };
+  db.$transaction.mockImplementation(async (callback: (transaction: typeof db) => unknown) => callback(db));
   const verifyToken = vi.fn().mockReturnValue(claims);
   const candidateService = {
     createCandidate: vi.fn().mockResolvedValue({
@@ -226,8 +233,49 @@ describe("CareerMate business MCP V2 registry", () => {
     });
   });
 
-  it("returns parsed current plan, bounded history, progress and simulation summaries", async () => {
+  it("returns explicitly selected, bounded plan/progress/simulation summaries without provider or transcript data", async () => {
     const { db, registry } = setup();
+    db.careerPlan.findMany.mockResolvedValue([{
+      id: "plan-old",
+      targetRole: "data_analyst",
+      targetRoleLabel: "数据分析师",
+      version: 2,
+      status: "archived",
+      schemaVersion: 2,
+      currentMonthIndex: 1,
+      createdAt: new Date("2026-06-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-06-20T00:00:00.000Z"),
+      userId: "must-not-leak",
+      content: "{\"private\":true}",
+    }]);
+    db.progressLog.findMany.mockResolvedValue([{
+      id: "log-1",
+      eventType: "task_completed",
+      title: "完成 SQL 练习",
+      summary: "完成一组练习",
+      relatedPlanId: "plan-active",
+      relatedTaskId: "task-1",
+      createdAt: new Date("2026-07-19T00:00:00.000Z"),
+      userId: "must-not-leak",
+      metadata: "{\"private\":true}",
+    }]);
+    db.simulationSession.findMany.mockResolvedValue([{
+      id: "simulation-1",
+      scenarioKey: "cross_role_communication",
+      scenarioTitle: "跨岗位沟通",
+      score: 80,
+      status: "completed",
+      turnCount: 3,
+      feedback: "{\"summary\":\"表达清晰\"}",
+      createdAt: new Date("2026-07-18T00:00:00.000Z"),
+      updatedAt: new Date("2026-07-19T00:00:00.000Z"),
+      userId: "must-not-leak",
+      transcript: "[{\"role\":\"user\",\"content\":\"private\"}]",
+      remoteConversationId: "provider-secret",
+      candidateId: "candidate-private",
+      requestedMode: "api",
+      actualMode: "api",
+    }]);
     const result = await registry.call("growth_history.read", {
       context_token: "signed",
       limit: 12,
@@ -235,26 +283,44 @@ describe("CareerMate business MCP V2 registry", () => {
 
     expect(db.careerPlan.findFirst).toHaveBeenCalledWith(expect.objectContaining({
       where: { userId: "user-1", status: "active" },
+      select: expect.objectContaining({ id: true, version: true, currentMonthIndex: true }),
     }));
     expect(db.careerPlan.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { userId: "user-1" },
       take: 12,
+      select: expect.objectContaining({ id: true, version: true, currentMonthIndex: true }),
     }));
     expect(db.progressLog.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { userId: "user-1" },
       take: 12,
+      select: expect.objectContaining({ id: true, eventType: true, summary: true }),
     }));
     expect(db.simulationSession.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { userId: "user-1" },
       take: 12,
+      select: expect.objectContaining({ id: true, scenarioKey: true, turnCount: true }),
     }));
     expect(result).toMatchObject({
       currentPlan: {
-        content: { stages: [] },
-        assumptions: ["每周8小时"],
-        generationMeta: { source: "tbox" },
+        id: "plan-active",
+        version: 3,
       },
+      planHistory: [{ id: "plan-old", version: 2 }],
+      progressLogs: [{ id: "log-1", title: "完成 SQL 练习" }],
+      simulations: [{ id: "simulation-1", score: 80, feedback: { summary: "表达清晰" } }],
     });
+    const serialized = JSON.stringify(result);
+    for (const forbidden of [
+      "must-not-leak",
+      "private",
+      "provider-secret",
+      "candidate-private",
+      "remoteConversationId",
+      "requestedMode",
+      "actualMode",
+      "transcript",
+      "metadata",
+    ]) expect(serialized).not.toContain(forbidden);
   });
 
   it("filters official career templates and parses their JSON fields", async () => {
@@ -329,6 +395,22 @@ describe("CareerMate business MCP V2 registry", () => {
 
   it("loads only a simulation owned by the token user and parses transcript and feedback", async () => {
     const { db, registry } = setup();
+    db.simulationSession.findFirst.mockResolvedValue({
+      ...(await db.simulationSession.findFirst()),
+      transcript: JSON.stringify([{
+        role: "assistant",
+        content: "开始",
+        meta: {
+          requestedMode: "api",
+          actualMode: "api",
+          degraded: false,
+          fallbackReason: null,
+          source: "provider-internal",
+        },
+      }]),
+      remoteConversationId: "provider-conversation",
+      candidateId: "candidate-private",
+    });
     const result = await registry.call("simulation_state.read", {
       context_token: "signed",
       sessionId: "simulation-1",
@@ -336,12 +418,14 @@ describe("CareerMate business MCP V2 registry", () => {
 
     expect(db.simulationSession.findFirst).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: "simulation-1", userId: "user-1" },
+      select: expect.objectContaining({ transcript: true, feedback: true }),
     }));
-    expect(result).toMatchObject({
+    expect(result).toEqual(expect.objectContaining({
       id: "simulation-1",
       transcript: [{ role: "assistant", content: "开始" }],
       feedback: {},
-    });
+    }));
+    expect(JSON.stringify(result)).not.toMatch(/provider|candidateId|requestedMode|actualMode|meta/);
   });
 
   it("derives candidate identity and both source IDs from verified token claims", async () => {
@@ -363,15 +447,13 @@ describe("CareerMate business MCP V2 registry", () => {
       },
     });
     expect(input.context.idempotencyKey).toMatch(/^[a-f0-9]{64}$/);
-    const canonical = JSON.stringify(artifact, Object.keys(artifact).sort());
-    expect(input.context.idempotencyKey).not.toBe(
-      createHash("sha256").update(canonical).digest("hex"),
+    expect(input.context.idempotencyKey).toBe(
+      createHash("sha256").update("request-1\ncareer_plan").digest("hex"),
     );
   });
 
-  it("derives the same candidate idempotency key for canonically equal artifacts", async () => {
+  it("uses one aggregate candidate key per jti and candidate type even if content changes", async () => {
     const { candidateService, registry } = setup();
-    const reordered = Object.fromEntries(Object.entries(artifact).reverse());
 
     await registry.call("candidate.create", {
       context_token: "signed",
@@ -381,11 +463,29 @@ describe("CareerMate business MCP V2 registry", () => {
     await registry.call("candidate.create", {
       context_token: "signed",
       candidateType: "career_plan",
-      artifact: reordered,
+      artifact: { ...artifact, summary: "同一请求中的另一份内容" },
     });
 
     expect(candidateService.createCandidate.mock.calls[0]![0].context.idempotencyKey)
       .toBe(candidateService.createCandidate.mock.calls[1]![0].context.idempotencyKey);
+  });
+
+  it("derives different candidate keys for different token request IDs", async () => {
+    const { candidateService, registry, verifyToken } = setup();
+    await registry.call("candidate.create", {
+      context_token: "signed-1",
+      candidateType: "career_plan",
+      artifact,
+    });
+    verifyToken.mockReturnValue({ ...claims, jti: "request-2" });
+    await registry.call("candidate.create", {
+      context_token: "signed-2",
+      candidateType: "career_plan",
+      artifact,
+    });
+
+    expect(candidateService.createCandidate.mock.calls[0]![0].context.idempotencyKey)
+      .not.toBe(candidateService.createCandidate.mock.calls[1]![0].context.idempotencyKey);
   });
 
   it("maps an invalid token session conversation to a safe V2 error", async () => {
@@ -402,18 +502,106 @@ describe("CareerMate business MCP V2 registry", () => {
     })).rejects.toMatchObject({ code: "CONTEXT_SESSION_NOT_FOUND", status: 403 });
   });
 
+  it("maps only allowlisted candidate domain failures with fixed public messages", async () => {
+    const { candidateService, registry } = setup();
+    candidateService.createCandidate.mockRejectedValue(Object.assign(new Error("private row content"), {
+      code: "IDEMPOTENCY_CONFLICT",
+      status: 409,
+      detail: { secret: true },
+    }));
+
+    const thrown = await registry.call("candidate.create", {
+      context_token: "signed",
+      candidateType: "career_plan",
+      artifact,
+    }).catch((error) => error) as CareerMateV2McpError;
+    expect(thrown).toMatchObject({
+      code: "CANDIDATE_IDEMPOTENCY_CONFLICT",
+      status: 409,
+      message: "同一请求已生成不同内容的该类候选",
+    });
+    expect(thrown.message).not.toContain("private");
+    expect(thrown.detail).toBeUndefined();
+  });
+
+  it.each([
+    ["candidate unknown failure", "candidate"],
+    ["database failure", "profile"],
+  ])("generalizes %s without leaking internal messages", async (_label, source) => {
+    const { candidateService, db, registry } = setup();
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    if (source === "candidate") {
+      candidateService.createCandidate.mockRejectedValue(Object.assign(new Error("secret candidate row"), {
+        code: "UNEXPECTED_DATABASE_CODE",
+        status: 500,
+        detail: { private: true },
+      }));
+    } else {
+      db.userProfile.findUnique.mockRejectedValue(new Error("secret database DSN"));
+    }
+
+    const operation = source === "candidate"
+      ? registry.call("candidate.create", {
+        context_token: "signed",
+        candidateType: "career_plan",
+        artifact,
+      })
+      : registry.call("profile.read", { context_token: "signed" });
+    const thrown = await operation.catch((error) => error) as CareerMateV2McpError;
+    expect(thrown).toMatchObject({
+      code: "INTERNAL_ERROR",
+      status: 500,
+      message: "CareerMate 业务工具暂时不可用",
+    });
+    expect(thrown.message).not.toMatch(/secret|database|candidate/i);
+    expect(thrown.detail).toBeUndefined();
+    consoleSpy.mockRestore();
+  });
+
   it("atomically appends one actual user/assistant turn for the bound owner", async () => {
     const { db, registry } = setup();
+    const expectedTranscript = [
+      { role: "assistant", content: "开始" },
+      { role: "user", content: "我会先澄清目标和验收标准" },
+      {
+        role: "assistant",
+        content: "请继续说明关键依赖。",
+        meta: {
+          requestedMode: "api",
+          actualMode: "api",
+          degraded: false,
+          fallbackReason: null,
+          source: "tbox-agentic-v2",
+        },
+      },
+    ];
+    db.simulationSession.findUnique.mockResolvedValue({
+      ...(await db.simulationSession.findUnique()),
+      transcript: JSON.stringify(expectedTranscript),
+      turnCount: 1,
+      remoteConversationId: "existing-provider-id",
+    });
     const result = await registry.call("simulation_turn.append", {
       context_token: "signed",
       sessionId: "simulation-1",
       expectedTurnCount: 0,
       userMessage: "我会先澄清目标和验收标准",
       assistantMessage: "请继续说明关键依赖。",
-      executionMeta: { source: "tbox-v2" },
-      remoteConversationId: "remote-1",
     });
 
+    expect(db.$transaction).toHaveBeenCalledTimes(1);
+    expect(db.operationExecution.create).toHaveBeenCalledWith({
+      data: {
+        userId: "user-1",
+        conversationId: "conversation-1",
+        clientRequestId: "request-1",
+        operationId: "simulation_turn.append:simulation-1",
+        opType: "simulation_turn.append",
+        status: "pending",
+        result: "{}",
+      },
+      select: { id: true },
+    });
     expect(db.simulationSession.findFirst).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: "simulation-1", userId: "user-1" },
     }));
@@ -425,16 +613,38 @@ describe("CareerMate business MCP V2 registry", () => {
         turnCount: 0,
       },
       data: {
-        transcript: JSON.stringify([
-          { role: "assistant", content: "开始" },
-          { role: "user", content: "我会先澄清目标和验收标准" },
-          { role: "assistant", content: "请继续说明关键依赖。", meta: { source: "tbox-v2" } },
-        ]),
+        transcript: JSON.stringify(expectedTranscript),
         turnCount: 1,
-        remoteConversationId: "remote-1",
       },
     });
-    expect(result).toMatchObject({ id: "simulation-1", turnCount: 1 });
+    expect(db.operationExecution.update).toHaveBeenCalledWith({
+      where: { id: "execution-1" },
+      data: { status: "completed", result: JSON.stringify(result) },
+    });
+    expect(result).toMatchObject({
+      id: "simulation-1",
+      turnCount: 1,
+      transcript: [
+        { role: "assistant", content: "开始" },
+        { role: "user", content: "我会先澄清目标和验收标准" },
+        { role: "assistant", content: "请继续说明关键依赖。" },
+      ],
+    });
+    expect(JSON.stringify(result)).not.toContain("existing-provider-id");
+  });
+
+  it("rejects model-supplied execution metadata and provider conversation IDs", async () => {
+    const { db, registry } = setup();
+    await expect(registry.call("simulation_turn.append", {
+      context_token: "signed",
+      sessionId: "simulation-1",
+      expectedTurnCount: 0,
+      userMessage: "用户实际回答",
+      assistantMessage: "下一道问题",
+      executionMeta: { source: "model-controlled" },
+      remoteConversationId: "model-controlled",
+    })).rejects.toMatchObject({ code: "INVALID_PARAMS", status: 400 });
+    expect(db.$transaction).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -473,6 +683,89 @@ describe("CareerMate business MCP V2 registry", () => {
       userMessage: "用户实际回答",
       assistantMessage: "下一道问题",
     })).rejects.toMatchObject({ code: "SIMULATION_TURN_CONFLICT", status: 409 });
+  });
+
+  it("replays a completed append result after a P2002 response-loss retry", async () => {
+    const { db, registry } = setup();
+    const replay = {
+      id: "simulation-1",
+      scenarioKey: "cross_role_communication",
+      scenarioTitle: "跨岗位沟通",
+      transcript: [
+        { role: "user", content: "实际回答" },
+        { role: "assistant", content: "下一题" },
+      ],
+      score: null,
+      feedback: {},
+      status: "active",
+      turnCount: 1,
+      createdAt: "2026-07-20T00:00:00.000Z",
+      updatedAt: "2026-07-20T00:00:00.000Z",
+    };
+    db.$transaction.mockRejectedValue({ code: "P2002" });
+    db.operationExecution.findUnique.mockResolvedValue({
+      status: "completed",
+      result: JSON.stringify(replay),
+    });
+
+    await expect(registry.call("simulation_turn.append", {
+      context_token: "signed",
+      sessionId: "simulation-1",
+      expectedTurnCount: 0,
+      userMessage: "实际回答",
+      assistantMessage: "下一题",
+    })).resolves.toEqual(replay);
+    expect(db.operationExecution.findUnique).toHaveBeenCalledWith({
+      where: {
+        userId_conversationId_clientRequestId_operationId: {
+          userId: "user-1",
+          conversationId: "conversation-1",
+          clientRequestId: "request-1",
+          operationId: "simulation_turn.append:simulation-1",
+        },
+      },
+      select: { status: true, result: true },
+    });
+    expect(db.simulationSession.updateMany).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["pending", "SIMULATION_APPEND_IN_PROGRESS", 409],
+    ["failed", "SIMULATION_APPEND_FAILED", 500],
+  ])("handles a duplicate %s ledger safely", async (ledgerStatus, code, status) => {
+    const { db, registry } = setup();
+    db.$transaction.mockRejectedValue({ code: "P2002" });
+    db.operationExecution.findUnique.mockResolvedValue({
+      status: ledgerStatus,
+      result: "{}",
+    });
+
+    await expect(registry.call("simulation_turn.append", {
+      context_token: "signed",
+      sessionId: "simulation-1",
+      expectedTurnCount: 0,
+      userMessage: "实际回答",
+      assistantMessage: "下一题",
+    })).rejects.toMatchObject({ code, status });
+  });
+
+  it("keeps the ledger and append in one transaction so a first-attempt failure rolls back", async () => {
+    const { db, registry } = setup();
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const failure = new Error("database unavailable: private details");
+    db.simulationSession.updateMany.mockRejectedValue(failure);
+
+    await expect(registry.call("simulation_turn.append", {
+      context_token: "signed",
+      sessionId: "simulation-1",
+      expectedTurnCount: 0,
+      userMessage: "实际回答",
+      assistantMessage: "下一题",
+    })).rejects.toMatchObject({ code: "INTERNAL_ERROR", status: 500 });
+    expect(db.$transaction).toHaveBeenCalledTimes(1);
+    expect(db.operationExecution.create).toHaveBeenCalled();
+    expect(db.operationExecution.update).not.toHaveBeenCalled();
+    consoleSpy.mockRestore();
   });
 
   it("does not expose any formal profile, plan or progress writes", () => {
