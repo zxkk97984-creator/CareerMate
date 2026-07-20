@@ -54,10 +54,15 @@ interface CandidateTransaction {
   agentArtifactCandidate: {
     upsert(args: {
       where: {
-        userId_idempotencyKey: { userId: string; idempotencyKey: string };
+        userId_sourceSessionId_idempotencyKey: {
+          userId: string;
+          sourceSessionId: string;
+          idempotencyKey: string;
+        };
       };
       create: {
         userId: string;
+        sourceSessionId: string;
         idempotencyKey: string;
         candidateType: AgentArtifactCandidateType;
         status: "pending";
@@ -72,6 +77,7 @@ interface CandidateTransaction {
         candidateType: true;
         artifact: true;
         baseVersion: true;
+        sourceSessionId: true;
         sourceConversationId: true;
       };
     }): Promise<{
@@ -80,6 +86,7 @@ interface CandidateTransaction {
       candidateType: string;
       artifact: string;
       baseVersion: number | null;
+      sourceSessionId: string;
       sourceConversationId: string | null;
     }>;
   };
@@ -168,7 +175,7 @@ export function createAgentArtifactCandidateService(
   return {
     async createCandidate(input) {
       const userId = requiredIdentifier(input.userId, "userId");
-      requiredIdentifier(input.context?.sessionId, "context.sessionId");
+      const sourceSessionId = requiredIdentifier(input.context?.sessionId, "context.sessionId");
       const idempotencyKey = requiredIdentifier(
         input.context?.idempotencyKey,
         "context.idempotencyKey",
@@ -214,9 +221,16 @@ export function createAgentArtifactCandidateService(
         }
 
         const stored = await transaction.agentArtifactCandidate.upsert({
-          where: { userId_idempotencyKey: { userId, idempotencyKey } },
+          where: {
+            userId_sourceSessionId_idempotencyKey: {
+              userId,
+              sourceSessionId,
+              idempotencyKey,
+            },
+          },
           create: {
             userId,
+            sourceSessionId,
             idempotencyKey,
             candidateType,
             status: "pending",
@@ -231,6 +245,7 @@ export function createAgentArtifactCandidateService(
             candidateType: true,
             artifact: true,
             baseVersion: true,
+            sourceSessionId: true,
             sourceConversationId: true,
           },
         });
@@ -238,6 +253,7 @@ export function createAgentArtifactCandidateService(
         if (
           stored.candidateType !== candidateType
           || !artifactsMatch(stored.artifact, artifact)
+          || stored.sourceSessionId !== sourceSessionId
           || stored.sourceConversationId !== sourceConversationId
         ) {
           throw new AgentArtifactCandidateError(

@@ -294,6 +294,7 @@ model AgentArtifactCandidate {
   status               String    @default("pending")
   artifact             String
   baseVersion          Int?
+  sourceSessionId      String
   sourceConversationId String?
   resolvedAt           DateTime?
   createdAt            DateTime  @default(now())
@@ -304,7 +305,7 @@ model AgentArtifactCandidate {
 
   @@index([userId, status, createdAt])
   @@index([sourceConversationId])
-  @@unique([userId, idempotencyKey])
+  @@unique([userId, sourceSessionId, idempotencyKey])
 }
 
 model ChatMessage {

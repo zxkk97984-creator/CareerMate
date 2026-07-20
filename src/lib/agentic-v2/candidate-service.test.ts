@@ -33,6 +33,7 @@ type StoredCandidate = {
   artifact: string;
   baseVersion: number | null;
   sourceConversationId: string | null;
+  sourceSessionId: string;
 };
 
 function setup(options: { conversationOwnerId?: string | null; upsertError?: Error } = {}) {
@@ -53,11 +54,18 @@ function setup(options: { conversationOwnerId?: string | null; upsertError?: Err
     },
     agentArtifactCandidate: {
       upsert: vi.fn().mockImplementation(async (args: {
-        where: { userId_idempotencyKey: { userId: string; idempotencyKey: string } };
+        where: {
+          userId_sourceSessionId_idempotencyKey: {
+            userId: string;
+            sourceSessionId: string;
+            idempotencyKey: string;
+          };
+        };
         create: Omit<StoredCandidate, "id">;
       }) => {
         if (options.upsertError) throw options.upsertError;
-        const identity = `${args.where.userId_idempotencyKey.userId}:${args.where.userId_idempotencyKey.idempotencyKey}`;
+        const key = args.where.userId_sourceSessionId_idempotencyKey;
+        const identity = `${key.userId}:${key.sourceSessionId}:${key.idempotencyKey}`;
         const existing = rows.get(identity);
         if (existing) return existing;
         const created = { id: `candidate-${rows.size + 1}`, ...args.create };
@@ -177,9 +185,16 @@ describe("AgentArtifactCandidateService", () => {
     expect(result).toEqual({ id: "candidate-1", status: "pending", candidateType: "career_plan" });
     expect(db.$transaction).toHaveBeenCalledTimes(1);
     expect(transaction.agentArtifactCandidate.upsert).toHaveBeenCalledWith(expect.objectContaining({
-      where: { userId_idempotencyKey: { userId: "user-1", idempotencyKey: "request-persist" } },
+      where: {
+        userId_sourceSessionId_idempotencyKey: {
+          userId: "user-1",
+          sourceSessionId: "local-session-1",
+          idempotencyKey: "request-persist",
+        },
+      },
       create: {
         userId: "user-1",
+        sourceSessionId: "local-session-1",
         idempotencyKey: "request-persist",
         candidateType: "career_plan",
         status: "pending",
@@ -188,6 +203,7 @@ describe("AgentArtifactCandidateService", () => {
         sourceConversationId: "conversation-1",
       },
       update: {},
+      select: expect.objectContaining({ sourceSessionId: true }),
     }));
     for (const repository of Object.values(formalWrites)) {
       for (const operation of Object.values(repository)) expect(operation).not.toHaveBeenCalled();
@@ -226,6 +242,27 @@ describe("AgentArtifactCandidateService", () => {
 
     expect(results[0]).toEqual(results[1]);
     expect(rows).toHaveLength(1);
+  });
+
+  it("treats the same local idempotency key in different sessions as distinct candidates", async () => {
+    const { rows, service } = setup();
+    const shared = {
+      userId: "user-1",
+      candidateType: "career_plan" as const,
+      artifact: artifact(),
+    };
+
+    const first = await service.createCandidate({
+      ...shared,
+      context: { ...context("local-request-1"), sessionId: "session-a" },
+    });
+    const second = await service.createCandidate({
+      ...shared,
+      context: { ...context("local-request-1"), sessionId: "session-b" },
+    });
+
+    expect(second.id).not.toBe(first.id);
+    expect(rows).toHaveLength(2);
   });
 
   it("rejects reusing a key for a different artifact", async () => {
