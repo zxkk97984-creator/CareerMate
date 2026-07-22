@@ -1,0 +1,64 @@
+﻿roleKey,abilityKey,stage,resourceType,difficulty,duration,source,updatedAt,validUntil
+data_analyst,python,entry,course,beginner,40h,Coursera,2026-07-04,2026-12-31
+data_analyst,python,mid,course,intermediate,60h,慕课网,2026-07-09,2027-01-31
+data_analyst,sql,entry,tutorial,beginner,20h,B站,2026-07-08,2027-01-31
+data_analyst,sql,junior,article,intermediate,2周,掘金,2026-07-04,2027-05-31
+data_analyst,statistics,junior,course,intermediate,40h,DataCamp,2026-07-18,2026-12-31
+data_analyst,statistics,mid,book,advanced,80h,机械工业出版社,2026-07-19,2027-03-31
+data_analyst,dataViz,entry,tutorial,beginner,15h,Tableau Public,2026-07-02,2026-12-31
+data_analyst,dataViz,mid,video,intermediate,20h,B站,2026-07-03,2027-01-31
+data_analyst,machineLearning,mid,course,intermediate,60h,Coursera,2026-07-08,2027-04-30
+data_analyst,machineLearning,senior,project,advanced,3个月,Kaggle,2026-07-20,2026-12-31
+ai_product_manager,productDesign,entry,book,beginner,30h,人民邮电出版社,2026-07-18,2027-01-31
+ai_product_manager,productDesign,mid,course,intermediate,40h,Udemy,2026-07-18,2027-03-31
+ai_product_manager,promptEngineering,entry,course,beginner,15h,B站,2026-07-08,2027-03-31
+ai_product_manager,promptEngineering,junior,course,intermediate,30h,Udemy,2026-07-19,2027-02-28
+ai_product_manager,promptEngineering,mid,article,advanced,3周,机器之心,2026-07-01,2027-06-30
+ai_product_manager,machineLearning,mid,video,intermediate,40h,YouTube,2026-07-06,2027-05-31
+ai_product_manager,systemDesign,senior,course,advanced,50h,极客时间,2026-07-14,2027-02-28
+ai_product_manager,uiux,entry,tutorial,beginner,20h,Figma官方教程,2026-07-09,2027-01-31
+aigc_content_operator,promptEngineering,entry,course,beginner,20h,B站,2026-07-07,2027-06-30
+aigc_content_operator,promptEngineering,junior,article,intermediate,1周,机器之心,2026-07-11,2026-12-31
+aigc_content_operator,promptEngineering,mid,project,advanced,2个月,GitHub,2026-07-03,2027-03-31
+aigc_content_operator,promptEngineering,expert,community,expert,持续,Reddit,2026-07-04,2027-02-28
+aigc_content_operator,contentStrategy,entry,tutorial,beginner,15h,知乎专栏,2026-07-12,2027-04-30
+aigc_content_operator,contentStrategy,mid,book,intermediate,30h,电子工业出版社,2026-07-09,2027-06-30
+aigc_content_operator,python,junior,course,beginner,40h,慕课网,2026-07-02,2027-05-31
+aigc_content_operator,dataViz,entry,tool,beginner,10h,Power BI,2026-07-15,2027-04-30
+frontend_developer,javascript,entry,course,beginner,60h,慕课网,2026-07-04,2027-03-31
+frontend_developer,javascript,junior,project,intermediate,1个月,GitHub,2026-07-03,2027-04-30
+frontend_developer,javascript,mid,video,advanced,30h,B站,2026-07-10,2027-06-30
+frontend_developer,uiux,entry,tutorial,beginner,20h,掘金,2026-07-20,2027-06-30
+frontend_developer,uiux,mid,course,intermediate,40h,Udemy,2026-07-12,2027-04-30
+frontend_developer,systemDesign,senior,book,advanced,50h,O'Reilly,2026-07-07,2027-05-31
+frontend_developer,systemDesign,expert,community,expert,持续,Stack Overflow,2026-07-03,2026-12-31
+product_manager,productDesign,entry,book,beginner,30h,人民邮电出版社,2026-07-08,2027-06-30
+product_manager,productDesign,mid,course,intermediate,40h,极客时间,2026-07-10,2026-12-31
+product_manager,productDesign,senior,article,advanced,1周,InfoQ,2026-07-08,2027-06-30
+product_manager,productDesign,expert,community,expert,持续,知乎,2026-07-04,2027-03-31
+product_manager,dataViz,junior,tutorial,beginner,15h,Tableau Public,2026-07-09,2027-03-31
+product_manager,dataViz,mid,tool,intermediate,10h,Power BI,2026-07-12,2027-01-31
+product_manager,systemDesign,senior,course,advanced,60h,极客时间,2026-07-12,2027-02-28
+product_manager,statistics,junior,article,beginner,1周,知乎,2026-07-07,2027-05-31
+backend_developer,python,entry,course,beginner,40h,慕课网,2026-07-09,2027-05-31
+backend_developer,python,junior,project,intermediate,2个月,GitHub,2026-07-03,2027-04-30
+backend_developer,sql,entry,tutorial,beginner,20h,B站,2026-07-06,2027-04-30
+backend_developer,sql,mid,course,intermediate,30h,极客时间,2026-07-08,2027-01-31
+backend_developer,systemDesign,senior,book,advanced,60h,O'Reilly,2026-07-15,2027-03-31
+backend_developer,bigData,mid,course,intermediate,80h,Coursera,2026-07-09,2027-05-31
+backend_developer,machineLearning,mid,video,intermediate,40h,YouTube,2026-07-18,2027-01-31
+ai_engineer,deepLearning,mid,course,intermediate,80h,吴恩达深度学习,2026-07-11,2027-06-30
+ai_engineer,deepLearning,senior,project,advanced,4个月,Kaggle,2026-07-02,2027-01-31
+ai_engineer,deepLearning,expert,article,expert,2周,机器之心,2026-07-02,2027-06-30
+ai_engineer,machineLearning,junior,course,intermediate,60h,Coursera,2026-07-11,2027-03-31
+ai_engineer,mlops,senior,course,advanced,60h,极客时间,2026-07-09,2026-12-31
+ai_engineer,mlops,expert,tool,expert,持续,Docker,2026-07-07,2027-04-30
+ai_engineer,python,entry,course,beginner,40h,edX,2026-07-11,2027-01-31
+data_analyst,statistics,all,book,intermediate,持续,机械工业出版社,2026-07-16,2027-03-31
+product_manager,productDesign,all,community,intermediate,持续,飞书文档,2026-07-15,2027-01-31
+frontend_developer,uiux,all,article,intermediate,持续,掘金,2026-07-09,2027-01-31
+ai_engineer,machineLearning,all,book,advanced,持续,O'Reilly,2026-07-08,2027-05-31
+data_analyst,sql,mid,certification,advanced,3个月,阿里云认证,2026-07-18,2027-04-30
+ai_product_manager,machineLearning,senior,certification,advanced,6个月,Google认证,2026-07-09,2027-05-31
+backend_developer,python,senior,certification,advanced,4个月,AWS认证,2026-07-19,2027-03-31
+aigc_content_operator,contentStrategy,senior,certification,advanced,3个月,腾讯云认证,2026-07-19,2027-03-31
