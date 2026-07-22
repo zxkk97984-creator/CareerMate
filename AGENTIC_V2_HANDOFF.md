@@ -196,3 +196,16 @@ C:\Users\zxk\Documents\AI职业规划\蚂蚁百宝箱企业版文档
 4. 未完成项和风险；
 5. 不得声称未实际执行的测试或平台操作已经完成。
 ```
+
+## 9. 低成本直接启动方式
+
+如果采用“Claude Code 工具外壳 + DeepSeek 模型后端”，先在当前终端临时设置 `DEEPSEEK_API_KEY`，再执行：
+
+```bat
+scripts\start-claude-with-deepseek.cmd --check
+scripts\start-claude-with-deepseek.cmd
+```
+
+脚本不会保存或打印 API Key。它使用 DeepSeek 官方 Anthropic 兼容端点，主任务映射到 `deepseek-v4-pro[1m]`，子任务映射到 `deepseek-v4-flash`。
+
+这种模式下，Claude Code 只是代理工具外壳，真正推理模型是 DeepSeek；它不等于 Anthropic Claude 与 DeepSeek 的双模型协作。若要真正双供应商编排，需要额外路由层，当前项目不采用该复杂方案。
