@@ -265,6 +265,8 @@ model ChatConversation {
   title                  String
   status                 String   @default("active")
   remoteConversationId   String?
+  remoteAgentId          String?
+  remoteAgentVersion     String?
   state                  String   @default("{}")
   contextVersion         Int      @default(1)
   activeTurnId           String?

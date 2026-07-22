@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   turnBegin: vi.fn(),
   turnFinalize: vi.fn(),
   turnFail: vi.fn(),
+  agenticV2Enabled: false,
 }));
 
 vi.mock("@/lib/tbox/streaming", async (importOriginal) => {
@@ -37,8 +38,10 @@ vi.mock("@/lib/env", () => ({
     datasetIds: { roleCompetency: "", learningResources: "", simulationScenes: "", ethicsRules: "", careerTrends: "" },
   }),
   isStatefulChatTurns: () => true,
+  isAgenticV2Enabled: () => mocks.agenticV2Enabled,
   isAgentOperationsEnabled: () => true,
   isPlanV2WriteEnabled: () => true,
+  getCareerMateContextTokenSecret: () => "test-agentic-v2-stream-key-at-least-32-bytes",
 }));
 
 vi.mock("@/lib/prisma", () => ({
@@ -65,17 +68,18 @@ async function readBlocks(response: Response): Promise<string[]> {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.agenticV2Enabled = false;
   mocks.turnBegin.mockResolvedValue({
     kind: "new",
     turn: { id: "turn-1", userMessageId: "umsg-1", assistantMessageId: "amsg-1" },
   });
   mocks.turnFinalize.mockResolvedValue({ turnId: "turn-1" });
   mocks.turnFail.mockResolvedValue(undefined);
-  mocks.streamProgressive.mockImplementation(async (_: any, __: any, on: (e: any) => void) => {
+  mocks.streamProgressive.mockImplementation(async (input: any, __: any, on: (e: any) => void) => {
     const m = { requestedMode: "mock", actualMode: "mock", degraded: false, fallbackReason: null, source: "local-mock" };
     on({ event: "message", data: { type: "delta", content: "mock reply" }, meta: m });
-    on({ event: "done", data: { conversationId: null }, meta: m });
-    return { data: { text: "mock reply", citations: [], warnings: [], conversationId: null }, meta: m };
+    on({ event: "done", data: { conversationId: input.conversationId ?? null }, meta: m });
+    return { data: { text: "mock reply", citations: [], warnings: [], conversationId: input.conversationId ?? null }, meta: m };
   });
 });
 
@@ -90,6 +94,126 @@ function fakeSvc() {
 }
 
 describe("stateful stream (STATEFUL_CHAT_TURNS=true)", () => {
+  it("Agentic V2 sends only scoped business_data, disables built-in search, and reuses the bound remote conversation", async () => {
+    mocks.agenticV2Enabled = true;
+    const service = fakeSvc();
+    service.getConversation.mockResolvedValue({
+      id: "c1",
+      contextVersion: 1,
+      summary: "private conversation summary",
+      state: "{}",
+      remoteConversationId: "remote-existing",
+      remoteAgentId: "test",
+      remoteAgentVersion: null,
+    });
+
+    const response = await handleStreamRequest({
+      userId: "u1",
+      conversationId: "c1",
+      message: "根据我的情况调整规划",
+      clientRequestId: "550e8400-e29b-41d4-a716-446655440099",
+      interaction: { surface: "career_path", action: "regenerate_plan" },
+    }, service as any);
+    await readBlocks(response);
+
+    const input = mocks.streamProgressive.mock.calls[0][0];
+    expect(input).toMatchObject({
+      question: "根据我的情况调整规划",
+      conversationId: "remote-existing",
+      searchPolicy: "off",
+      context: {
+        schemaVersion: "1",
+        careermate_context_token: expect.any(String),
+        interaction: { surface: "career_path", action: "regenerate_plan" },
+      },
+    });
+    expect(input.history).toBeUndefined();
+    const serialized = JSON.stringify(input.context);
+    expect(serialized).not.toContain("private conversation summary");
+    expect(serialized).not.toContain("educationStage");
+    expect(Object.keys(input.context).sort()).toEqual([
+      "careermate_context_token",
+      "interaction",
+      "schemaVersion",
+    ]);
+    expect(mocks.turnFinalize).toHaveBeenCalledWith(expect.objectContaining({
+      remoteBinding: { agentId: "test", agentVersion: undefined },
+    }));
+  });
+
+  it("Agentic V2 does not reuse a remote conversation created by another agent", async () => {
+    mocks.agenticV2Enabled = true;
+    const service = fakeSvc();
+    service.getConversation.mockResolvedValue({
+      id: "c1",
+      contextVersion: 1,
+      summary: "",
+      state: "{}",
+      remoteConversationId: "remote-v1",
+      remoteAgentId: "old-agent",
+      remoteAgentVersion: "1.0",
+    });
+
+    const response = await handleStreamRequest({
+      userId: "u1",
+      conversationId: "c1",
+      message: "继续",
+      clientRequestId: "550e8400-e29b-41d4-a716-446655440097",
+    }, service as any);
+    await readBlocks(response);
+
+    expect(mocks.streamProgressive.mock.calls[0][0].conversationId).toBeUndefined();
+  });
+
+  it("Agentic V2 never executes legacy direct-write operations", async () => {
+    mocks.agenticV2Enabled = true;
+    mocks.streamProgressive.mockImplementationOnce(async (_: any, __: any, on: (e: any) => void) => {
+      const meta = { requestedMode: "mock", actualMode: "mock", degraded: false, fallbackReason: null, source: "local-mock" };
+      on({ event: "message", data: { type: "delta", content: "候选建议" }, meta });
+      on({ event: "done", data: { conversationId: "remote-1" }, meta });
+      return {
+        data: {
+          text: "候选建议",
+          citations: [],
+          warnings: [],
+          conversationId: "remote-1",
+          structured: {
+            schemaVersion: 1,
+            intent: "career_advice",
+            questions: [],
+            operations: [{
+              id: "legacy-write",
+              type: "profile_patch",
+              patch: { weeklyAvailableHours: 99 },
+              sourceKind: "explicit",
+              confidence: 1,
+              evidenceExcerpt: "legacy",
+              reason: "must not run",
+              sensitive: false,
+            }],
+            sourceRefs: [],
+          },
+        },
+        meta,
+      };
+    });
+
+    const response = await handleStreamRequest({
+      userId: "u1",
+      conversationId: "c1",
+      message: "调整画像",
+      clientRequestId: "550e8400-e29b-41d4-a716-446655440098",
+    }, fakeSvc() as any);
+    const blocks = await readBlocks(response);
+
+    const artifacts = blocks.filter((block) => block.startsWith("event: artifact")).join("\n");
+    expect(artifacts).not.toContain("profile_applied");
+    expect(artifacts).not.toContain("profile_candidate_ref");
+    expect(artifacts).not.toContain("OPERATION_FAILED");
+    expect(blocks[blocks.length - 1]).toContain("event: done");
+  });
+
+
   it("正文 JSON 零副作用——普通问题不触发 artifact", async () => {
     const response = await handleStreamRequest({
       userId: "u1", conversationId: "c1", message: "Python 是什么？",

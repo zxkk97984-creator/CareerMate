@@ -140,7 +140,11 @@ export interface ChatService {
   ): Promise<MessageItem>;
 
   // 会话时间与远端 ID
-  touchConversation(id: string, remoteConversationId?: string): Promise<void>;
+  touchConversation(
+    id: string,
+    remoteConversationId?: string,
+    remoteBinding?: { agentId: string; agentVersion?: string },
+  ): Promise<void>;
 }
 
 export function createChatService(repo?: ChatRepository): ChatService {
@@ -172,6 +176,8 @@ export function createChatService(repo?: ChatRepository): ChatService {
       return {
         ...toConversationItem(row),
         remoteConversationId: row.remoteConversationId ?? null,
+        remoteAgentId: row.remoteAgentId ?? null,
+        remoteAgentVersion: row.remoteAgentVersion ?? null,
         state: row.state ?? "{}",
         contextVersion: row.contextVersion ?? 1,
         summary: row.summary ?? "",
@@ -243,10 +249,12 @@ export function createChatService(repo?: ChatRepository): ChatService {
     },
 
     // ── 更新会话时间与远端 ID ──────────────────────────
-    async touchConversation(id, remoteConversationId) {
+    async touchConversation(id, remoteConversationId, remoteBinding) {
       const data: Prisma.ChatConversationUpdateInput = { lastMessageAt: new Date() };
       if (remoteConversationId) {
         data.remoteConversationId = remoteConversationId;
+        data.remoteAgentId = remoteBinding?.agentId ?? null;
+        data.remoteAgentVersion = remoteBinding?.agentVersion ?? null;
       }
       await r.updateConversation(id, data);
     },
@@ -256,6 +264,8 @@ export function createChatService(repo?: ChatRepository): ChatService {
 // ── 补充 DTO 类型 ────────────────────────────────────────
 
 export type ConversationDetail = ConversationItem & {
+  remoteAgentId?: string | null;
+  remoteAgentVersion?: string | null;
   state?: string;
   contextVersion?: number;
   summary?: string;

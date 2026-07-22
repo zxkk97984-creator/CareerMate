@@ -50,6 +50,7 @@ vi.mock("@/lib/env", () => ({
     searchEngine: false,
   }),
   isStatefulChatTurns: () => false, // 旧路径测试
+  isAgenticV2Enabled: () => false,
   isAgentOperationsEnabled: () => false,
 }));
 

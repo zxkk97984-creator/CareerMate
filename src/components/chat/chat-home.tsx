@@ -149,7 +149,15 @@ export function ChatHomePage({ displayName, openChatEntry = true }: ChatHomePage
       const response = await fetch(`/api/chat/conversations/${cid}/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, clientRequestId, ...(actionId ? { actionId } : {}) }),
+        body: JSON.stringify({
+          message: text,
+          clientRequestId,
+          ...(actionId ? { actionId } : {}),
+          interaction: {
+            surface: "chat",
+            action: actionId ? "quick_action" : "message_submit",
+          },
+        }),
       });
 
       if (!response.ok || !response.body) {

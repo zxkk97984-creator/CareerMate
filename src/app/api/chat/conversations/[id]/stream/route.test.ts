@@ -133,4 +133,42 @@ describe("POST /api/chat/conversations/:id/stream", () => {
       expect.anything(),
     );
   });
+
+  it("只把观察性的页面上下文传给流式服务", async () => {
+    await POST(
+      new Request("http://localhost/api/chat/conversations/conv-1/stream", {
+        method: "POST",
+        body: JSON.stringify({
+          message: "重新生成规划",
+          clientRequestId: "550e8400-e29b-41d4-a716-446655440000",
+          interaction: { surface: "career_path", action: "regenerate_plan" },
+        }),
+      }),
+      { params: Promise.resolve({ id: "conv-1" }) } as any,
+    );
+
+    expect(mocks.handleStreamRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        interaction: { surface: "career_path", action: "regenerate_plan" },
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("拒绝由前端指定调用某个工作流", async () => {
+    const res = await POST(
+      new Request("http://localhost/api/chat/conversations/conv-1/stream", {
+        method: "POST",
+        body: JSON.stringify({
+          message: "重新生成规划",
+          clientRequestId: "550e8400-e29b-41d4-a716-446655440000",
+          interaction: { surface: "career_path", action: "call_workflow_career_plan" },
+        }),
+      }),
+      { params: Promise.resolve({ id: "conv-1" }) } as any,
+    );
+
+    expect(res.status).toBe(400);
+    expect(mocks.handleStreamRequest).not.toHaveBeenCalled();
+  });
 });

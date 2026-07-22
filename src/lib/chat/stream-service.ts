@@ -1,7 +1,7 @@
 import { createChatService, type ChatService } from "./service";
 import { streamChatWithTboxProgressive } from "@/lib/tbox/streaming";
 import { parseTerminalAgentResponse } from "@/lib/tbox/structured-result";
-import { getTboxConfig, isStatefulChatTurns, isAgentOperationsEnabled, isPlanV2WriteEnabled } from "@/lib/env";
+import { getTboxConfig, isStatefulChatTurns, isAgentOperationsEnabled, isPlanV2WriteEnabled, isAgenticV2Enabled } from "@/lib/env";
 import { writeSseEvent } from "./sse";
 import { createTurnService, TurnServiceError } from "./turn-service";
 import { buildAgentContext, trimRecentMessages } from "./context-builder";
@@ -13,6 +13,8 @@ import { convertV2ToV1Arrays } from "@/lib/plans/compatibility";
 import { getPrisma } from "@/lib/prisma";
 import type { TboxHistoryMessage } from "@/lib/tbox/types";
 import type { AgentOperation } from "./agent-protocol";
+import { buildAgenticV2BusinessData, type AgenticV2Interaction } from "./agentic-v2-context";
+import { resolveBoundRemoteConversationId } from "./remote-conversation-binding";
 
 // ── 类型 ──────────────────────────────────────────────────
 
@@ -22,6 +24,7 @@ export interface StreamingOptions {
   message: string;
   clientRequestId: string;
   actionId?: string;
+  interaction?: AgenticV2Interaction;
   signal?: AbortSignal;
 }
 
@@ -130,6 +133,7 @@ async function handleStatefulStream(
   ]);
 
   const convState = parseConversationState(convDetail?.state ?? null);
+  const agenticV2 = isAgenticV2Enabled();
 
   // 构建最近消息历史——排除当前轮次刚持久化的用户消息（避免重复）
   const recentMessages = messages
@@ -176,12 +180,15 @@ async function handleStatefulStream(
   // 默认 question_prefix 包含完整 AgentContext JSON（scope 裁剪由 buildAgentContext 处理）
   // business_data 模式直接将 agentContext 作为结构化 context 发送
   // TBOX_REUSE_REMOTE_CONVERSATION_ID=false 时不传远端 ID
-  const existingRemoteId: string | undefined = config.reuseRemoteConversationId
-    ? (convDetail?.remoteConversationId ?? undefined)
+  const existingRemoteId: string | undefined = (agenticV2 || config.reuseRemoteConversationId)
+    ? resolveBoundRemoteConversationId(convDetail, {
+      agentId: config.agentId,
+      agentVersion: config.agentVersion,
+    })
     : undefined;
 
   // 确定搜索策略：未知职业/薪资/时效问题 → required
-  const searchPolicy = resolveSearchPolicy(message, agentContext);
+  const searchPolicy = agenticV2 ? "off" : resolveSearchPolicy(message, agentContext);
 
   // 三种互斥上下文模式
   const transport = config.contextTransport;
@@ -209,7 +216,16 @@ async function handleStatefulStream(
         let history: TboxHistoryMessage[] | undefined;
         let context: unknown;
 
-        if (transport === "provider_history") {
+        if (agenticV2) {
+          question = message;
+          context = buildAgenticV2BusinessData({
+            userId,
+            conversationId,
+            clientRequestId,
+            interaction: options.interaction,
+          });
+          history = undefined;
+        } else if (transport === "provider_history") {
           // provider_history: 发送原始问题 + 裁剪后的历史（排除本轮消息）
           question = message;
           history = buildProviderHistory(messages, turn.userMessageId);
@@ -302,7 +318,8 @@ async function handleStatefulStream(
         const metaSource = (finalMeta as Record<string, unknown>)?.source as string | undefined;
         const metaDegraded = (finalMeta as Record<string, unknown>)?.degraded as boolean | undefined;
         const isMockSource = metaSource === "local-mock";
-        const safeForOperations = isAgentOperationsEnabled()
+        const safeForOperations = !agenticV2
+          && isAgentOperationsEnabled()
           && !metaDegraded
           && config.structuredMode !== "disabled"
           && agentContext.scope !== "general_minimal"
@@ -361,6 +378,10 @@ async function handleStatefulStream(
           citations: validatedSourceRefs.map((r) => ({ title: r.kind, source: `ref_${r.citationIndex}` })),
           parts,
           remoteConversationId: remoteConversationId ?? undefined,
+          remoteBinding: remoteConversationId ? {
+            agentId: config.agentId,
+            agentVersion: config.agentVersion,
+          } : undefined,
           executionMeta: finalMeta ?? { requestedMode: config.mode, actualMode: config.mode, degraded: false, source: "tbox-api" },
           warnings: agentResponseResult.warnings ?? [],
         });
@@ -436,6 +457,7 @@ async function handleLegacyStream(
   config: ReturnType<typeof getTboxConfig>,
 ): Promise<Response> {
   const { userId, conversationId, message, signal, clientRequestId } = options;
+  const agenticV2 = isAgenticV2Enabled();
 
   const userMsg = await svc.createMessage(userId, {
     conversationId,
@@ -457,9 +479,13 @@ async function handleLegacyStream(
     conversationId, userId, message,
   ).catch(() => {});
 
-  const existingRemoteId = config.reuseRemoteConversationId
-    ? (await svc.getConversation(conversationId, userId).catch(() => null))?.remoteConversationId ?? undefined
-    : undefined;
+  const existingConversation = (agenticV2 || config.reuseRemoteConversationId)
+    ? await svc.getConversation(conversationId, userId).catch(() => null)
+    : null;
+  const existingRemoteId = resolveBoundRemoteConversationId(existingConversation, {
+    agentId: config.agentId,
+    agentVersion: config.agentVersion,
+  });
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -484,6 +510,13 @@ async function handleLegacyStream(
             question: message,
             userId,
             conversationId: existingRemoteId,
+            context: agenticV2 ? buildAgenticV2BusinessData({
+              userId,
+              conversationId,
+              clientRequestId,
+              interaction: options.interaction,
+            }) : undefined,
+            searchPolicy: agenticV2 ? "off" : undefined,
           },
           { config, signal },
           (event) => {
@@ -506,7 +539,7 @@ async function handleLegacyStream(
         // 旧路径：只保留正文，不执行业务写入
         // AgentResponse 解析仅用于结构化模式下的 operations
         let operations: AgentOperation[] = [];
-        if (config.structuredMode !== "disabled" && isAgentOperationsEnabled()) {
+        if (!agenticV2 && config.structuredMode !== "disabled" && isAgentOperationsEnabled()) {
           const ar = parseTerminalAgentResponse(aiResponse.data);
           operations = ar.response?.operations ?? [];
         }
@@ -522,7 +555,10 @@ async function handleLegacyStream(
         });
 
         if (remoteConversationId) {
-          await svc.touchConversation(conversationId, remoteConversationId).catch(() => {});
+          await svc.touchConversation(conversationId, remoteConversationId, {
+            agentId: config.agentId,
+            agentVersion: config.agentVersion,
+          }).catch(() => {});
         }
 
         // 执行 operations

@@ -44,6 +44,7 @@ export interface TurnFinalizeInput {
   citations: CitationObservation[];
   parts: unknown[];
   remoteConversationId?: string;
+  remoteBinding?: { agentId: string; agentVersion?: string };
   executionMeta: Record<string, unknown>;
   warnings: string[];
 }
@@ -351,7 +352,7 @@ export function createTurnService(): ChatTurnService {
 
     // ── 短事务 B：完成轮次 ──────────────────────────
     async finalize(input) {
-      const { turn, assistantText, agentResponse, citations, parts, remoteConversationId, executionMeta, warnings } = input;
+      const { turn, assistantText, agentResponse, citations, parts, remoteConversationId, remoteBinding, executionMeta, warnings } = input;
 
       const result = await db.$transaction(async (tx) => {
         // 1. 再次确认 activeTurnId 匹配
@@ -394,6 +395,8 @@ export function createTurnService(): ChatTurnService {
         };
         if (remoteConversationId) {
           updateData.remoteConversationId = remoteConversationId;
+          updateData.remoteAgentId = remoteBinding?.agentId ?? null;
+          updateData.remoteAgentVersion = remoteBinding?.agentVersion ?? null;
         }
 
         await tx.chatConversation.update({

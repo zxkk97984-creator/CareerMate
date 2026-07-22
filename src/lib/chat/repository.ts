@@ -13,6 +13,8 @@ type ConversationRow = {
   contextVersion: number;
   summary: string;
   remoteConversationId: string | null;
+  remoteAgentId: string | null;
+  remoteAgentVersion: string | null;
   lastMessageAt: Date;
   createdAt: Date;
   updatedAt: Date;

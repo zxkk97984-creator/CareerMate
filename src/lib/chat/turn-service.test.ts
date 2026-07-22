@@ -276,12 +276,15 @@ describe("createTurnService", () => {
         parts: [],
         citations: [],
         remoteConversationId: "remote-123",
+        remoteBinding: { agentId: "agent-v2", agentVersion: "2.0" },
         executionMeta: {},
         warnings: [],
       });
 
       const convUpdateCall = mockTx.chatConversation.update.mock.calls[0][0];
       expect(convUpdateCall.data.remoteConversationId).toBe("remote-123");
+      expect(convUpdateCall.data.remoteAgentId).toBe("agent-v2");
+      expect(convUpdateCall.data.remoteAgentVersion).toBe("2.0");
     });
 
     it("contextVersion 递增", async () => {
