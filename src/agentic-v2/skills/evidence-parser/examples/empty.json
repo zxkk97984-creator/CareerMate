@@ -1,0 +1,33 @@
+{
+  "evidenceBundle": {
+    "profileSnapshot": {
+      "available": false,
+      "version": null,
+      "data": null
+    },
+    "historySnapshot": {
+      "available": false,
+      "through": null,
+      "data": null
+    },
+    "careerBaseline": {
+      "roleKey": "unknown",
+      "templateVersion": "2026.07",
+      "evidence": []
+    },
+    "marketEvidence": {
+      "searched": false,
+      "skipReason": "新用户尚未设定职业目标",
+      "collectedAt": null,
+      "scope": {
+        "region": "CN",
+        "experienceLevel": "entry",
+        "timeRange": "2026-Q3"
+      },
+      "findings": [],
+      "sources": [],
+      "conflicts": [],
+      "confidence": "low"
+    }
+  }
+}

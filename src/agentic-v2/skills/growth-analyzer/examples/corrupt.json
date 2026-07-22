@@ -1,0 +1,14 @@
+{
+  "profileSnapshot": {
+    "available": "NOT_BOOLEAN",
+    "data": "SHOULD_BE_OBJECT"
+  },
+  "planHistory": [
+    { "id": "bad-plan", "status": null, "createdAt": "not-a-date", "updatedAt": 12345 },
+    "this-is-a-string-not-an-object",
+    null
+  ],
+  "progressLogs": [null, {}, { "id": 123, "createdAt": "broken" }],
+  "simulations": [{ "id": "ok", "scenarioKey": "", "score": "high", "status": 1, "createdAt": "2026-xx-xx" }],
+  "historicalScores": { "not": "an array" }
+}

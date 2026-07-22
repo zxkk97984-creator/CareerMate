@@ -1,0 +1,41 @@
+{
+  "evidenceBundle": {
+    "profileSnapshot": {
+      "available": true,
+      "version": 3,
+      "data": {
+        "targetRole": "data_analyst",
+        "targetRoleLabel": "数据分析师",
+        "experienceSummary": "姓名：张三，手机：13812345678，身份证：110101199001011234，邮箱：zhangsan@example.com，地址：北京市朝阳区某某路100号"
+      }
+    },
+    "historySnapshot": {
+      "available": true,
+      "data": [
+        {
+          "title": "完成了张三的数据分析项目，联系电话13900001111"
+        }
+      ]
+    },
+    "careerBaseline": {
+      "roleKey": "data_analyst",
+      "templateVersion": "2026.07",
+      "evidence": [
+        {
+          "summary": "联系导师：李四 lisi@company.com",
+          "confidence": "high"
+        }
+      ]
+    },
+    "marketEvidence": {
+      "searched": false,
+      "skipReason": "测试敏感信息脱敏",
+      "collectedAt": null,
+      "scope": { "region": "CN", "experienceLevel": "entry", "timeRange": "2026-Q3" },
+      "findings": [],
+      "sources": [],
+      "conflicts": [],
+      "confidence": "low"
+    }
+  }
+}

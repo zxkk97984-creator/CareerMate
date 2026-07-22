@@ -1,0 +1,34 @@
+{
+  "profileSnapshot": {
+    "available": true,
+    "data": {
+      "abilityScores": {
+        "python": 65,
+        "sql": 55
+      },
+      "targetRole": "data_analyst",
+      "targetRoleLabel": "数据分析师"
+    }
+  },
+  "planHistory": [
+    {
+      "id": "plan-1",
+      "targetRole": "data_analyst",
+      "status": "completed",
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-06-30T00:00:00.000Z"
+    }
+  ],
+  "progressLogs": [
+    {
+      "id": "log-1",
+      "eventType": "task_completed",
+      "title": "张三完成了面试，面试官电话：13812345678，简历发至 zhangsan@example.com",
+      "createdAt": "2026-01-15T00:00:00.000Z"
+    }
+  ],
+  "simulations": [],
+  "historicalScores": [
+    { "abilityKey": "python", "score": 40, "observedAt": "2026-01-01T00:00:00.000Z" }
+  ]
+}
