@@ -56,7 +56,24 @@ vi.mock("@/lib/prisma", () => ({
     progressLog: { findMany: vi.fn().mockResolvedValue([]) },
     simulationSession: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn().mockResolvedValue(null) },
     operationExecution: { create: vi.fn().mockResolvedValue({}), findFirst: vi.fn().mockResolvedValue(null), updateMany: vi.fn() },
-    agentArtifactCandidate: { upsert: vi.fn() },
+    agentArtifactCandidate: { upsert: vi.fn().mockResolvedValue({ id: "cand-1", status: "pending", candidateType: "career_plan", artifact: "{}", baseVersion: 3, sourceSessionId: "session-1", sourceConversationId: "c1" }) },
+    $transaction: vi.fn().mockImplementation((fn: any) => fn({
+      chatConversation: { findFirst: vi.fn().mockResolvedValue({ id: "c1" }) },
+      agentArtifactCandidate: {
+        upsert: vi.fn().mockImplementation((args: any) => {
+          const artifact = args.create?.artifact ?? "{}";
+          return Promise.resolve({
+            id: "cand-1",
+            status: "pending",
+            candidateType: args.create?.candidateType ?? "career_plan",
+            artifact,
+            baseVersion: args.create?.baseVersion ?? null,
+            sourceSessionId: args.create?.sourceSessionId ?? "session-1",
+            sourceConversationId: args.create?.sourceConversationId ?? "c1",
+          });
+        }),
+      },
+    })),
   }),
 }));
 
@@ -304,5 +321,97 @@ describe("stateful stream (STATEFUL_CHAT_TURNS=true)", () => {
     expect(blocks.some((b) => b.startsWith("event: artifact"))).toBe(true);
     expect(blocks[blocks.length - 1]).toContain("event: done");
     expect(blocks[blocks.length - 1]).toContain("replay");
+  });
+
+  it("Agentic V2 从真实文本流中解析 CAREERMATE_ARTIFACT 信封并创建候选", async () => {
+    mocks.agenticV2Enabled = true;
+    const artifactBlock = `<CAREERMATE_ARTIFACT>${JSON.stringify({
+      schemaVersion: "1.0",
+      taskType: "career_plan",
+      status: "pending_confirmation",
+      summary: "三年计划候选",
+      data: { targetRole: "data_analyst", phases: [] },
+      evidence: [],
+      sources: [],
+      assumptions: [],
+      warnings: [],
+      requiresUserConfirmation: true,
+      baseVersion: 3,
+      nextActions: [],
+    })}</CAREERMATE_ARTIFACT>`;
+
+    mocks.streamProgressive.mockImplementationOnce(async (_: any, __: any, on: (e: any) => void) => {
+      const meta = { requestedMode: "mock", actualMode: "mock", degraded: false, fallbackReason: null, source: "local-mock" };
+      on({ event: "message", data: { type: "delta", content: `这是可读计划摘要。\n${artifactBlock}` }, meta });
+      on({ event: "done", data: { conversationId: "remote-1" }, meta });
+      return {
+        data: {
+          text: `这是可读计划摘要。\n${artifactBlock}`,
+          structured: undefined,
+          citations: [],
+          warnings: [],
+          toolCalls: [],
+        },
+        meta,
+      };
+    });
+
+    const response = await handleStreamRequest({
+      userId: "u1",
+      conversationId: "c1",
+      message: "帮我生成三年规划",
+      clientRequestId: "req-env-1",
+    }, fakeSvc() as any);
+    const blocks = await readBlocks(response);
+
+    // 持久化的助手内容为剥离信封后的文本
+    expect(mocks.turnFinalize).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assistantText: "这是可读计划摘要。",
+      }),
+    );
+
+    // 候选引用部件已持久化并发送
+    const finalizeCall = mocks.turnFinalize.mock.calls[0][0];
+    const parts = finalizeCall.parts as Array<{ type: string }>;
+    const candidateRef = parts.find((p) => p.type === "agent_artifact_candidate_ref");
+    expect(candidateRef).toBeDefined();
+
+    // 通过 artifact 事件发送
+    const artifactBlocks = blocks.filter((b) => b.startsWith("event: artifact"));
+    expect(artifactBlocks.some((b) => b.includes("agent_artifact_candidate_ref"))).toBe(true);
+
+    expect(blocks[blocks.length - 1]).toContain("event: done");
+  });
+
+  it("Agentic V2 对无标签 JSON 不创建候选", async () => {
+    mocks.agenticV2Enabled = true;
+    mocks.streamProgressive.mockImplementationOnce(async (_: any, __: any, on: (e: any) => void) => {
+      const meta = { requestedMode: "mock", actualMode: "mock", degraded: false, fallbackReason: null, source: "local-mock" };
+      on({ event: "message", data: { type: "delta", content: "普通回答" }, meta });
+      on({ event: "done", data: { conversationId: null }, meta });
+      return {
+        data: {
+          text: "普通回答",
+          structured: undefined,
+          citations: [],
+          warnings: [],
+          toolCalls: [],
+        },
+        meta,
+      };
+    });
+
+    const response = await handleStreamRequest({
+      userId: "u1",
+      conversationId: "c1",
+      message: "你好",
+      clientRequestId: "req-no-env",
+    }, fakeSvc() as any);
+    await readBlocks(response);
+
+    const finalizeCall = mocks.turnFinalize.mock.calls[0][0];
+    const parts = finalizeCall.parts as Array<{ type: string }>;
+    expect(parts.find((p) => p.type === "agent_artifact_candidate_ref")).toBeUndefined();
   });
 });

@@ -16,6 +16,10 @@ import type { AgentOperation } from "./agent-protocol";
 import { buildAgenticV2BusinessData, type AgenticV2Interaction } from "./agentic-v2-context";
 import { loadAgenticV2Snapshot } from "./agentic-v2-snapshot";
 import { resolveBoundRemoteConversationId } from "./remote-conversation-binding";
+import { parseAgentArtifactEnvelope } from "@/lib/agentic-v2/artifact-envelope";
+import { ingestAgentArtifact } from "@/lib/agentic-v2/candidate-ingestion";
+import { createAgentArtifactCandidateService } from "@/lib/agentic-v2/candidate-service";
+import { agentArtifactCandidateRefPart } from "./artifacts";
 
 // ── 类型 ──────────────────────────────────────────────────
 
@@ -367,7 +371,49 @@ async function handleStatefulStream(
           });
         }
 
-        // ── 短事务 B：完成轮次（parts 已含 operations + citations）──
+        // ── Agentic V2 信封解析：仅在流完成后解析精确标签 ──
+        const envelope = agenticV2
+          ? parseAgentArtifactEnvelope(aiResponse.data.text || fullContent)
+          : { displayText: fullContent, warnings: [] as string[] };
+
+        const assistantText = agenticV2 ? envelope.displayText : fullContent;
+
+        // 摄入候选（仅当有有效 artifact 时）
+        if (agenticV2 && envelope.artifact) {
+          try {
+            const candidateService = createAgentArtifactCandidateService();
+            const ingestionResult = await ingestAgentArtifact(
+              {
+                userId,
+                conversationId,
+                sessionId: remoteConversationId ?? conversationId,
+                clientRequestId,
+                artifact: envelope.artifact,
+              },
+              candidateService,
+            );
+            if (ingestionResult.candidate) {
+              parts.push(agentArtifactCandidateRefPart(ingestionResult.candidate));
+            }
+            // 合并信封警告和摄入警告
+            for (const w of [...envelope.warnings, ...ingestionResult.warnings]) {
+              if (!agentResponseResult.warnings.includes(w)) {
+                agentResponseResult.warnings.push(w);
+              }
+            }
+          } catch {
+            // 候选摄入失败不影响主流程
+          }
+        } else if (envelope.warnings.length > 0) {
+          // 信封解析有警告但无候选时合并警告
+          for (const w of envelope.warnings) {
+            if (!agentResponseResult.warnings.includes(w)) {
+              agentResponseResult.warnings.push(w);
+            }
+          }
+        }
+
+        // ── 短事务 B：完成轮次（parts 已含 operations + citations + candidate ref）──
         await turnService.finalize({
           turn: {
             id: turn.id,
@@ -377,7 +423,7 @@ async function handleStatefulStream(
             userMessageId: turn.userMessageId,
             assistantMessageId: turn.assistantMessageId,
           },
-          assistantText: fullContent,
+          assistantText,
           agentResponse: agentResponse ?? undefined,
           citations: validatedSourceRefs.map((r) => ({ title: r.kind, source: `ref_${r.citationIndex}` })),
           parts,
