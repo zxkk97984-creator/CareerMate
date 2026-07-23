@@ -7,6 +7,7 @@ import { ProfileCandidateCard } from "./profile-candidate-card";
 import { PlanSummaryCard } from "./plan-summary-card";
 import { ExplorationReportCard } from "./exploration-report-card";
 import { MemoryProposalCard } from "./memory-proposal-card";
+import { AgentArtifactCandidateCard } from "./agent-artifact-candidate-card";
 import { QuickActions } from "./quick-actions";
 import type { CareerPlanDto } from "@/lib/types";
 import type { ExplorationReport } from "@/lib/careers/exploration-schema";
@@ -373,6 +374,18 @@ export function MessageParts({ parts, onQuickAction }: MessagePartsProps) {
           case "profile_applied":
             // 自动应用的画像补丁无需前端渲染
             return null;
+          case "agent_artifact_candidate_ref": {
+            const a = part as ChatMessagePart & { type: "agent_artifact_candidate_ref" };
+            return (
+              <AgentArtifactCandidateCard
+                key={index}
+                candidateId={a.candidateId}
+                candidateType={a.candidateType}
+                taskType={a.taskType}
+                summary={a.summary}
+              />
+            );
+          }
           case "text":
             // text 部件已在 message-text 中渲染，这里不重复
             return null;
