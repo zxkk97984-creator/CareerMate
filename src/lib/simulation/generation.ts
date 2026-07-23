@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { chatWithTbox } from "@/lib/tbox/adapter";
 import { getTboxConfig } from "@/lib/env";
 import { buildSimulationFeedback } from "@/lib/career";
@@ -8,6 +9,26 @@ import {
 import { parseAgentArtifactEnvelope } from "@/lib/agentic-v2/artifact-envelope";
 import type { AgentArtifactV1 } from "@/lib/agentic-v2/contracts";
 import { containsSimulationTurnProtocol, type SimulationScenarioKey } from "../simulation";
+
+// ── 严格 Zod 校验 ────────────────────────────────────────
+const simulationTurnDataSchema = z.object({
+  sessionId: z.string().trim().min(1),
+  scenarioKey: z.string().trim().min(1),
+  round: z.number().int().nonnegative(),
+  nextQuestion: z.string().trim().min(1),
+  isComplete: z.literal(false),
+}).strict();
+
+const simulationReportDataSchema = z.object({
+  sessionId: z.string().trim().min(1),
+  scenarioKey: z.string().trim().min(1),
+  score: z.number().int().min(0).max(100),
+  strengths: z.array(z.string()),
+  improvements: z.array(z.string()),
+  evidence: z.array(z.string()),
+  abilityImpact: z.record(z.string(), z.number()),
+  candidateUpdates: z.array(z.unknown()),
+}).strict();
 
 interface SimulationTranscriptTurn {
   role: "user" | "assistant";
@@ -40,11 +61,25 @@ export async function generateSimulationTurn(input: {
   }));
   // API 模式：调用主 Agent
   if (config.mode === "api") {
+    // 构建 business_data.simulationState context
+    const businessContext = input.sessionId ? {
+      schemaVersion: "1",
+      simulationState: {
+        sessionId: input.sessionId,
+        scenarioKey: input.scenarioKey,
+        status: "in_progress",
+        round: input.expectedRound ?? 0,
+        transcript: history.slice(-12),
+      },
+      permissions: { candidateCreationAllowed: true, officialWritesAllowed: false },
+    } : undefined;
+
     const result = await chatWithTbox({
       question: `场景：${input.scenarioTitle}。请根据对话历史给出下一轮追问。`,
       userId: input.userId,
       conversationId: input.remoteConversationId,
       history,
+      context: businessContext,
     }, { config });
 
     // ── V2 信封协议：从文本中提取 CAREERMATE_ARTIFACT ──
@@ -58,39 +93,40 @@ export async function generateSimulationTurn(input: {
       && artifact.status === "success"
       && artifact.requiresUserConfirmation === false
     ) {
-      const data = artifact.data as Record<string, unknown> | null | undefined;
-      const artifactScenarioKey = data?.scenarioKey as string | undefined;
-      const artifactRound = data?.round as number | undefined;
-      const nextQuestion = (data?.nextQuestion as string)?.trim();
+      // Zod 严格校验 data
+      const parsed = simulationTurnDataSchema.safeParse(artifact.data);
+      if (parsed.success) {
+        const d = parsed.data;
 
-      // 校验场景和回合匹配
-      if (
-        artifactScenarioKey === input.scenarioKey
-        && (input.expectedRound === undefined || artifactRound === input.expectedRound)
-        && nextQuestion
-        && nextQuestion.length > 0
-      ) {
-        // 去重：检查是否已存在于转录中
-        const existingQuestions = input.transcript
-          .filter((t) => t.role === "assistant")
-          .map((t) => normalizeQuestion(t.content));
+        // 校验场景、会话和回合匹配
+        if (
+          d.scenarioKey === input.scenarioKey
+          && (input.sessionId === undefined || d.sessionId === input.sessionId)
+          && (input.expectedRound === undefined || d.round === input.expectedRound)
+          && d.isComplete === false
+        ) {
+          // 去重：检查是否已存在于转录中
+          const existingQuestions = input.transcript
+            .filter((t) => t.role === "assistant")
+            .map((t) => normalizeQuestion(t.content));
 
-        if (!existingQuestions.includes(normalizeQuestion(nextQuestion))) {
-          return {
-            data: {
-              text: nextQuestion,
-              conversationId: result.data.conversationId ?? input.remoteConversationId,
-              citations: result.data.citations ?? [],
-              warnings: [...new Set([...result.data.warnings, ...envelope.warnings])],
-              structured: undefined,
-            },
-            meta: result.meta,
-          };
+          if (!existingQuestions.includes(normalizeQuestion(d.nextQuestion))) {
+            return {
+              data: {
+                text: d.nextQuestion,
+                conversationId: result.data.conversationId ?? input.remoteConversationId,
+                citations: result.data.citations ?? [],
+                warnings: [...new Set([...result.data.warnings, ...envelope.warnings])],
+                structured: undefined,
+              },
+              meta: result.meta,
+            };
+          }
+          // 重复问题 → 使用本地降级
+          return buildLocalFallback(input, result, "REPEATED_QUESTION");
         }
-        // 重复问题 → 使用本地降级
-        return buildLocalFallback(input, result, "REPEATED_QUESTION");
       }
-      // 场景/回合不匹配 → 降级
+      // schema/场景/回合不匹配 → 降级
       return buildLocalFallback(input, result, "SCHEMA_MISMATCH");
     }
 
@@ -160,11 +196,24 @@ export async function generateSimulationReport(input: {
 
   // API 模式：调用主 Agent 生成结构化报告
   if (config.mode === "api") {
+    const reportContext = input.sessionId ? {
+      schemaVersion: "1",
+      simulationState: {
+        sessionId: input.sessionId,
+        scenarioKey: input.scenarioKey,
+        status: "completing",
+        round: history.filter((t) => t.role === "user").length,
+        transcript: history.slice(-12),
+      },
+      permissions: { candidateCreationAllowed: true, officialWritesAllowed: false },
+    } : undefined;
+
     const result = await chatWithTbox({
       question: `场景：${input.scenarioTitle}。请根据以上模拟训练的完整对话记录，生成模拟训练报告。`,
       userId: input.userId,
       conversationId: input.remoteConversationId,
       history,
+      context: reportContext,
     }, { config });
 
     if (result.meta.degraded) {
@@ -178,31 +227,36 @@ export async function generateSimulationReport(input: {
       envelope.artifact
       && envelope.artifact.taskType === "simulation_report"
     ) {
-      const data = envelope.artifact.data as Record<string, unknown> | null | undefined;
-      const artifactScenarioKey = data?.scenarioKey as string | undefined;
+      // Zod 严格校验
+      const parsed = simulationReportDataSchema.safeParse(envelope.artifact.data);
+      if (parsed.success) {
+        const d = parsed.data;
 
-      if (artifactScenarioKey === input.scenarioKey) {
-        const structured: SimulationReportResult = {
-          type: "simulation_report",
-          scenarioKey: input.scenarioKey,
-          score: (data?.score as number) ?? 0,
-          strengths: (data?.strengths as string[]) ?? [],
-          improvements: (data?.improvements as string[]) ?? [],
-          evidence: (data?.evidence as string[]) ?? [],
-          abilityImpact: (data?.abilityImpact as Record<string, number>) ?? {},
-          candidateUpdates: (data?.candidateUpdates as { field: string; newValue: unknown; confidence: number; reason: string; evidenceExcerpt: string; requiresConfirmation: true; impactSummary: string }[]) ?? [],
-        };
+        if (d.scenarioKey === input.scenarioKey
+          && (input.sessionId === undefined || d.sessionId === input.sessionId)
+        ) {
+          const structured: SimulationReportResult = {
+            type: "simulation_report",
+            scenarioKey: input.scenarioKey,
+            score: d.score,
+            strengths: d.strengths,
+            improvements: d.improvements,
+            evidence: d.evidence,
+            abilityImpact: d.abilityImpact,
+            candidateUpdates: d.candidateUpdates as SimulationReportResult["candidateUpdates"],
+          };
 
-        return {
-          data: {
-            text: envelope.displayText,
-            structured,
-            conversationId: result.data.conversationId ?? input.remoteConversationId,
-            citations: result.data.citations ?? [],
-            warnings: [...new Set([...result.data.warnings, ...envelope.warnings])],
-          },
-          meta: result.meta,
-        };
+          return {
+            data: {
+              text: envelope.displayText,
+              structured,
+              conversationId: result.data.conversationId ?? input.remoteConversationId,
+              citations: result.data.citations ?? [],
+              warnings: [...new Set([...result.data.warnings, ...envelope.warnings])],
+            },
+            meta: result.meta,
+          };
+        }
       }
     }
 

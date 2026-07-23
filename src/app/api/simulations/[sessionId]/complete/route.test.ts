@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  candidateCreate: vi.fn(),
   findFirst: vi.fn(),
   generateReport: vi.fn(),
   logCreate: vi.fn(),
@@ -12,8 +11,15 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/auth", () => ({ requireCurrentUser: mocks.requireCurrentUser }));
+const createCandidateMock = vi.fn();
 vi.mock("@/lib/simulation/generation", () => ({
   generateSimulationReport: mocks.generateReport,
+}));
+vi.mock("@/lib/agentic-v2/candidate-service", () => ({
+  createAgentArtifactCandidateService: () => ({
+    createCandidate: createCandidateMock,
+  }),
+  AGENT_ARTIFACT_CANDIDATE_TYPES: ["profile_patch", "ability_evidence", "career_plan", "learning_route", "growth_replan", "memory_item", "career_template_draft"],
 }));
 vi.mock("@/lib/prisma", () => ({
   getPrisma: () => ({
@@ -90,7 +96,6 @@ beforeEach(() => {
       updateMany: mocks.sessionUpdateMany,
       update: mocks.sessionUpdate,
     },
-    profileUpdateCandidate: { create: mocks.candidateCreate },
     progressLog: { create: mocks.logCreate },
   }));
 });
@@ -180,7 +185,7 @@ describe("POST /api/simulations/[sessionId]/complete", () => {
   });
 
   it("creates and reports a candidate only for a validated non-degraded update", async () => {
-    mocks.candidateCreate.mockResolvedValue({ id: "candidate-1" });
+    createCandidateMock.mockResolvedValue({ id: "candidate-1" });
     mocks.generateReport.mockResolvedValue({
       data: {
         text: "",
@@ -205,7 +210,7 @@ describe("POST /api/simulations/[sessionId]/complete", () => {
       method: "POST",
     }), { params: Promise.resolve({ sessionId: "session-1" }) });
 
-    expect(mocks.candidateCreate).toHaveBeenCalledTimes(1);
+    expect(createCandidateMock).toHaveBeenCalledTimes(1);
     expect(mocks.logCreate.mock.calls[0][0].data.summary).toContain("已生成画像更新候选");
   });
 
@@ -232,7 +237,7 @@ describe("POST /api/simulations/[sessionId]/complete", () => {
     }), { params: Promise.resolve({ sessionId: "session-1" }) });
 
     expect(mocks.sessionUpdate.mock.calls[0][0].data).toMatchObject({ score: 84, actualMode: "mock" });
-    expect(mocks.candidateCreate).not.toHaveBeenCalled();
+    expect(createCandidateMock).not.toHaveBeenCalled();
     expect(mocks.logCreate.mock.calls[0][0].data.summary).toContain("来源：降级评分");
   });
 });

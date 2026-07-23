@@ -337,35 +337,8 @@ export async function loadAgenticV2Snapshot(
     }
   }
 
-  // ── 组装 DTO ──────────────────────────────────────────
-  const profileSnapshot: ProfileSnapshotV1 = {
-    available: profileAvailable,
-    version: profileVersion,
-    data: profileData as unknown as Record<string, unknown>,
-  } as ProfileSnapshotV1;
-
-  const throughDate = now().toISOString();
-
-  const historySnapshot: HistorySnapshotV1 = {
-    available: true,
-    through: throughDate,
-    data: {
-      activePlan,
-      recentProgress,
-      recentSimulations,
-      confirmedMemories,
-      conversationSummary,
-      contextVersion,
-    },
-  };
-
-  const result: LoadAgenticV2SnapshotResult = {
-    profileSnapshot,
-    historySnapshot,
-    simulationState,
-  };
-
   // ── 字节预算控制：构建可变对象，逐级裁剪后返回最终版本 ──
+  const throughDate = now().toISOString();
   let finalSimulationState = simulationState;
   let finalRecentProgress = recentProgress;
   let finalAbilityEvidence = abilityEvidence;

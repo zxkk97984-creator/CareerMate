@@ -5,7 +5,7 @@ import { getPrisma } from "@/lib/prisma";
 import { canCompleteSimulation, parseSimulationTranscript, simulationDto } from "@/lib/simulation";
 import { generateSimulationReport } from "@/lib/simulation/generation";
 import { simulationReportResultSchema } from "@/lib/tbox/capability-schemas";
-import { ALLOWED_CANDIDATE_FIELDS } from "@/lib/profile/candidate-service";
+import { createAgentArtifactCandidateService } from "@/lib/agentic-v2/candidate-service";
 
 class CompletionConflict extends Error {}
 
@@ -64,7 +64,6 @@ export async function POST(_request: Request, context: { params: Promise<{ sessi
   };
 
   // 只有通过 Schema 校验的合法报告才创建画像候选
-  const scores = parseJson<Record<string, number>>(user.profile.abilityScores, {});
   let candidateId: string | null = null;
 
   try {
@@ -75,19 +74,43 @@ export async function POST(_request: Request, context: { params: Promise<{ sessi
       });
       if (claim.count !== 1) throw new CompletionConflict();
 
-      if (shouldCreateCandidate) {
-        const primaryUpdate = feedback.candidateUpdates.find((u) => ALLOWED_CANDIDATE_FIELDS.has(u.field));
-        if (primaryUpdate) {
-          const field = primaryUpdate.field;
-          const oldValue = field.startsWith("abilityScores.") ? scores[field.split(".")[1]!] ?? null : null;
-          const candidate = await tx.profileUpdateCandidate.create({ data: {
-            userId: user.id, source: "simulation", field, oldValue: toJson(oldValue),
-            newValue: toJson(primaryUpdate.newValue), confidence: primaryUpdate.confidence,
-            reason: primaryUpdate.reason,
-            evidenceExcerpt: primaryUpdate.evidenceExcerpt ?? "",
-            impactSummary: primaryUpdate.impactSummary ?? "",
-          } });
-          candidateId = candidate.id;
+      if (shouldCreateCandidate && feedback.candidateUpdates.length > 0) {
+        try {
+          const candidateService = createAgentArtifactCandidateService();
+          const result = await candidateService.createCandidate({
+            userId: user.id,
+            candidateType: "ability_evidence",
+            artifact: {
+              schemaVersion: "1.0",
+              taskType: "simulation_report",
+              status: "pending_confirmation",
+              summary: `${session.scenarioTitle} 训练报告`,
+              data: {
+                abilityEvidence: feedback.candidateUpdates.map((u) => ({
+                  abilityKey: u.field.replace("abilityScores.", ""),
+                  summary: u.reason,
+                  sourceType: "simulation",
+                  sourceRef: session.id,
+                  confidence: u.confidence,
+                })),
+              },
+              evidence: [],
+              sources: [],
+              assumptions: [],
+              warnings: [],
+              requiresUserConfirmation: true,
+              baseVersion: user.profile?.version ?? 1,
+              nextActions: [],
+            },
+            context: {
+              sessionId: session.id,
+              conversationId: session.remoteConversationId ?? undefined,
+              idempotencyKey: `sim-report-${session.id}`,
+            },
+          });
+          candidateId = result.id;
+        } catch {
+          // 候选创建失败不影响主流程
         }
       }
 

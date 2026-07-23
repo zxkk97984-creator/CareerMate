@@ -106,6 +106,7 @@ describe("simulation generation (V2 envelope protocol)", () => {
       status: "success",
       summary: "继续训练",
       data: {
+        sessionId: "s1",
         scenarioKey: "ai_office",
         round: 1,
         nextQuestion: "错误场景的追问",
@@ -149,6 +150,7 @@ describe("simulation generation (V2 envelope protocol)", () => {
       status: "success",
       summary: "继续训练",
       data: {
+        sessionId: "session-1",
         scenarioKey: "cross_role_communication",
         round: 2,
         nextQuestion: "你会怎样定义协作验收标准",
@@ -216,6 +218,7 @@ describe("simulation generation (V2 envelope protocol)", () => {
       status: "success",
       summary: "训练完成报告",
       data: {
+        sessionId: "session-1",
         scenarioKey: "cross_role_communication",
         score: 85,
         strengths: ["沟通清晰"],

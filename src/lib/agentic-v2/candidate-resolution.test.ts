@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { resolveAgentArtifactCandidate, AgentArtifactCandidateResolutionError } from "./candidate-resolution";
-import type { AgentArtifactCandidateType } from "./candidate-service";
+import { resolveAgentArtifactCandidate } from "./candidate-resolution";
 
 const validPlanArtifact = {
   schemaVersion: "1.0" as const,
