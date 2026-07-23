@@ -1,26 +1,16 @@
 import "server-only";
-import {
-  CAREERMATE_CONTEXT_TOKEN_SCOPES,
-  signCareerMateContextToken,
-  type ContextTokenSignOptions,
-} from "@/lib/agent-context-auth";
+import { businessDataV1Schema, type BusinessDataV1, type ProfileSnapshotV1, type HistorySnapshotV1, type SimulationStateV1 } from "@/lib/agentic-v2/contracts";
 import { agenticV2InteractionSchema } from "./schemas";
 import type { z } from "zod";
 
 export { agenticV2InteractionSchema } from "./schemas";
 export type AgenticV2Interaction = z.infer<typeof agenticV2InteractionSchema>;
 
-export interface AgenticV2BusinessData {
-  schemaVersion: "1";
-  careermate_context_token: string;
-  interaction: AgenticV2Interaction;
-}
-
-interface BuildAgenticV2BusinessDataInput {
-  userId: string;
-  conversationId: string;
-  clientRequestId: string;
+export interface BuildAgenticV2BusinessDataInput {
   interaction?: AgenticV2Interaction;
+  profileSnapshot: ProfileSnapshotV1;
+  historySnapshot: HistorySnapshotV1;
+  simulationState: SimulationStateV1 | null;
 }
 
 const DEFAULT_INTERACTION: AgenticV2Interaction = {
@@ -29,27 +19,24 @@ const DEFAULT_INTERACTION: AgenticV2Interaction = {
 };
 
 /**
- * Builds the only private context sent to the V2 Agent.
- * Authoritative profile/history data remains behind the scoped MCP tools.
+ * 构建发送给 V2 Agent 的唯一私有上下文。
+ * 接收已消毒的快照，不做任何数据库查询或 token 签名。
+ * 权威数据始终保留在 CareerMate DB 中。
  */
 export function buildAgenticV2BusinessData(
   input: BuildAgenticV2BusinessDataInput,
-  options: ContextTokenSignOptions = {},
-): AgenticV2BusinessData {
+): BusinessDataV1 {
   const interaction = agenticV2InteractionSchema.parse(input.interaction ?? DEFAULT_INTERACTION);
-  const contextToken = signCareerMateContextToken({
-    sub: input.userId,
-    sid: input.conversationId,
-    scopes: CAREERMATE_CONTEXT_TOKEN_SCOPES,
-  }, {
-    ...options,
-    ttlSeconds: Math.min(options.ttlSeconds ?? 300, 600),
-    randomUUID: () => input.clientRequestId,
-  });
 
-  return {
+  return businessDataV1Schema.parse({
     schemaVersion: "1",
-    careermate_context_token: contextToken,
     interaction,
-  };
+    profileSnapshot: input.profileSnapshot,
+    historySnapshot: input.historySnapshot,
+    simulationState: input.simulationState,
+    permissions: {
+      candidateCreationAllowed: true,
+      officialWritesAllowed: false,
+    },
+  });
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   agentArtifactV1Schema,
+  businessDataV1Schema,
   evidenceBundleV1Schema,
   researchReportV1Schema,
   reviewReportV1Schema,
@@ -220,5 +221,73 @@ describe("Agentic V2 platform contracts", () => {
     expect(reviewReportV1Schema.safeParse(value).success).toBe(true);
     expect(reviewReportV1Schema.safeParse({ ...value, verdict: "approved" }).success).toBe(false);
     expect(reviewReportV1Schema.safeParse({ verdict: "pass", issues: [], requiredChanges: [], riskFlags: [] }).success).toBe(false);
+  });
+
+  it("accepts the new snapshot-based business_data with profile and history", () => {
+    const businessData = {
+      schemaVersion: "1",
+      interaction: {
+        surface: "career_path",
+        action: "regenerate_plan",
+        targetRef: "plan-1",
+      },
+      profileSnapshot: {
+        available: true,
+        version: 5,
+        data: {
+          targetRole: "data_analyst",
+          weeklyAvailableHours: 8,
+          abilityScores: { dataAnalysis: 62 },
+          abilityEvidence: [],
+        },
+      },
+      historySnapshot: {
+        available: true,
+        through: "2026-07-23T08:00:00.000Z",
+        data: {
+          activePlan: { id: "plan-1", version: 3, targetRole: "data_analyst" },
+          recentProgress: [],
+          recentSimulations: [],
+          confirmedMemories: [],
+          conversationSummary: "",
+        },
+      },
+      simulationState: null,
+      permissions: {
+        candidateCreationAllowed: true,
+        officialWritesAllowed: false,
+      },
+    };
+
+    expect(businessDataV1Schema.parse(businessData)).toEqual(businessData);
+  });
+
+  it("rejects careermate_context_token in the snapshot-based contract", () => {
+    const businessData = {
+      schemaVersion: "1",
+      interaction: {
+        surface: "career_path",
+        action: "regenerate_plan",
+        targetRef: "plan-1",
+      },
+      profileSnapshot: {
+        available: true,
+        version: 5,
+        data: { targetRole: "data_analyst" },
+      },
+      historySnapshot: {
+        available: true,
+        through: "2026-07-23T08:00:00.000Z",
+        data: { activePlan: { id: "plan-1", version: 3, targetRole: "data_analyst" } },
+      },
+      simulationState: null,
+      permissions: {
+        candidateCreationAllowed: true,
+        officialWritesAllowed: false,
+      },
+      careermate_context_token: "must-not-be-active",
+    };
+
+    expect(businessDataV1Schema.safeParse(businessData).success).toBe(false);
   });
 });

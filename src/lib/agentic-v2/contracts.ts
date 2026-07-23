@@ -76,11 +76,41 @@ export const interactionV1Schema = z.object({
   targetRef: z.string().trim().min(1).max(256).optional(),
 }).strict();
 
-/** Context sent to an Agentic V2 integration. It deliberately contains no profile payload. */
+/** Context sent to an Agentic V2 integration using sanitized snapshots instead of a token. */
+const profileSnapshotV1Schema = z.object({
+  available: z.boolean(),
+  version: z.number().int().nonnegative().nullable(),
+  data: serializableJsonValueSchema,
+}).strict();
+
+const historySnapshotV1Schema = z.object({
+  available: z.boolean(),
+  through: z.string().datetime({ offset: true }).nullable(),
+  data: serializableJsonValueSchema,
+}).strict();
+
+export const simulationStateV1Schema = z.object({
+  sessionId: z.string().trim().min(1).max(160),
+  scenarioKey: z.string().trim().min(1).max(160),
+  status: z.string().trim().min(1).max(80),
+  round: z.number().int().nonnegative(),
+  transcript: z.array(serializableJsonValueSchema).max(12),
+}).strict();
+
+export type ProfileSnapshotV1 = z.infer<typeof profileSnapshotV1Schema>;
+export type HistorySnapshotV1 = z.infer<typeof historySnapshotV1Schema>;
+export type SimulationStateV1 = z.infer<typeof simulationStateV1Schema>;
+
 export const businessDataV1Schema = z.object({
   schemaVersion: z.literal("1"),
-  careermate_context_token: z.string().trim().min(1).max(4096),
   interaction: interactionV1Schema.optional(),
+  profileSnapshot: profileSnapshotV1Schema,
+  historySnapshot: historySnapshotV1Schema,
+  simulationState: simulationStateV1Schema.nullable(),
+  permissions: z.object({
+    candidateCreationAllowed: z.literal(true),
+    officialWritesAllowed: z.literal(false),
+  }).strict(),
 }).strict();
 
 export type BusinessDataV1 = z.infer<typeof businessDataV1Schema>;

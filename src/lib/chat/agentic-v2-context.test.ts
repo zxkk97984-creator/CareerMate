@@ -1,57 +1,77 @@
 import { describe, expect, it } from "vitest";
-import { verifyCareerMateContextToken } from "@/lib/agent-context-auth";
 import {
   agenticV2InteractionSchema,
   buildAgenticV2BusinessData,
 } from "./agentic-v2-context";
 
-const signingKey = "test-agentic-v2-business-data-key-at-least-32-bytes";
+describe("Agentic V2 business_data (snapshot-based)", () => {
+  const profileSnapshot = {
+    available: true,
+    version: 5,
+    data: {
+      targetRole: "data_analyst",
+      weeklyAvailableHours: 8,
+      abilityScores: { dataAnalysis: 62 },
+      abilityEvidence: [],
+    },
+  };
 
-describe("Agentic V2 business_data", () => {
-  it("contains only a short-lived capability token and observational interaction context", () => {
+  const historySnapshot = {
+    available: true,
+    through: "2026-07-23T08:00:00.000Z",
+    data: {
+      activePlan: { id: "plan-1", version: 3, targetRole: "data_analyst" },
+      recentProgress: [],
+      recentSimulations: [],
+      confirmedMemories: [],
+      conversationSummary: "",
+    },
+  };
+
+  it("builds business_data from sanitized snapshots without a context token", () => {
     const businessData = buildAgenticV2BusinessData({
-      userId: "user-42",
-      conversationId: "conversation-9",
-      clientRequestId: "550e8400-e29b-41d4-a716-446655440000",
       interaction: { surface: "career_path", action: "regenerate_plan" },
-    }, {
-      secret: signingKey,
-      now: () => 1_700_000_000,
+      profileSnapshot,
+      historySnapshot,
+      simulationState: null,
     });
 
     expect(businessData).toEqual({
       schemaVersion: "1",
-      careermate_context_token: expect.any(String),
       interaction: { surface: "career_path", action: "regenerate_plan" },
+      profileSnapshot,
+      historySnapshot,
+      simulationState: null,
+      permissions: {
+        candidateCreationAllowed: true,
+        officialWritesAllowed: false,
+      },
     });
-    expect(JSON.stringify(businessData)).not.toContain("profile");
-    expect(JSON.stringify(businessData)).not.toContain("resume");
 
-    const claims = verifyCareerMateContextToken(businessData.careermate_context_token, {
-      secret: signingKey,
-      now: () => 1_700_000_001,
-    });
-    expect(claims).toMatchObject({
-      sub: "user-42",
-      sid: "conversation-9",
-      jti: "550e8400-e29b-41d4-a716-446655440000",
-      scopes: [
-        "profile:read",
-        "history:read",
-        "resources:read",
-        "candidates:create",
-        "simulation:append",
-      ],
-    });
-    expect(claims.exp - claims.iat).toBeLessThanOrEqual(600);
+    // 必须不包含 context token
+    expect(JSON.stringify(businessData)).not.toContain("careermate_context_token");
+    expect(JSON.stringify(businessData)).not.toContain("token");
   });
 
-  it("uses neutral chat defaults when a page supplies no interaction", () => {
+  it("does not expose identity or auth fields in the output", () => {
     const businessData = buildAgenticV2BusinessData({
-      userId: "user-42",
-      conversationId: "conversation-9",
-      clientRequestId: "550e8400-e29b-41d4-a716-446655440001",
-    }, { secret: signingKey });
+      profileSnapshot,
+      historySnapshot,
+      simulationState: null,
+    });
+
+    const serialized = JSON.stringify(businessData);
+    for (const forbidden of ["email", "password", "passwordHash", "tokenHash", "phone", "realName", "careermate_context_token"]) {
+      expect(serialized).not.toContain(forbidden);
+    }
+  });
+
+  it("uses neutral chat defaults when no interaction is supplied", () => {
+    const businessData = buildAgenticV2BusinessData({
+      profileSnapshot,
+      historySnapshot,
+      simulationState: null,
+    });
 
     expect(businessData.interaction).toEqual({ surface: "chat", action: "message_submit" });
   });
@@ -77,5 +97,13 @@ describe("Agentic V2 business_data", () => {
       surface: "chat",
       action: "message_submit",
     }).success).toBe(true);
+  });
+
+  it("rejects missing required snapshot fields", () => {
+    expect(() => buildAgenticV2BusinessData({
+      profileSnapshot: profileSnapshot as any,
+      historySnapshot: undefined as any,
+      simulationState: null,
+    })).toThrow();
   });
 });
