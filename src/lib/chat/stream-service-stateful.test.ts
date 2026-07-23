@@ -41,18 +41,22 @@ vi.mock("@/lib/env", () => ({
   isAgenticV2Enabled: () => mocks.agenticV2Enabled,
   isAgentOperationsEnabled: () => true,
   isPlanV2WriteEnabled: () => true,
-  getCareerMateContextTokenSecret: () => "test-agentic-v2-stream-key-at-least-32-bytes",
 }));
 
 vi.mock("@/lib/prisma", () => ({
   getPrisma: () => ({
-    userProfile: { findUnique: vi.fn().mockResolvedValue({ userId: "u1", version: 1, memoryEnabled: true, educationStage: null, major: null, targetRole: null, targetRoleLabel: null, weeklyAvailableHours: null, learningPreference: "[]", experienceSummary: "", constraints: "[]", interestTags: "[]" }) },
+    userProfile: { findUnique: vi.fn().mockResolvedValue({ userId: "u1", version: 1, memoryEnabled: true, educationStage: null, major: null, targetRole: null, targetRoleLabel: null, weeklyAvailableHours: null, learningPreference: "[]", experienceSummary: "", constraints: "[]", interestTags: "[]", abilityScores: "{}", onboardingCompleted: false }) },
     questionLedger: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn().mockResolvedValue(null), upsert: vi.fn() },
     memoryItem: { findMany: vi.fn().mockResolvedValue([]) },
     careerPlan: { findFirst: vi.fn().mockResolvedValue(null), create: vi.fn().mockResolvedValue({ id: "plan-1", version: 1 }) },
     careerExplorationReport: { create: vi.fn().mockResolvedValue({ id: "rep-1" }) },
     profileUpdateCandidate: { create: vi.fn().mockResolvedValue({ id: "cand-1" }), findFirst: vi.fn().mockResolvedValue(null) },
-    chatConversation: { findFirst: vi.fn().mockResolvedValue(null) },
+    chatConversation: { findUnique: vi.fn().mockResolvedValue(null), findFirst: vi.fn().mockResolvedValue(null), update: vi.fn() },
+    abilityEvidence: { findMany: vi.fn().mockResolvedValue([]) },
+    progressLog: { findMany: vi.fn().mockResolvedValue([]) },
+    simulationSession: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn().mockResolvedValue(null) },
+    operationExecution: { create: vi.fn().mockResolvedValue({}), findFirst: vi.fn().mockResolvedValue(null), updateMany: vi.fn() },
+    agentArtifactCandidate: { upsert: vi.fn() },
   }),
 }));
 
@@ -121,20 +125,27 @@ describe("stateful stream (STATEFUL_CHAT_TURNS=true)", () => {
       question: "根据我的情况调整规划",
       conversationId: "remote-existing",
       searchPolicy: "off",
-      context: {
+      context: expect.objectContaining({
         schemaVersion: "1",
-        careermate_context_token: expect.any(String),
-        interaction: { surface: "career_path", action: "regenerate_plan" },
-      },
+        profileSnapshot: expect.objectContaining({ available: true }),
+        historySnapshot: expect.objectContaining({ available: true }),
+        permissions: {
+          candidateCreationAllowed: true,
+          officialWritesAllowed: false,
+        },
+      }),
     });
     expect(input.history).toBeUndefined();
     const serialized = JSON.stringify(input.context);
     expect(serialized).not.toContain("private conversation summary");
-    expect(serialized).not.toContain("educationStage");
+    expect(serialized).not.toContain("careermate_context_token");
     expect(Object.keys(input.context).sort()).toEqual([
-      "careermate_context_token",
+      "historySnapshot",
       "interaction",
+      "permissions",
+      "profileSnapshot",
       "schemaVersion",
+      "simulationState",
     ]);
     expect(mocks.turnFinalize).toHaveBeenCalledWith(expect.objectContaining({
       remoteBinding: { agentId: "test", agentVersion: undefined },

@@ -14,6 +14,7 @@ import { getPrisma } from "@/lib/prisma";
 import type { TboxHistoryMessage } from "@/lib/tbox/types";
 import type { AgentOperation } from "./agent-protocol";
 import { buildAgenticV2BusinessData, type AgenticV2Interaction } from "./agentic-v2-context";
+import { loadAgenticV2Snapshot } from "./agentic-v2-snapshot";
 import { resolveBoundRemoteConversationId } from "./remote-conversation-binding";
 
 // ── 类型 ──────────────────────────────────────────────────
@@ -123,17 +124,20 @@ async function handleStatefulStream(
 
   // ── 新轮次：加载历史 + 构建上下文 + 调用百宝箱 ──────
   const turn = beginResult.turn;
+  const agenticV2 = isAgenticV2Enabled();
 
-  const [convDetail, messages, memories, activePlan, answeredQuestions] = await Promise.all([
+  const [convDetail, messages, memories, activePlan, answeredQuestions, agenticSnapshot] = await Promise.all([
     svc.getConversation(conversationId, userId).catch(() => null),
     svc.getMessages(conversationId, userId, undefined, 24).catch(() => []),
     loadContextMemories(userId),
     loadActivePlan(userId),
     loadAnsweredQuestionKeys(conversationId),
+    agenticV2
+      ? loadAgenticV2Snapshot({ userId, conversationId, interaction: options.interaction }).catch(() => null)
+      : Promise.resolve(null),
   ]);
 
   const convState = parseConversationState(convDetail?.state ?? null);
-  const agenticV2 = isAgenticV2Enabled();
 
   // 构建最近消息历史——排除当前轮次刚持久化的用户消息（避免重复）
   const recentMessages = messages
@@ -218,12 +222,12 @@ async function handleStatefulStream(
 
         if (agenticV2) {
           question = message;
-          context = buildAgenticV2BusinessData({
-            userId,
-            conversationId,
-            clientRequestId,
-            interaction: options.interaction,
-          });
+          context = agenticSnapshot
+            ? buildAgenticV2BusinessData({
+                interaction: options.interaction,
+                ...agenticSnapshot,
+              })
+            : undefined;
           history = undefined;
         } else if (transport === "provider_history") {
           // provider_history: 发送原始问题 + 裁剪后的历史（排除本轮消息）
@@ -487,6 +491,11 @@ async function handleLegacyStream(
     agentVersion: config.agentVersion,
   });
 
+  // 在 Agentic V2 路径下加载消毒后的快照
+  const legacySnapshot = agenticV2
+    ? await loadAgenticV2Snapshot({ userId, conversationId, interaction: options.interaction }).catch(() => null)
+    : null;
+
   const stream = new ReadableStream({
     async start(controller) {
       let fullContent = "";
@@ -510,12 +519,12 @@ async function handleLegacyStream(
             question: message,
             userId,
             conversationId: existingRemoteId,
-            context: agenticV2 ? buildAgenticV2BusinessData({
-              userId,
-              conversationId,
-              clientRequestId,
-              interaction: options.interaction,
-            }) : undefined,
+            context: agenticV2 && legacySnapshot
+              ? buildAgenticV2BusinessData({
+                  interaction: options.interaction,
+                  ...legacySnapshot,
+                })
+              : undefined,
             searchPolicy: agenticV2 ? "off" : undefined,
           },
           { config, signal },
