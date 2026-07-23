@@ -130,15 +130,39 @@ async function handleStatefulStream(
   const turn = beginResult.turn;
   const agenticV2 = isAgenticV2Enabled();
 
-  const [convDetail, messages, memories, activePlan, answeredQuestions, agenticSnapshot] = await Promise.all([
+  // 先尝试加载 V2 快照；失败则安全失败当前轮次
+  let agenticSnapshot: Awaited<ReturnType<typeof loadAgenticV2Snapshot>> | null = null;
+  if (agenticV2) {
+    try {
+      agenticSnapshot = await loadAgenticV2Snapshot({
+        userId, conversationId, interaction: options.interaction,
+      });
+    } catch (snapshotErr) {
+      const errMessage = snapshotErr instanceof Error ? snapshotErr.message : "快照加载失败";
+      await turnService.fail({
+        turn: {
+          id: turn.id, conversationId, userId, clientRequestId,
+          userMessageId: turn.userMessageId,
+          assistantMessageId: turn.assistantMessageId,
+        },
+        partialText: "",
+        code: "SNAPSHOT_LOAD_FAILED",
+      }).catch(() => {});
+      return new Response(JSON.stringify({
+        error: { code: "SNAPSHOT_LOAD_FAILED", message: errMessage },
+      }), {
+        status: 502,
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+      });
+    }
+  }
+
+  const [convDetail, messages, memories, activePlan, answeredQuestions] = await Promise.all([
     svc.getConversation(conversationId, userId).catch(() => null),
     svc.getMessages(conversationId, userId, undefined, 24).catch(() => []),
     loadContextMemories(userId),
     loadActivePlan(userId),
     loadAnsweredQuestionKeys(conversationId),
-    agenticV2
-      ? loadAgenticV2Snapshot({ userId, conversationId, interaction: options.interaction }).catch(() => null)
-      : Promise.resolve(null),
   ]);
 
   const convState = parseConversationState(convDetail?.state ?? null);
@@ -537,10 +561,20 @@ async function handleLegacyStream(
     agentVersion: config.agentVersion,
   });
 
-  // 在 Agentic V2 路径下加载消毒后的快照
-  const legacySnapshot = agenticV2
-    ? await loadAgenticV2Snapshot({ userId, conversationId, interaction: options.interaction }).catch(() => null)
-    : null;
+  // 在 Agentic V2 路径下加载消毒后的快照（失败则安全失败）
+  let legacySnapshot: Awaited<ReturnType<typeof loadAgenticV2Snapshot>> | null = null;
+  if (agenticV2) {
+    try {
+      legacySnapshot = await loadAgenticV2Snapshot({ userId, conversationId, interaction: options.interaction });
+    } catch {
+      return new Response(JSON.stringify({
+        error: { code: "SNAPSHOT_LOAD_FAILED", message: "快照加载失败" },
+      }), {
+        status: 502,
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+      });
+    }
+  }
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -591,6 +625,12 @@ async function handleLegacyStream(
         finalMeta = aiResponse.meta as unknown as Record<string, unknown>;
         remoteConversationId = aiResponse.data.conversationId ?? remoteConversationId;
 
+        // ── Agentic V2 信封解析（legacy 路径也共享） ──
+        const legacyEnvelope = agenticV2
+          ? parseAgentArtifactEnvelope(aiResponse.data.text || fullContent)
+          : { displayText: fullContent, warnings: [] as string[] };
+        const legacyAssistantText = agenticV2 ? legacyEnvelope.displayText : fullContent;
+
         // 旧路径：只保留正文，不执行业务写入
         // AgentResponse 解析仅用于结构化模式下的 operations
         let operations: AgentOperation[] = [];
@@ -601,8 +641,31 @@ async function handleLegacyStream(
 
         // finalize 消息
         const parts: unknown[] = [];
+
+        // 摄入候选（V2 信封协议）
+        if (agenticV2 && legacyEnvelope.artifact) {
+          try {
+            const candidateService = createAgentArtifactCandidateService();
+            const ingestionResult = await ingestAgentArtifact(
+              {
+                userId,
+                conversationId,
+                sessionId: remoteConversationId ?? conversationId,
+                clientRequestId,
+                artifact: legacyEnvelope.artifact,
+              },
+              candidateService,
+            );
+            if (ingestionResult.candidate) {
+              parts.push(agentArtifactCandidateRefPart(ingestionResult.candidate));
+            }
+          } catch {
+            // 候选摄入失败不影响主流程
+          }
+        }
+
         await svc.updateMessage(assistantMsg.id, {
-          content: fullContent,
+          content: legacyAssistantText,
           parts: JSON.stringify(parts),
           status: "completed",
           executionMeta: JSON.stringify(finalMeta ?? {}),

@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   turnFinalize: vi.fn(),
   turnFail: vi.fn(),
   agenticV2Enabled: false,
+  snapshotShouldThrow: false,
 }));
 
 vi.mock("@/lib/tbox/streaming", async (importOriginal) => {
@@ -41,6 +42,20 @@ vi.mock("@/lib/env", () => ({
   isAgenticV2Enabled: () => mocks.agenticV2Enabled,
   isAgentOperationsEnabled: () => true,
   isPlanV2WriteEnabled: () => true,
+}));
+
+vi.mock("./agentic-v2-snapshot", () => ({
+  loadAgenticV2Snapshot: vi.fn().mockImplementation(async () => {
+    if (mocks.snapshotShouldThrow) throw new Error("SNAPSHOT_TOO_LARGE");
+    return {
+      profileSnapshot: { available: true, version: 1, data: {} },
+      historySnapshot: { available: true, through: "2026-07-23T00:00:00.000Z", data: { activePlan: null, recentProgress: [], recentSimulations: [], confirmedMemories: [], conversationSummary: "", contextVersion: 1 } },
+      simulationState: null,
+    };
+  }),
+  AgenticV2SnapshotError: class extends Error {
+    constructor(msg: string, public code: string) { super(msg); }
+  },
 }));
 
 vi.mock("@/lib/prisma", () => ({
@@ -413,5 +428,34 @@ describe("stateful stream (STATEFUL_CHAT_TURNS=true)", () => {
     const finalizeCall = mocks.turnFinalize.mock.calls[0][0];
     const parts = finalizeCall.parts as Array<{ type: string }>;
     expect(parts.find((p) => p.type === "agent_artifact_candidate_ref")).toBeUndefined();
+  });
+
+  it("Agentic V2 快照加载失败时安全失败轮次，不以 undefined context 继续", async () => {
+    mocks.agenticV2Enabled = true;
+    mocks.snapshotShouldThrow = true;
+
+    const response = await handleStreamRequest({
+      userId: "u1",
+      conversationId: "c1",
+      message: "你好",
+      clientRequestId: "req-snap-fail",
+    }, fakeSvc() as any);
+
+    // 不应调用 TBox streaming（因为没有有效 context）
+    expect(mocks.streamProgressive).not.toHaveBeenCalled();
+    // 应调用 turnFail 安全失败
+    expect(mocks.turnFail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        turn: expect.objectContaining({
+          id: "turn-1",
+        }),
+        code: "SNAPSHOT_LOAD_FAILED",
+      }),
+    );
+    // 返回 JSON 错误（502）
+    const body = await response.json();
+    expect(body.error).toBeDefined();
+    expect(body.error.code).toBe("SNAPSHOT_LOAD_FAILED");
+    mocks.snapshotShouldThrow = false;
   });
 });
