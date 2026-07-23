@@ -1,0 +1,88 @@
+{
+  "evidenceBundle": {
+    "schemaVersion": "1.0",
+    "request": {
+      "action": "career_plan",
+      "surface": "chat",
+      "targetRole": "data_analyst"
+    },
+    "profileSnapshot": {
+      "available": true,
+      "version": 7,
+      "data": {
+        "targetRole": "data_analyst",
+        "targetRoleLabel": "数据分析师",
+        "educationStage": "大三",
+        "major": "统计学",
+        "weeklyAvailableHours": 10,
+        "learningPreference": ["项目制学习", "在线课程"],
+        "constraints": ["每周不超过10小时"],
+        "abilityScores": {
+          "python": 65,
+          "sql": 55,
+          "statistics": 70,
+          "dataVisualization": 50
+        }
+      }
+    },
+    "historySnapshot": {
+      "available": true,
+      "through": "msg-15",
+      "data": [
+        {
+          "targetRoleLabel": "数据分析师",
+          "status": "active",
+          "currentMonthIndex": 2,
+          "version": 1
+        }
+      ]
+    },
+    "careerBaseline": {
+      "roleKey": "data_analyst",
+      "templateVersion": "2026.07",
+      "evidence": [
+        {
+          "type": "requirement",
+          "confidence": "high",
+          "summary": "数据分析师需掌握 SQL、Python、统计分析和数据可视化",
+          "source": "职业能力模板库"
+        },
+        {
+          "type": "requirement",
+          "confidence": "medium",
+          "summary": "入门级数据分析师通常要求本科及以上学历",
+          "source": "职业能力模板库"
+        }
+      ]
+    },
+    "marketEvidence": {
+      "searched": true,
+      "skipReason": null,
+      "collectedAt": "2026-07-22T08:00:00.000Z",
+      "scope": {
+        "region": "CN",
+        "experienceLevel": "entry",
+        "timeRange": "2026-Q3"
+      },
+      "findings": [
+        {
+          "claim": "2026年数据分析师岗位需求同比增长15%",
+          "confidence": "medium",
+          "url": "https://example.com/job-report-2026"
+        },
+        {
+          "claim": "入门数据分析师平均薪资 8K-15K/月",
+          "confidence": "medium",
+          "type": "market_salary",
+          "url": "https://example.com/salary-2026"
+        }
+      ],
+      "sources": [
+        { "name": "2026年互联网人才报告", "url": "https://example.com/job-report-2026" },
+        { "name": "薪资统计平台", "url": "https://example.com/salary-2026" }
+      ],
+      "conflicts": [],
+      "confidence": "medium"
+    }
+  }
+}

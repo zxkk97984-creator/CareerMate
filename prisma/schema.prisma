@@ -28,6 +28,7 @@ model User {
   abilityEvidence         AbilityEvidence[]
   explorationReports      CareerExplorationReport[]
   reviewedDrafts          RoleDraft[]               @relation("RoleDraftReviewer")
+  artifactCandidates      AgentArtifactCandidate[]
 }
 
 model UserProfile {
@@ -264,6 +265,8 @@ model ChatConversation {
   title                  String
   status                 String   @default("active")
   remoteConversationId   String?
+  remoteAgentId          String?
+  remoteAgentVersion     String?
   state                  String   @default("{}")
   contextVersion         Int      @default(1)
   activeTurnId           String?
@@ -280,8 +283,31 @@ model ChatConversation {
   updateCandidates ProfileUpdateCandidate[]
   reports          CareerExplorationReport[]
   questionLedger   QuestionLedger[]
+  artifactCandidates AgentArtifactCandidate[]
 
   @@index([userId, status, lastMessageAt])
+}
+
+model AgentArtifactCandidate {
+  id                   String    @id @default(cuid())
+  userId               String
+  idempotencyKey       String
+  candidateType        String
+  status               String    @default("pending")
+  artifact             String
+  baseVersion          Int?
+  sourceSessionId      String
+  sourceConversationId String?
+  resolvedAt           DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  user               User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceConversation ChatConversation? @relation(fields: [sourceConversationId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status, createdAt])
+  @@index([sourceConversationId])
+  @@unique([userId, sourceSessionId, idempotencyKey])
 }
 
 model ChatMessage {

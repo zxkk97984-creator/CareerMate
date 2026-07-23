@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  candidateCreate: vi.fn(),
   findFirst: vi.fn(),
   generateReport: vi.fn(),
   logCreate: vi.fn(),
@@ -12,8 +11,15 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/auth", () => ({ requireCurrentUser: mocks.requireCurrentUser }));
+const createCandidateMock = vi.fn();
 vi.mock("@/lib/simulation/generation", () => ({
   generateSimulationReport: mocks.generateReport,
+}));
+vi.mock("@/lib/agentic-v2/candidate-service", () => ({
+  createAgentArtifactCandidateService: () => ({
+    createCandidate: createCandidateMock,
+  }),
+  AGENT_ARTIFACT_CANDIDATE_TYPES: ["profile_patch", "ability_evidence", "career_plan", "learning_route", "growth_replan", "memory_item", "career_template_draft"],
 }));
 vi.mock("@/lib/prisma", () => ({
   getPrisma: () => ({
@@ -90,12 +96,35 @@ beforeEach(() => {
       updateMany: mocks.sessionUpdateMany,
       update: mocks.sessionUpdate,
     },
-    profileUpdateCandidate: { create: mocks.candidateCreate },
     progressLog: { create: mocks.logCreate },
   }));
 });
 
 describe("POST /api/simulations/[sessionId]/complete", () => {
+  it("已完成会话从反馈元数据恢复 V2 候选 ID", async () => {
+    mocks.findFirst.mockResolvedValue({
+      ...session,
+      status: "completed",
+      candidateId: null,
+      feedback: JSON.stringify({
+        score: 84,
+        strengths: ["目标清晰"],
+        candidateId: "candidate-1",
+      }),
+    });
+
+    const response = await POST(new Request(
+      "http://localhost/api/simulations/session-1/complete",
+      { method: "POST" },
+    ), { params: Promise.resolve({ sessionId: "session-1" }) });
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.data.candidateId).toBe("candidate-1");
+    expect(payload.data.alreadyCompleted).toBe(true);
+    expect(mocks.generateReport).not.toHaveBeenCalled();
+  });
+
   it("keeps the session retryable when the API report has no valid structure", async () => {
     mocks.generateReport.mockResolvedValue({
       data: {
@@ -116,6 +145,7 @@ describe("POST /api/simulations/[sessionId]/complete", () => {
     expect(payload.error.code).toBe("SIMULATION_REPORT_INVALID");
     expect(mocks.transaction).not.toHaveBeenCalled();
     expect(mocks.generateReport).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: "session-1",
       remoteConversationId: "remote-1",
     }));
   });
@@ -180,7 +210,7 @@ describe("POST /api/simulations/[sessionId]/complete", () => {
   });
 
   it("creates and reports a candidate only for a validated non-degraded update", async () => {
-    mocks.candidateCreate.mockResolvedValue({ id: "candidate-1" });
+    createCandidateMock.mockResolvedValue({ id: "candidate-1" });
     mocks.generateReport.mockResolvedValue({
       data: {
         text: "",
@@ -201,11 +231,23 @@ describe("POST /api/simulations/[sessionId]/complete", () => {
       meta: apiMeta,
     });
 
-    await POST(new Request("http://localhost/api/simulations/session-1/complete", {
+    const response = await POST(new Request("http://localhost/api/simulations/session-1/complete", {
       method: "POST",
     }), { params: Promise.resolve({ sessionId: "session-1" }) });
+    const payload = await response.json();
 
-    expect(mocks.candidateCreate).toHaveBeenCalledTimes(1);
+    expect(createCandidateMock).toHaveBeenCalledTimes(1);
+    expect(createCandidateMock).toHaveBeenCalledWith(expect.objectContaining({
+      context: expect.objectContaining({
+        sessionId: "session-1",
+        idempotencyKey: "sim-report-session-1",
+      }),
+    }));
+    expect(createCandidateMock.mock.calls[0][0].context.conversationId).toBeUndefined();
+    expect(createCandidateMock.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.transaction.mock.invocationCallOrder[0]);
+    expect(mocks.sessionUpdate.mock.calls[0][0].data.candidateId).toBeUndefined();
+    expect(payload.data.candidateId).toBe("candidate-1");
     expect(mocks.logCreate.mock.calls[0][0].data.summary).toContain("已生成画像更新候选");
   });
 
@@ -232,7 +274,7 @@ describe("POST /api/simulations/[sessionId]/complete", () => {
     }), { params: Promise.resolve({ sessionId: "session-1" }) });
 
     expect(mocks.sessionUpdate.mock.calls[0][0].data).toMatchObject({ score: 84, actualMode: "mock" });
-    expect(mocks.candidateCreate).not.toHaveBeenCalled();
+    expect(createCandidateMock).not.toHaveBeenCalled();
     expect(mocks.logCreate.mock.calls[0][0].data.summary).toContain("来源：降级评分");
   });
 });

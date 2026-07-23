@@ -1,7 +1,7 @@
 import { createChatService, type ChatService } from "./service";
 import { streamChatWithTboxProgressive } from "@/lib/tbox/streaming";
 import { parseTerminalAgentResponse } from "@/lib/tbox/structured-result";
-import { getTboxConfig, isStatefulChatTurns, isAgentOperationsEnabled, isPlanV2WriteEnabled } from "@/lib/env";
+import { getTboxConfig, isStatefulChatTurns, isAgentOperationsEnabled, isPlanV2WriteEnabled, isAgenticV2Enabled } from "@/lib/env";
 import { writeSseEvent } from "./sse";
 import { createTurnService, TurnServiceError } from "./turn-service";
 import { buildAgentContext, trimRecentMessages } from "./context-builder";
@@ -13,6 +13,13 @@ import { convertV2ToV1Arrays } from "@/lib/plans/compatibility";
 import { getPrisma } from "@/lib/prisma";
 import type { TboxHistoryMessage } from "@/lib/tbox/types";
 import type { AgentOperation } from "./agent-protocol";
+import { buildAgenticV2BusinessData, type AgenticV2Interaction } from "./agentic-v2-context";
+import { loadAgenticV2Snapshot } from "./agentic-v2-snapshot";
+import { resolveBoundRemoteConversationId } from "./remote-conversation-binding";
+import { parseAgentArtifactEnvelope } from "@/lib/agentic-v2/artifact-envelope";
+import { ingestAgentArtifact } from "@/lib/agentic-v2/candidate-ingestion";
+import { createAgentArtifactCandidateService } from "@/lib/agentic-v2/candidate-service";
+import { agentArtifactCandidateRefPart } from "./artifacts";
 
 // ── 类型 ──────────────────────────────────────────────────
 
@@ -22,6 +29,7 @@ export interface StreamingOptions {
   message: string;
   clientRequestId: string;
   actionId?: string;
+  interaction?: AgenticV2Interaction;
   signal?: AbortSignal;
 }
 
@@ -120,6 +128,36 @@ async function handleStatefulStream(
 
   // ── 新轮次：加载历史 + 构建上下文 + 调用百宝箱 ──────
   const turn = beginResult.turn;
+  const agenticV2 = isAgenticV2Enabled();
+
+  // 先尝试加载 V2 快照；失败则安全失败当前轮次
+  let agenticSnapshot: Awaited<ReturnType<typeof loadAgenticV2Snapshot>> | null = null;
+  if (agenticV2) {
+    try {
+      agenticSnapshot = await loadAgenticV2Snapshot({
+        userId, conversationId, interaction: options.interaction,
+      });
+    } catch {
+      await turnService.fail({
+        turn: {
+          id: turn.id, conversationId, userId, clientRequestId,
+          userMessageId: turn.userMessageId,
+          assistantMessageId: turn.assistantMessageId,
+        },
+        partialText: "",
+        code: "SNAPSHOT_LOAD_FAILED",
+      }).catch(() => {});
+      return new Response(JSON.stringify({
+        error: {
+          code: "SNAPSHOT_LOAD_FAILED",
+          message: "职业上下文加载失败，请稍后重试",
+        },
+      }), {
+        status: 502,
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+      });
+    }
+  }
 
   const [convDetail, messages, memories, activePlan, answeredQuestions] = await Promise.all([
     svc.getConversation(conversationId, userId).catch(() => null),
@@ -176,12 +214,15 @@ async function handleStatefulStream(
   // 默认 question_prefix 包含完整 AgentContext JSON（scope 裁剪由 buildAgentContext 处理）
   // business_data 模式直接将 agentContext 作为结构化 context 发送
   // TBOX_REUSE_REMOTE_CONVERSATION_ID=false 时不传远端 ID
-  const existingRemoteId: string | undefined = config.reuseRemoteConversationId
-    ? (convDetail?.remoteConversationId ?? undefined)
+  const existingRemoteId: string | undefined = (agenticV2 || config.reuseRemoteConversationId)
+    ? resolveBoundRemoteConversationId(convDetail, {
+      agentId: config.agentId,
+      agentVersion: config.agentVersion,
+    })
     : undefined;
 
   // 确定搜索策略：未知职业/薪资/时效问题 → required
-  const searchPolicy = resolveSearchPolicy(message, agentContext);
+  const searchPolicy = agenticV2 ? "off" : resolveSearchPolicy(message, agentContext);
 
   // 三种互斥上下文模式
   const transport = config.contextTransport;
@@ -209,7 +250,16 @@ async function handleStatefulStream(
         let history: TboxHistoryMessage[] | undefined;
         let context: unknown;
 
-        if (transport === "provider_history") {
+        if (agenticV2) {
+          question = message;
+          context = agenticSnapshot
+            ? buildAgenticV2BusinessData({
+                interaction: options.interaction,
+                ...agenticSnapshot,
+              })
+            : undefined;
+          history = undefined;
+        } else if (transport === "provider_history") {
           // provider_history: 发送原始问题 + 裁剪后的历史（排除本轮消息）
           question = message;
           history = buildProviderHistory(messages, turn.userMessageId);
@@ -302,7 +352,8 @@ async function handleStatefulStream(
         const metaSource = (finalMeta as Record<string, unknown>)?.source as string | undefined;
         const metaDegraded = (finalMeta as Record<string, unknown>)?.degraded as boolean | undefined;
         const isMockSource = metaSource === "local-mock";
-        const safeForOperations = isAgentOperationsEnabled()
+        const safeForOperations = !agenticV2
+          && isAgentOperationsEnabled()
           && !metaDegraded
           && config.structuredMode !== "disabled"
           && agentContext.scope !== "general_minimal"
@@ -346,7 +397,49 @@ async function handleStatefulStream(
           });
         }
 
-        // ── 短事务 B：完成轮次（parts 已含 operations + citations）──
+        // ── Agentic V2 信封解析：仅在流完成后解析精确标签 ──
+        const envelope = agenticV2
+          ? parseAgentArtifactEnvelope(aiResponse.data.text || fullContent)
+          : { displayText: fullContent, warnings: [] as string[] };
+
+        const assistantText = agenticV2 ? envelope.displayText : fullContent;
+
+        // 摄入候选（仅当有有效 artifact 时）
+        if (agenticV2 && envelope.artifact) {
+          try {
+            const candidateService = createAgentArtifactCandidateService();
+            const ingestionResult = await ingestAgentArtifact(
+              {
+                userId,
+                conversationId,
+                sessionId: remoteConversationId ?? conversationId,
+                clientRequestId,
+                artifact: envelope.artifact,
+              },
+              candidateService,
+            );
+            if (ingestionResult.candidate) {
+              parts.push(agentArtifactCandidateRefPart(ingestionResult.candidate));
+            }
+            // 合并信封警告和摄入警告
+            for (const w of [...envelope.warnings, ...ingestionResult.warnings]) {
+              if (!agentResponseResult.warnings.includes(w)) {
+                agentResponseResult.warnings.push(w);
+              }
+            }
+          } catch {
+            // 候选摄入失败不影响主流程
+          }
+        } else if (envelope.warnings.length > 0) {
+          // 信封解析有警告但无候选时合并警告
+          for (const w of envelope.warnings) {
+            if (!agentResponseResult.warnings.includes(w)) {
+              agentResponseResult.warnings.push(w);
+            }
+          }
+        }
+
+        // ── 短事务 B：完成轮次（parts 已含 operations + citations + candidate ref）──
         await turnService.finalize({
           turn: {
             id: turn.id,
@@ -356,11 +449,15 @@ async function handleStatefulStream(
             userMessageId: turn.userMessageId,
             assistantMessageId: turn.assistantMessageId,
           },
-          assistantText: fullContent,
+          assistantText,
           agentResponse: agentResponse ?? undefined,
           citations: validatedSourceRefs.map((r) => ({ title: r.kind, source: `ref_${r.citationIndex}` })),
           parts,
           remoteConversationId: remoteConversationId ?? undefined,
+          remoteBinding: remoteConversationId ? {
+            agentId: config.agentId,
+            agentVersion: config.agentVersion,
+          } : undefined,
           executionMeta: finalMeta ?? { requestedMode: config.mode, actualMode: config.mode, degraded: false, source: "tbox-api" },
           warnings: agentResponseResult.warnings ?? [],
         });
@@ -436,6 +533,7 @@ async function handleLegacyStream(
   config: ReturnType<typeof getTboxConfig>,
 ): Promise<Response> {
   const { userId, conversationId, message, signal, clientRequestId } = options;
+  const agenticV2 = isAgenticV2Enabled();
 
   const userMsg = await svc.createMessage(userId, {
     conversationId,
@@ -457,9 +555,28 @@ async function handleLegacyStream(
     conversationId, userId, message,
   ).catch(() => {});
 
-  const existingRemoteId = config.reuseRemoteConversationId
-    ? (await svc.getConversation(conversationId, userId).catch(() => null))?.remoteConversationId ?? undefined
-    : undefined;
+  const existingConversation = (agenticV2 || config.reuseRemoteConversationId)
+    ? await svc.getConversation(conversationId, userId).catch(() => null)
+    : null;
+  const existingRemoteId = resolveBoundRemoteConversationId(existingConversation, {
+    agentId: config.agentId,
+    agentVersion: config.agentVersion,
+  });
+
+  // 在 Agentic V2 路径下加载消毒后的快照（失败则安全失败）
+  let legacySnapshot: Awaited<ReturnType<typeof loadAgenticV2Snapshot>> | null = null;
+  if (agenticV2) {
+    try {
+      legacySnapshot = await loadAgenticV2Snapshot({ userId, conversationId, interaction: options.interaction });
+    } catch {
+      return new Response(JSON.stringify({
+        error: { code: "SNAPSHOT_LOAD_FAILED", message: "快照加载失败" },
+      }), {
+        status: 502,
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+      });
+    }
+  }
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -484,6 +601,13 @@ async function handleLegacyStream(
             question: message,
             userId,
             conversationId: existingRemoteId,
+            context: agenticV2 && legacySnapshot
+              ? buildAgenticV2BusinessData({
+                  interaction: options.interaction,
+                  ...legacySnapshot,
+                })
+              : undefined,
+            searchPolicy: agenticV2 ? "off" : undefined,
           },
           { config, signal },
           (event) => {
@@ -503,18 +627,47 @@ async function handleLegacyStream(
         finalMeta = aiResponse.meta as unknown as Record<string, unknown>;
         remoteConversationId = aiResponse.data.conversationId ?? remoteConversationId;
 
+        // ── Agentic V2 信封解析（legacy 路径也共享） ──
+        const legacyEnvelope = agenticV2
+          ? parseAgentArtifactEnvelope(aiResponse.data.text || fullContent)
+          : { displayText: fullContent, warnings: [] as string[] };
+        const legacyAssistantText = agenticV2 ? legacyEnvelope.displayText : fullContent;
+
         // 旧路径：只保留正文，不执行业务写入
         // AgentResponse 解析仅用于结构化模式下的 operations
         let operations: AgentOperation[] = [];
-        if (config.structuredMode !== "disabled" && isAgentOperationsEnabled()) {
+        if (!agenticV2 && config.structuredMode !== "disabled" && isAgentOperationsEnabled()) {
           const ar = parseTerminalAgentResponse(aiResponse.data);
           operations = ar.response?.operations ?? [];
         }
 
         // finalize 消息
         const parts: unknown[] = [];
+
+        // 摄入候选（V2 信封协议）
+        if (agenticV2 && legacyEnvelope.artifact) {
+          try {
+            const candidateService = createAgentArtifactCandidateService();
+            const ingestionResult = await ingestAgentArtifact(
+              {
+                userId,
+                conversationId,
+                sessionId: remoteConversationId ?? conversationId,
+                clientRequestId,
+                artifact: legacyEnvelope.artifact,
+              },
+              candidateService,
+            );
+            if (ingestionResult.candidate) {
+              parts.push(agentArtifactCandidateRefPart(ingestionResult.candidate));
+            }
+          } catch {
+            // 候选摄入失败不影响主流程
+          }
+        }
+
         await svc.updateMessage(assistantMsg.id, {
-          content: fullContent,
+          content: legacyAssistantText,
           parts: JSON.stringify(parts),
           status: "completed",
           executionMeta: JSON.stringify(finalMeta ?? {}),
@@ -522,7 +675,10 @@ async function handleLegacyStream(
         });
 
         if (remoteConversationId) {
-          await svc.touchConversation(conversationId, remoteConversationId).catch(() => {});
+          await svc.touchConversation(conversationId, remoteConversationId, {
+            agentId: config.agentId,
+            agentVersion: config.agentVersion,
+          }).catch(() => {});
         }
 
         // 执行 operations

@@ -149,7 +149,15 @@ export function ChatHomePage({ displayName, openChatEntry = true }: ChatHomePage
       const response = await fetch(`/api/chat/conversations/${cid}/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, clientRequestId, ...(actionId ? { actionId } : {}) }),
+        body: JSON.stringify({
+          message: text,
+          clientRequestId,
+          ...(actionId ? { actionId } : {}),
+          interaction: {
+            surface: "chat",
+            action: actionId ? "quick_action" : "message_submit",
+          },
+        }),
       });
 
       if (!response.ok || !response.body) {
@@ -180,7 +188,7 @@ export function ChatHomePage({ displayName, openChatEntry = true }: ChatHomePage
           setMessages(prev => prev.map(m => m.id === aid ? { ...m, content: assistantContent } : m));
         },
         onArtifact(part) {
-          if (part.type === "profile_candidate_ref") setPendingCandidateCount((c) => c + 1);
+          if (part.type === "profile_candidate_ref" || part.type === "agent_artifact_candidate_ref") setPendingCandidateCount((c) => c + 1);
           const aid = activeAsstIdRef.current || assistantMsg.id;
           setMessages(prev => prev.map(m => m.id === aid ? { ...m, parts: [...m.parts, part] } : m));
         },

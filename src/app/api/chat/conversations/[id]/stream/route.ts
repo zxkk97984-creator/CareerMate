@@ -38,6 +38,7 @@ export async function POST(
       message: input.data.message.trim(),
       clientRequestId: input.data.clientRequestId,
       actionId: input.data.actionId,
+      interaction: input.data.interaction,
       signal: request.signal,
     }, service);
   } catch (err) {

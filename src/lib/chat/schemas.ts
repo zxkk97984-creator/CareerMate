@@ -35,6 +35,40 @@ export const listMessagesQuerySchema = z.object({
 });
 
 /** 发送消息请求 */
+const AGENTIC_V2_INTERACTIONS = {
+  chat: ["message_submit", "quick_action"],
+  onboarding: ["message_submit", "submit_profile", "upload_resume"],
+  dashboard: ["message_submit", "review_progress"],
+  career_path: ["message_submit", "generate_plan", "regenerate_plan", "review_plan"],
+  career_exploration: ["message_submit", "compare_careers", "research_career"],
+  learning_route: ["message_submit", "generate_route", "adjust_route", "update_progress"],
+  simulation: ["message_submit", "start_simulation", "continue_simulation", "reset_simulation", "complete_simulation"],
+  resume: ["message_submit", "upload_document", "analyze_document"],
+  resources: ["message_submit", "search_resources", "verify_resource"],
+  growth_review: ["message_submit", "run_review"],
+  memory: ["message_submit", "view_memory", "propose_memory", "accept_candidate", "reject_candidate", "delete_memory"],
+  privacy: ["message_submit", "view_data", "export_data", "delete_data"],
+} as const;
+
+const agenticV2SurfaceSchema = z.enum(Object.keys(AGENTIC_V2_INTERACTIONS) as [
+  keyof typeof AGENTIC_V2_INTERACTIONS,
+  ...(keyof typeof AGENTIC_V2_INTERACTIONS)[],
+]);
+
+export const agenticV2InteractionSchema = z.object({
+  surface: agenticV2SurfaceSchema,
+  action: z.string().trim().min(1).max(40),
+}).strict().superRefine((value, ctx) => {
+  const allowed = AGENTIC_V2_INTERACTIONS[value.surface] as readonly string[];
+  if (!allowed.includes(value.action)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["action"],
+      message: "页面上下文只能描述界面状态，不能指定 Agent 的实现方式",
+    });
+  }
+});
+
 export const sendMessageInputSchema = z.object({
   message: z
     .string()
@@ -42,6 +76,7 @@ export const sendMessageInputSchema = z.object({
     .max(8000, "消息不能超过8000个字符"),
   clientRequestId: z.string().uuid("请求ID必须是有效的UUID"),
   actionId: z.string().trim().min(1).max(120).optional(),
+  interaction: agenticV2InteractionSchema.optional(),
 }).strict();
 
 // ── DTO ───────────────────────────────────────────────────

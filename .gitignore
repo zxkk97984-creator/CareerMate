@@ -64,6 +64,9 @@ next-env.d.ts
 .vercel/
 *.pem
 
+# Agentic V2 Skill ZIP 生成产物（不入库，每次从源文件重新打包）
+src/agentic-v2/skills/*.zip
+
 # Sensitive files
 **/secrets.*
 **/credentials.*

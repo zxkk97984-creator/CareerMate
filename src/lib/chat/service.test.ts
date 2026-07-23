@@ -20,6 +20,8 @@ function conversationRow(overrides: Record<string, unknown> = {}) {
     title: "新对话",
     status: "active",
     remoteConversationId: null,
+    remoteAgentId: null,
+    remoteAgentVersion: null,
     lastMessageAt: new Date("2026-07-12T10:00:00Z"),
     createdAt: new Date("2026-07-12T09:00:00Z"),
     updatedAt: new Date("2026-07-12T10:00:00Z"),
@@ -168,6 +170,23 @@ describe("ChatService", () => {
   });
 
   describe("getConversation", () => {
+    it("returns the remote agent binding used for safe reuse", async () => {
+      const { service, mock } = setupService();
+      mock.chatConversation.findFirst.mockResolvedValue(conversationRow({
+        remoteConversationId: "remote-2",
+        remoteAgentId: "agent-v2",
+        remoteAgentVersion: "2.0",
+      }));
+
+      const result = await service.getConversation("conv-1", "user-1");
+
+      expect(result).toMatchObject({
+        remoteConversationId: "remote-2",
+        remoteAgentId: "agent-v2",
+        remoteAgentVersion: "2.0",
+      });
+    });
+
     it("返回属于当前用户且状态active的会话", async () => {
       const { service, mock } = setupService();
       const row = conversationRow({ id: "conv-1", userId: "user-1" });

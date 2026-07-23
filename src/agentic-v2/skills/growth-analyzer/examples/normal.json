@@ -1,0 +1,90 @@
+{
+  "profileSnapshot": {
+    "available": true,
+    "data": {
+      "abilityScores": {
+        "python": 65,
+        "sql": 55,
+        "statistics": 70,
+        "dataVisualization": 50,
+        "machineLearning": 40
+      },
+      "targetRole": "data_analyst",
+      "targetRoleLabel": "数据分析师"
+    }
+  },
+  "planHistory": [
+    {
+      "id": "plan-1",
+      "targetRole": "data_analyst",
+      "status": "completed",
+      "currentMonthIndex": 6,
+      "version": 1,
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-06-30T00:00:00.000Z"
+    },
+    {
+      "id": "plan-2",
+      "targetRole": "data_analyst",
+      "status": "active",
+      "currentMonthIndex": 2,
+      "version": 2,
+      "createdAt": "2026-07-01T00:00:00.000Z",
+      "updatedAt": "2026-07-20T00:00:00.000Z"
+    }
+  ],
+  "progressLogs": [
+    { "id": "log-1", "eventType": "task_completed", "title": "完成 Python 基础课程", "createdAt": "2026-01-15T00:00:00.000Z" },
+    { "id": "log-2", "eventType": "task_completed", "title": "完成 SQL 入门训练", "createdAt": "2026-01-16T00:00:00.000Z" },
+    { "id": "log-3", "eventType": "task_completed", "title": "完成统计学基础", "createdAt": "2026-01-17T00:00:00.000Z" },
+    { "id": "log-4", "eventType": "task_completed", "title": "完成数据可视化项目", "createdAt": "2026-01-20T00:00:00.000Z" },
+    { "id": "log-5", "eventType": "task_completed", "title": "完成机器学习入门", "createdAt": "2026-01-21T00:00:00.000Z" },
+    { "id": "log-6", "eventType": "task_completed", "title": "完成项目实战", "createdAt": "2026-02-01T00:00:00.000Z" },
+    { "id": "log-7", "eventType": "task_completed", "title": "完成面试模拟", "createdAt": "2026-02-02T00:00:00.000Z" },
+    { "id": "log-8", "eventType": "task_completed", "title": "完成 A/B 测试项目", "createdAt": "2026-02-03T00:00:00.000Z" },
+    { "id": "log-9", "eventType": "task_completed", "title": "SQL 进阶训练", "createdAt": "2026-03-10T00:00:00.000Z" },
+    { "id": "log-10", "eventType": "task_completed", "title": "Python 数据分析进阶", "createdAt": "2026-03-11T00:00:00.000Z" },
+    { "id": "log-11", "eventType": "task_completed", "title": "Tableau 可视化", "createdAt": "2026-03-12T00:00:00.000Z" },
+    { "id": "log-12", "eventType": "task_completed", "title": "完成周报总结", "createdAt": "2026-03-13T00:00:00.000Z" }
+  ],
+  "simulations": [
+    {
+      "id": "sim-1",
+      "scenarioKey": "tech_interview",
+      "scenarioTitle": "技术面试模拟",
+      "score": 72,
+      "status": "completed",
+      "turnCount": 4,
+      "createdAt": "2026-03-01T00:00:00.000Z",
+      "updatedAt": "2026-03-01T00:00:00.000Z"
+    },
+    {
+      "id": "sim-2",
+      "scenarioKey": "tech_interview",
+      "scenarioTitle": "技术面试模拟(二刷)",
+      "score": 80,
+      "status": "completed",
+      "turnCount": 3,
+      "createdAt": "2026-04-15T00:00:00.000Z",
+      "updatedAt": "2026-04-15T00:00:00.000Z"
+    },
+    {
+      "id": "sim-3",
+      "scenarioKey": "case_analysis",
+      "scenarioTitle": "案例分析模拟",
+      "score": 65,
+      "status": "completed",
+      "turnCount": 5,
+      "createdAt": "2026-05-10T00:00:00.000Z",
+      "updatedAt": "2026-05-10T00:00:00.000Z"
+    }
+  ],
+  "historicalScores": [
+    { "abilityKey": "python", "score": 40, "observedAt": "2026-01-01T00:00:00.000Z" },
+    { "abilityKey": "python", "score": 55, "observedAt": "2026-03-01T00:00:00.000Z" },
+    { "abilityKey": "sql", "score": 30, "observedAt": "2026-01-01T00:00:00.000Z" },
+    { "abilityKey": "sql", "score": 45, "observedAt": "2026-03-01T00:00:00.000Z" },
+    { "abilityKey": "statistics", "score": 60, "observedAt": "2026-01-01T00:00:00.000Z" },
+    { "abilityKey": "dataVisualization", "score": 35, "observedAt": "2026-01-01T00:00:00.000Z" }
+  ]
+}

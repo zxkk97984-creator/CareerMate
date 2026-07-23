@@ -81,6 +81,15 @@ export function isStatefulChatTurns(): boolean {
   return readBoolean("STATEFUL_CHAT_TURNS", true);
 }
 
+/**
+ * Sends only a short-lived scoped token plus observational page context to
+ * the new Agentic V2 application. Off by default so switching agent_id back
+ * to the existing application is a complete rollback.
+ */
+export function isAgenticV2Enabled(): boolean {
+  return readBoolean("CAREERMATE_AGENTIC_V2", false);
+}
+
 export function isAgentOperationsEnabled(): boolean {
   // fail-closed: 默认 false
   // ⚠️ 生产不可用：依赖 TBox structured 输出（平台能力缺口），仅 mock 环境有效
@@ -99,4 +108,19 @@ export function isConversationSummaryEnabled(): boolean {
 
 export function getPluginToken() {
   return read("CAREERMATE_PLUGIN_TOKEN");
+}
+
+/** Server-only HMAC key for short-lived Agentic V2 context tokens. */
+export function getCareerMateContextTokenSecret() {
+  return read("CAREERMATE_CONTEXT_TOKEN_SECRET");
+}
+
+/** Exact browser Origin allow-list for the public CareerMate MCP V2 endpoint. */
+export function getCareerMateMcpAllowedOrigins(): string[] {
+  return [...new Set(
+    read("CAREERMATE_MCP_ALLOWED_ORIGINS")
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean),
+  )];
 }

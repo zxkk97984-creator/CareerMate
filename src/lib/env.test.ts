@@ -142,6 +142,18 @@ describe("tbox environment config", () => {
 });
 
 describe("feature flags", () => {
+  it("Agentic V2 context defaults off for safe rollback", async () => {
+    vi.stubEnv("CAREERMATE_AGENTIC_V2", "");
+    const { isAgenticV2Enabled } = await import("./env");
+    expect(isAgenticV2Enabled()).toBe(false);
+  });
+
+  it("Agentic V2 context can be enabled explicitly", async () => {
+    vi.stubEnv("CAREERMATE_AGENTIC_V2", "true");
+    const { isAgenticV2Enabled } = await import("./env");
+    expect(isAgenticV2Enabled()).toBe(true);
+  });
+
   it("STATEFUL_CHAT_TURNS defaults to true", async () => {
     vi.stubEnv("STATEFUL_CHAT_TURNS", "");
     const { isStatefulChatTurns } = await import("./env");

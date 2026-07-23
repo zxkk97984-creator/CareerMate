@@ -1,0 +1,36 @@
+﻿roleKey,abilityKey,stage,resourceType,difficulty,duration,source,updatedAt,validUntil
+data_analyst,sql,mid,certification,advanced,3个月,阿里云ACA大数据认证,2026-07-12,2027-01-31
+data_analyst,sql,senior,certification,advanced,6个月,CDA数据分析师Level 2,2026-07-05,2027-04-30
+data_analyst,statistics,mid,certification,intermediate,3个月,CDA数据分析师Level 1,2026-07-16,2026-12-31
+data_analyst,dataViz,junior,certification,beginner,2个月,Tableau Desktop Specialist,2026-07-02,2027-06-30
+data_analyst,python,mid,certification,intermediate,4个月,阿里云ACP大数据工程师,2026-07-04,2027-01-31
+data_analyst,bigData,senior,certification,advanced,6个月,阿里云ACE大数据架构师,2026-07-06,2027-06-30
+ai_product_manager,machineLearning,mid,certification,intermediate,4个月,Google Cloud ML Engineer,2026-07-14,2027-04-30
+ai_product_manager,productDesign,mid,certification,intermediate,3个月,NPDP产品经理认证,2026-07-03,2027-03-31
+ai_product_manager,promptEngineering,junior,certification,beginner,1个月,百度Prompt Engineer认证,2026-07-13,2027-04-30
+ai_product_manager,systemDesign,senior,certification,advanced,6个月,AWS Certified Solutions Architect,2026-07-15,2027-04-30
+ai_product_manager,machineLearning,senior,certification,expert,8个月,腾讯云AI高级工程师,2026-07-09,2027-04-30
+aigc_content_operator,promptEngineering,entry,certification,beginner,1个月,阿里云AIGC提示词工程师,2026-07-01,2027-05-31
+aigc_content_operator,promptEngineering,mid,certification,intermediate,3个月,微软AI-900认证,2026-07-04,2027-05-31
+aigc_content_operator,contentStrategy,mid,certification,intermediate,2个月,腾讯云AI内容运营认证,2026-07-18,2027-06-30
+aigc_content_operator,contentStrategy,senior,certification,advanced,4个月,字节跳动AI营销认证,2026-07-09,2027-06-30
+aigc_content_operator,python,junior,certification,beginner,3个月,Python Institute PCEP,2026-07-11,2026-12-31
+frontend_developer,javascript,junior,certification,intermediate,3个月,前端开发工程师认证(工信部),2026-07-10,2027-03-31
+frontend_developer,uiux,mid,certification,intermediate,4个月,Google UX Design证书,2026-07-06,2027-03-31
+frontend_developer,systemDesign,senior,certification,advanced,6个月,阿里云ACP云计算架构师,2026-07-01,2027-05-31
+frontend_developer,javascript,entry,certification,beginner,2个月,W3C前端开发认证,2026-07-09,2027-04-30
+frontend_developer,uiux,expert,certification,expert,5个月,华为HCIP-Cloud Service,2026-07-06,2027-04-30
+product_manager,productDesign,junior,certification,beginner,2个月,PMP项目管理认证,2026-07-04,2027-06-30
+product_manager,productDesign,mid,certification,intermediate,4个月,NPDP产品经理国际认证,2026-07-10,2027-06-30
+product_manager,dataViz,junior,certification,beginner,1个月,Tableau Desktop Specialist,2026-07-17,2027-04-30
+product_manager,systemDesign,senior,certification,advanced,6个月,TOGAF企业架构认证,2026-07-07,2027-01-31
+product_manager,statistics,mid,certification,intermediate,3个月,CDA数据分析师Level 1,2026-07-12,2027-06-30
+backend_developer,python,mid,certification,intermediate,4个月,Python Institute PCAP,2026-07-06,2027-04-30
+backend_developer,sql,mid,certification,intermediate,3个月,OCP数据库认证(Oracle),2026-07-17,2026-12-31
+backend_developer,systemDesign,senior,certification,advanced,6个月,AWS Certified DevOps Engineer,2026-07-20,2027-02-28
+backend_developer,machineLearning,senior,certification,advanced,6个月,Google Cloud ML Engineer,2026-07-16,2026-12-31
+ai_engineer,deepLearning,mid,certification,advanced,5个月,TensorFlow Developer Certificate,2026-07-04,2027-02-28
+ai_engineer,machineLearning,mid,certification,intermediate,4个月,AWS ML Specialty认证,2026-07-10,2027-01-31
+ai_engineer,mlops,senior,certification,advanced,6个月,阿里云ACPAI工程师认证,2026-07-02,2027-01-31
+ai_engineer,deepLearning,expert,certification,expert,8个月,华为HCIA-AI(Huawei),2026-07-19,2026-12-31
+ai_engineer,python,entry,certification,beginner,2个月,Microsoft PL-900认证,2026-07-03,2027-05-31

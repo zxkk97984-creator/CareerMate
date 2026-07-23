@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { AGENT_ARTIFACT_CANDIDATE_TYPES } from "@/lib/agentic-v2/candidate-service";
+import { AGENT_ARTIFACT_V1_TASK_TYPES } from "@/lib/agentic-v2/contracts";
 
 const citationSchema = z.object({
   title: z.string().trim().min(1).max(240),
@@ -31,6 +33,13 @@ export const chatMessagePartSchema = z.discriminatedUnion("type", [
     type: z.literal("error"),
     code: z.string().trim().min(1).max(100),
     message: z.string().trim().min(1).max(500),
+  }),
+  z.object({
+    type: z.literal("agent_artifact_candidate_ref"),
+    candidateId: z.string().trim().min(1).max(100),
+    candidateType: z.enum(AGENT_ARTIFACT_CANDIDATE_TYPES),
+    taskType: z.enum(AGENT_ARTIFACT_V1_TASK_TYPES),
+    summary: z.string().trim().min(1).max(500),
   }),
 ]);
 
