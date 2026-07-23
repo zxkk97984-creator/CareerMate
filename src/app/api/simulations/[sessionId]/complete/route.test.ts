@@ -121,6 +121,7 @@ describe("POST /api/simulations/[sessionId]/complete", () => {
     expect(payload.error.code).toBe("SIMULATION_REPORT_INVALID");
     expect(mocks.transaction).not.toHaveBeenCalled();
     expect(mocks.generateReport).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: "session-1",
       remoteConversationId: "remote-1",
     }));
   });
@@ -206,11 +207,23 @@ describe("POST /api/simulations/[sessionId]/complete", () => {
       meta: apiMeta,
     });
 
-    await POST(new Request("http://localhost/api/simulations/session-1/complete", {
+    const response = await POST(new Request("http://localhost/api/simulations/session-1/complete", {
       method: "POST",
     }), { params: Promise.resolve({ sessionId: "session-1" }) });
+    const payload = await response.json();
 
     expect(createCandidateMock).toHaveBeenCalledTimes(1);
+    expect(createCandidateMock).toHaveBeenCalledWith(expect.objectContaining({
+      context: expect.objectContaining({
+        sessionId: "session-1",
+        idempotencyKey: "sim-report-session-1",
+      }),
+    }));
+    expect(createCandidateMock.mock.calls[0][0].context.conversationId).toBeUndefined();
+    expect(createCandidateMock.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.transaction.mock.invocationCallOrder[0]);
+    expect(mocks.sessionUpdate.mock.calls[0][0].data.candidateId).toBeUndefined();
+    expect(payload.data.candidateId).toBe("candidate-1");
     expect(mocks.logCreate.mock.calls[0][0].data.summary).toContain("已生成画像更新候选");
   });
 

@@ -9,6 +9,19 @@ const ALLOWED_CANDIDATE_TYPES = new Set<string>([
   "growth_replan", "memory_item", "career_template_draft",
 ]);
 
+const COMPATIBLE_TASK_TYPES: Record<
+  AgentArtifactCandidateType,
+  readonly AgentArtifactV1["taskType"][]
+> = {
+  profile_patch: ["profile_assessment"],
+  ability_evidence: ["profile_assessment", "simulation_report", "resume_review", "growth_review"],
+  career_plan: ["career_plan"],
+  learning_route: ["learning_route"],
+  growth_replan: ["growth_review"],
+  memory_item: ["memory_item"],
+  career_template_draft: ["career_exploration", "career_template_draft"],
+};
+
 // ── 错误类型 ─────────────────────────────────────────────
 export class AgentArtifactCandidateResolutionError extends Error {
   constructor(message: string, public readonly code: string, public readonly status: number) {
@@ -18,8 +31,23 @@ export class AgentArtifactCandidateResolutionError extends Error {
 }
 
 // ── 按候选类型的严格数据 Schema ─────────────────────────
+const profilePatchSchema = z.object({
+  targetRole: z.string().trim().min(1).max(160).nullable().optional(),
+  targetRoleLabel: z.string().trim().min(1).max(200).nullable().optional(),
+  weeklyAvailableHours: z.number().int().min(1).max(168).nullable().optional(),
+  educationStage: z.string().trim().min(1).max(120).nullable().optional(),
+  major: z.string().trim().min(1).max(160).nullable().optional(),
+  learningPreference: z.array(z.string().trim().min(1).max(80)).max(12).optional(),
+  experienceSummary: z.string().trim().max(2_000).optional(),
+  interestTags: z.array(z.string().trim().min(1).max(80)).max(20).optional(),
+  constraints: z.array(z.string().trim().min(1).max(240)).max(12).optional(),
+}).strict().refine(
+  (patch) => Object.values(patch).some((value) => value !== undefined),
+  { message: "补丁不能为空" },
+);
+
 const profilePatchDataSchema = z.object({
-  patch: z.record(z.unknown()).refine((p) => Object.keys(p).length > 0, { message: "补丁不能为空" }),
+  patch: profilePatchSchema,
 }).strict();
 
 const confidenceSchema = z.number().min(0).max(1);
@@ -96,7 +124,10 @@ interface ResolutionTx {
   userProfile: {
     findUnique(args: { where: { userId: string } }): Promise<{ version: number } | null>;
     update(args: { where: { userId: string }; data: Record<string, unknown> }): Promise<unknown>;
-    updateMany(args: { where: { userId: string }; data: Record<string, unknown> }): Promise<{ count: number }>;
+    updateMany(args: {
+      where: { userId: string; version?: number };
+      data: Record<string, unknown>;
+    }): Promise<{ count: number }>;
   };
   abilityEvidence: { create(args: { data: Record<string, unknown> }): Promise<unknown> };
   memoryItem: { create(args: { data: Record<string, unknown> }): Promise<unknown> };
@@ -136,11 +167,29 @@ export async function resolveAgentArtifactCandidate(
     const candidateType = candidate.candidateType as AgentArtifactCandidateType;
 
     // 3. Zod 校验 artifact
-    const artifactResult = agentArtifactV1Schema.safeParse(JSON.parse(candidate.artifact));
+    let rawArtifact: unknown;
+    try {
+      rawArtifact = JSON.parse(candidate.artifact);
+    } catch {
+      throw new AgentArtifactCandidateResolutionError(
+        "候选数据损坏",
+        "CANDIDATE_CORRUPT",
+        500,
+      );
+    }
+    const artifactResult = agentArtifactV1Schema.safeParse(rawArtifact);
     if (!artifactResult.success) {
       throw new AgentArtifactCandidateResolutionError("候选数据损坏", "CANDIDATE_CORRUPT", 500);
     }
     const artifact = artifactResult.data;
+
+    if (!COMPATIBLE_TASK_TYPES[candidateType].includes(artifact.taskType)) {
+      throw new AgentArtifactCandidateResolutionError(
+        "候选类型与任务类型不兼容",
+        "TASK_TYPE_MISMATCH",
+        400,
+      );
+    }
 
     // 4. 已解决 → 幂等或冲突
     const resolvedStatus = candidate.status as "accepted" | "rejected";
@@ -267,23 +316,25 @@ async function applyProjection(
 
   switch (candidateType) {
     case "profile_patch": {
-      const patch = data.patch as Record<string, unknown>;
-      const allowedKeys = new Set([
-        "targetRole", "targetRoleLabel", "weeklyAvailableHours",
-        "educationStage", "major", "learningPreference", "experienceSummary",
-        "interestTags", "constraints",
-      ]);
+      const parsed = profilePatchDataSchema.parse(data);
       const filtered: Record<string, unknown> = {};
-      for (const [key, value] of Object.entries(patch)) {
-        if (allowedKeys.has(key) && value !== undefined) {
-          filtered[key] = typeof value === "object" ? JSON.stringify(value) : value;
-        }
+      for (const [key, value] of Object.entries(parsed.patch)) {
+        if (value === undefined) continue;
+        filtered[key] = Array.isArray(value) ? JSON.stringify(value) : value;
       }
-      if (Object.keys(filtered).length > 0) {
-        await tx.userProfile.updateMany({
-          where: { userId },
-          data: { ...filtered, version: { increment: 1 } },
-        });
+      const updated = await tx.userProfile.updateMany({
+        where: {
+          userId,
+          ...(artifact.baseVersion === null ? {} : { version: artifact.baseVersion }),
+        },
+        data: { ...filtered, version: { increment: 1 } },
+      });
+      if (updated.count !== 1) {
+        throw new AgentArtifactCandidateResolutionError(
+          "数据版本已变化，请重新生成候选",
+          "BASE_VERSION_CONFLICT",
+          409,
+        );
       }
       break;
     }

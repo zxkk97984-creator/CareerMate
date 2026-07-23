@@ -309,6 +309,35 @@ describe("Agentic V2 快照加载器", () => {
     expect(hasContent).toBe(true);
   });
 
+  it("计划内容中的 immediateActions 不是数组时安全降级为空数组", async () => {
+    const fakeDb = makeFakeDb({
+      careerPlan: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "plan-1",
+          userId: "user-1",
+          targetRole: "data_analyst",
+          version: 3,
+          status: "active",
+          schemaVersion: 2,
+          content: JSON.stringify({
+            summary: "计划摘要",
+            immediateActions: { title: "错误形状" },
+            phases: "错误形状",
+          }),
+          targetRoleLabel: "数据分析师",
+          currentMonthIndex: 1,
+          activatedAt: new Date("2026-07-01"),
+        }),
+      },
+    });
+
+    const loadedResult = await loadAgenticV2Snapshot(input, { db: fakeDb });
+    const historyData = loadedResult.historySnapshot.data as Record<string, unknown>;
+    const plan = historyData.activePlan as Record<string, unknown>;
+    expect(plan.immediateActions).toEqual([]);
+    expect(plan.phases).toEqual([]);
+  });
+
   it("最近的 simulation transcript 取最后 N 条而非前 N 条", async () => {
     // 构造含 20 条 transcript 的模拟会话
     const longTranscript = Array.from({ length: 20 }, (_, i) => ({
@@ -391,5 +420,70 @@ describe("Agentic V2 快照加载器", () => {
     const ev = (pd.abilityEvidence ?? []) as unknown[];
     // 裁剪后不应超过 10 条（可能更少如果还触发后续裁剪）
     expect(ev.length).toBeLessThanOrEqual(10);
+  });
+
+  it("字节裁剪时保留数据库返回顺序中最新的进度和证据", async () => {
+    const large = "进度内容".repeat(400);
+    const progressRows = Array.from({ length: 20 }, (_, index) => ({
+      id: `log-${index}`,
+      userId: "user-1",
+      eventType: `newest-${index}`,
+      title: large,
+      summary: large,
+      createdAt: new Date(Date.UTC(2026, 6, 23, 0, 0, 20 - index)),
+    }));
+    const evidenceRows = Array.from({ length: 20 }, (_, index) => ({
+      id: `ev-${index}`,
+      userId: "user-1",
+      abilityKey: `newest-${index}`,
+      summary: large,
+      sourceType: "progress",
+      sourceRef: null,
+      confidence: 0.8,
+      status: "confirmed",
+      observedAt: new Date(Date.UTC(2026, 6, 23, 0, 0, 20 - index)),
+    }));
+    const fakeDb = makeFakeDb({
+      progressLog: {
+        findMany: vi.fn().mockResolvedValue(progressRows),
+      },
+      abilityEvidence: {
+        findMany: vi.fn().mockResolvedValue(evidenceRows),
+      },
+    });
+
+    const loadedResult = await loadAgenticV2Snapshot(input, { db: fakeDb });
+    const historyData = loadedResult.historySnapshot.data as Record<string, unknown>;
+    const progress = historyData.recentProgress as Array<{ eventType: string }>;
+    const profileData = loadedResult.profileSnapshot.data as Record<string, unknown>;
+    const evidence = profileData.abilityEvidence as Array<{ abilityKey: string }>;
+
+    expect(progress.some((item) => item.eventType === "newest-0")).toBe(true);
+    expect(evidence.some((item) => item.abilityKey === "newest-0")).toBe(true);
+  });
+
+  it("单条超长模拟转录也会被裁剪到 business_data 字节预算内", async () => {
+    const hugeTranscript = [
+      { role: "assistant", content: "问题".repeat(40_000) },
+    ];
+    const fakeDb = makeFakeDb({
+      simulationSession: {
+        findMany: vi.fn().mockResolvedValue([{
+          id: "sim-1",
+          userId: "user-1",
+          scenarioKey: "cross_role_communication",
+          scenarioTitle: "跨岗位沟通",
+          transcript: JSON.stringify(hugeTranscript),
+          score: 80,
+          turnCount: 1,
+          status: "completed",
+          updatedAt: new Date("2026-07-22"),
+        }]),
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
+    });
+
+    const loadedResult = await loadAgenticV2Snapshot(input, { db: fakeDb });
+    expect(Buffer.byteLength(JSON.stringify(loadedResult), "utf8")).toBeLessThanOrEqual(49_152);
   });
 });

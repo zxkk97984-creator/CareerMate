@@ -79,9 +79,27 @@ export class AgenticV2SnapshotError extends Error {
 
 // ── 工具函数 ──────────────────────────────────────────────
 function truncateText(value: unknown, max = LIMITS.text): string {
-  if (typeof value === "string") return value.trim().slice(0, max);
-  if (value === null || value === undefined) return "";
-  return String(value).trim().slice(0, max);
+  const text = typeof value === "string"
+    ? value.trim()
+    : value === null || value === undefined
+      ? ""
+      : String(value).trim();
+  if (Buffer.byteLength(text, "utf8") <= max) return text;
+
+  let low = 0;
+  let high = text.length;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (Buffer.byteLength(text.slice(0, middle), "utf8") <= max) {
+      low = middle;
+    } else {
+      high = middle - 1;
+    }
+  }
+  const safeEnd = low > 0 && /[\uD800-\uDBFF]/.test(text.charAt(low - 1))
+    ? low - 1
+    : low;
+  return text.slice(0, safeEnd);
 }
 
 function safeJson<T>(raw: unknown, fallback: T): T {
@@ -191,8 +209,12 @@ export async function loadAgenticV2Snapshot(
     ? (() => {
         const parsed = safeJson<Record<string, unknown>>(activePlanRow.content as string, {});
         const v2plan = (activePlanRow.schemaVersion as number) >= 2 ? parsed : null;
-        const immediateActions = (v2plan?.immediateActions as Array<{ title: string }>) ?? [];
-        const phases = v2plan?.phases as Array<{ title: string; months: unknown[] }> | undefined;
+        const immediateActions = Array.isArray(v2plan?.immediateActions)
+          ? v2plan.immediateActions
+          : [];
+        const phases = Array.isArray(v2plan?.phases)
+          ? v2plan.phases
+          : [];
         return {
           id: truncateText(activePlanRow.id),
           version: typeof activePlanRow.version === "number" ? activePlanRow.version : 1,
@@ -205,15 +227,22 @@ export async function loadAgenticV2Snapshot(
           activatedAt: activePlanRow.activatedAt instanceof Date
             ? activePlanRow.activatedAt.toISOString()
             : null,
-          immediateActions: immediateActions.slice(0, 5).map((a) => ({
-            title: truncateText(a.title),
+          immediateActions: immediateActions.slice(0, 5).map((action) => ({
+            title: truncateText(
+              action && typeof action === "object"
+                ? (action as Record<string, unknown>).title
+                : action,
+            ),
           })),
-          phases: phases
-            ? phases.slice(0, 4).map((p) => ({
-                title: truncateText(p.title),
-                monthCount: Array.isArray(p.months) ? p.months.length : 0,
-              }))
-            : [],
+          phases: phases.slice(0, 4).map((phase) => {
+            const row = phase && typeof phase === "object"
+              ? phase as Record<string, unknown>
+              : {};
+            return {
+              title: truncateText(row.title),
+              monthCount: Array.isArray(row.months) ? row.months.length : 0,
+            };
+          }),
         };
       })()
     : null;
@@ -256,7 +285,10 @@ export async function loadAgenticV2Snapshot(
       scenarioTitle: truncateText(row.scenarioTitle),
       score: typeof row.score === "number" ? row.score : null,
       turnCount: typeof row.turnCount === "number" ? row.turnCount : 0,
-      transcript: rawTranscript.slice(-LIMITS.transcriptItems),
+      transcript: rawTranscript.slice(-LIMITS.transcriptItems).map((turn) => ({
+        role: turn?.role === "user" ? "user" : "assistant",
+        content: truncateText(turn?.content),
+      })),
       completedAt: row.updatedAt instanceof Date
         ? row.updatedAt.toISOString()
         : String(row.updatedAt ?? ""),
@@ -332,7 +364,10 @@ export async function loadAgenticV2Snapshot(
         scenarioKey: truncateText(sessionRow.scenarioKey),
         status: truncateText(sessionRow.status),
         round: typeof sessionRow.turnCount === "number" ? sessionRow.turnCount : 0,
-        transcript: rawTranscript.slice(-LIMITS.transcriptItems),
+        transcript: rawTranscript.slice(-LIMITS.transcriptItems).map((turn) => ({
+          role: turn?.role === "user" ? "user" : "assistant",
+          content: truncateText(turn?.content),
+        })),
       };
     }
   }
@@ -393,7 +428,7 @@ export async function loadAgenticV2Snapshot(
 
   if (byteSize > LIMITS.bytes) {
     // 第2级：缩减进度条目到 10
-    finalRecentProgress = recentProgress.slice(-10);
+    finalRecentProgress = recentProgress.slice(0, 10);
     current = buildResult();
     serialized = JSON.stringify(current);
     byteSize = Buffer.byteLength(serialized, "utf8");
@@ -401,7 +436,7 @@ export async function loadAgenticV2Snapshot(
 
   if (byteSize > LIMITS.bytes) {
     // 第3级：缩减能力证据到 10
-    finalAbilityEvidence = abilityEvidence.slice(-10);
+    finalAbilityEvidence = abilityEvidence.slice(0, 10);
     finalProfileData = { ...finalProfileData, abilityEvidence: finalAbilityEvidence };
     current = buildResult();
     serialized = JSON.stringify(current);
@@ -410,7 +445,7 @@ export async function loadAgenticV2Snapshot(
 
   if (byteSize > LIMITS.bytes) {
     // 第4级：缩减记忆到 5
-    finalConfirmedMemories = confirmedMemories.slice(-5);
+    finalConfirmedMemories = confirmedMemories.slice(0, 5);
     current = buildResult();
     serialized = JSON.stringify(current);
     byteSize = Buffer.byteLength(serialized, "utf8");

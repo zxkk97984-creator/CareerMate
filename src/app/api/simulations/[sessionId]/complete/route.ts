@@ -27,6 +27,7 @@ export async function POST(_request: Request, context: { params: Promise<{ sessi
     scenarioTitle: session.scenarioTitle,
     transcript: transcript.filter((t) => t.role === "user" || t.role === "assistant"),
     remoteConversationId: session.remoteConversationId ?? undefined,
+    sessionId: session.id,
   });
 
   // 校验结构化报告
@@ -66,56 +67,57 @@ export async function POST(_request: Request, context: { params: Promise<{ sessi
   // 只有通过 Schema 校验的合法报告才创建画像候选
   let candidateId: string | null = null;
 
+  if (shouldCreateCandidate && feedback.candidateUpdates.length > 0) {
+    try {
+      const candidateService = createAgentArtifactCandidateService();
+      const result = await candidateService.createCandidate({
+        userId: user.id,
+        candidateType: "ability_evidence",
+        artifact: {
+          schemaVersion: "1.0",
+          taskType: "simulation_report",
+          status: "pending_confirmation",
+          summary: `${session.scenarioTitle} 训练报告`,
+          data: {
+            abilityEvidence: feedback.candidateUpdates.map((update) => ({
+              abilityKey: update.field.replace("abilityScores.", ""),
+              summary: update.reason,
+              sourceType: "simulation",
+              sourceRef: session.id,
+              confidence: update.confidence,
+            })),
+          },
+          evidence: [],
+          sources: [],
+          assumptions: [],
+          warnings: [],
+          requiresUserConfirmation: true,
+          baseVersion: user.profile?.version ?? 1,
+          nextActions: [],
+        },
+        context: {
+          sessionId: session.id,
+          idempotencyKey: `sim-report-${session.id}`,
+        },
+      });
+      candidateId = result.id;
+    } catch {
+      // 候选创建失败不影响训练报告保存
+    }
+  }
+
   try {
     const result = await getPrisma().$transaction(async (tx) => {
       const claim = await tx.simulationSession.updateMany({
-        where: { id: session.id, userId: user.id, status: "active", candidateId: null, updatedAt: session.updatedAt },
+        where: { id: session.id, userId: user.id, status: "active", updatedAt: session.updatedAt },
         data: { status: "completing" },
       });
       if (claim.count !== 1) throw new CompletionConflict();
 
-      if (shouldCreateCandidate && feedback.candidateUpdates.length > 0) {
-        try {
-          const candidateService = createAgentArtifactCandidateService();
-          const result = await candidateService.createCandidate({
-            userId: user.id,
-            candidateType: "ability_evidence",
-            artifact: {
-              schemaVersion: "1.0",
-              taskType: "simulation_report",
-              status: "pending_confirmation",
-              summary: `${session.scenarioTitle} 训练报告`,
-              data: {
-                abilityEvidence: feedback.candidateUpdates.map((u) => ({
-                  abilityKey: u.field.replace("abilityScores.", ""),
-                  summary: u.reason,
-                  sourceType: "simulation",
-                  sourceRef: session.id,
-                  confidence: u.confidence,
-                })),
-              },
-              evidence: [],
-              sources: [],
-              assumptions: [],
-              warnings: [],
-              requiresUserConfirmation: true,
-              baseVersion: user.profile?.version ?? 1,
-              nextActions: [],
-            },
-            context: {
-              sessionId: session.id,
-              conversationId: session.remoteConversationId ?? undefined,
-              idempotencyKey: `sim-report-${session.id}`,
-            },
-          });
-          candidateId = result.id;
-        } catch {
-          // 候选创建失败不影响主流程
-        }
-      }
-
       const completed = await tx.simulationSession.update({ where: { id: session.id }, data: {
-        status: "completed", score: feedback.score, feedback: toJson(feedback), candidateId,
+        status: "completed",
+        score: feedback.score,
+        feedback: toJson({ ...feedback, candidateId }),
         actualMode: report.meta.actualMode,
         remoteConversationId: report.data.conversationId ?? session.remoteConversationId,
       } });

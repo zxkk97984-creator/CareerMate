@@ -137,8 +137,7 @@ async function handleStatefulStream(
       agenticSnapshot = await loadAgenticV2Snapshot({
         userId, conversationId, interaction: options.interaction,
       });
-    } catch (snapshotErr) {
-      const errMessage = snapshotErr instanceof Error ? snapshotErr.message : "快照加载失败";
+    } catch {
       await turnService.fail({
         turn: {
           id: turn.id, conversationId, userId, clientRequestId,
@@ -149,7 +148,10 @@ async function handleStatefulStream(
         code: "SNAPSHOT_LOAD_FAILED",
       }).catch(() => {});
       return new Response(JSON.stringify({
-        error: { code: "SNAPSHOT_LOAD_FAILED", message: errMessage },
+        error: {
+          code: "SNAPSHOT_LOAD_FAILED",
+          message: "职业上下文加载失败，请稍后重试",
+        },
       }), {
         status: 502,
         headers: { "Content-Type": "application/json; charset=utf-8" },

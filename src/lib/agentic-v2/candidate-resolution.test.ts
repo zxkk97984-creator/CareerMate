@@ -57,6 +57,91 @@ function makeTx(overrides: Record<string, unknown> = {}) {
 }
 
 describe("候选解析服务 (严格 Zod)", () => {
+  it("损坏的 artifact JSON 返回稳定的 CANDIDATE_CORRUPT 错误", async () => {
+    const tx = makeTx({
+      agentArtifactCandidate: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "c1",
+          userId: "u1",
+          candidateType: "career_plan",
+          status: "pending",
+          artifact: "{not-json",
+          baseVersion: 3,
+          sourceSessionId: "s1",
+          sourceConversationId: "c1",
+          resolvedAt: null,
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        update: vi.fn(),
+      },
+    });
+
+    await expect(
+      resolveAgentArtifactCandidate(
+        { userId: "u1", candidateId: "c1", decision: "accept" },
+        { db: tx as any },
+      ),
+    ).rejects.toMatchObject({ code: "CANDIDATE_CORRUPT", status: 500 });
+  });
+
+  it("profile_patch 只有未知字段时拒绝接受", async () => {
+    const artifact = {
+      ...validProfileArtifact,
+      data: { patch: { administrator: true } },
+    };
+    const tx = makeTx({
+      agentArtifactCandidate: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "c1",
+          userId: "u1",
+          candidateType: "profile_patch",
+          status: "pending",
+          artifact: JSON.stringify(artifact),
+          baseVersion: 3,
+          sourceSessionId: "s1",
+          sourceConversationId: "c1",
+          resolvedAt: null,
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        update: vi.fn(),
+      },
+    });
+
+    await expect(
+      resolveAgentArtifactCandidate(
+        { userId: "u1", candidateId: "c1", decision: "accept" },
+        { db: tx as any },
+      ),
+    ).rejects.toMatchObject({ code: "INVALID_CANDIDATE_DATA", status: 400 });
+  });
+
+  it("解析时再次校验 candidateType 与 taskType 的兼容关系", async () => {
+    const tx = makeTx({
+      agentArtifactCandidate: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "c1",
+          userId: "u1",
+          candidateType: "profile_patch",
+          status: "pending",
+          artifact: JSON.stringify(validPlanArtifact),
+          baseVersion: 3,
+          sourceSessionId: "s1",
+          sourceConversationId: "c1",
+          resolvedAt: null,
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        update: vi.fn(),
+      },
+    });
+
+    await expect(
+      resolveAgentArtifactCandidate(
+        { userId: "u1", candidateId: "c1", decision: "accept" },
+        { db: tx as any },
+      ),
+    ).rejects.toMatchObject({ code: "TASK_TYPE_MISMATCH", status: 400 });
+  });
+
   it("career_plan 比较计划版本而非画像版本", async () => {
     const tx = makeTx({
       careerPlan: { findFirst: vi.fn().mockResolvedValue({ id: "plan-1", version: 5 }), updateMany: vi.fn() },
@@ -83,7 +168,44 @@ describe("候选解析服务 (严格 Zod)", () => {
     });
     const result = await resolveAgentArtifactCandidate({ userId: "u1", candidateId: "c1", decision: "accept" }, { db: tx as any });
     expect(result.status).toBe("accepted");
-    // 验证 userProfile.update 被调用了（如果 patch 有效）
+    expect(tx.userProfile.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId: "u1", version: 3 },
+        data: expect.objectContaining({ version: { increment: 1 } }),
+      }),
+    );
+  });
+
+  it("profile_patch 投影时版本已变化则拒绝覆盖", async () => {
+    const tx = makeTx({
+      agentArtifactCandidate: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "c1",
+          userId: "u1",
+          candidateType: "profile_patch",
+          status: "pending",
+          artifact: JSON.stringify(validProfileArtifact),
+          baseVersion: 3,
+          sourceSessionId: "s1",
+          sourceConversationId: "c1",
+          resolvedAt: null,
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        update: vi.fn(),
+      },
+      userProfile: {
+        findUnique: vi.fn().mockResolvedValue({ version: 3 }),
+        update: vi.fn(),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+    });
+
+    await expect(
+      resolveAgentArtifactCandidate(
+        { userId: "u1", candidateId: "c1", decision: "accept" },
+        { db: tx as any },
+      ),
+    ).rejects.toMatchObject({ code: "BASE_VERSION_CONFLICT", status: 409 });
   });
 
   it("memory >2000 字符被拒绝而非截断", async () => {

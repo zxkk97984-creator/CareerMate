@@ -263,4 +263,53 @@ describe("simulation generation (V2 envelope protocol)", () => {
     expect(report?.scenarioKey).toBe("cross_role_communication");
     expect(report?.score).toBe(85);
   });
+
+  it("拒绝 status=error 的 simulation_report 信封并使用降级报告", async () => {
+    const reportArtifact = {
+      schemaVersion: "1.0",
+      taskType: "simulation_report",
+      status: "error",
+      summary: "工具失败",
+      data: {
+        sessionId: "session-1",
+        scenarioKey: "cross_role_communication",
+        score: 99,
+        strengths: ["不应采信"],
+        improvements: [],
+        evidence: [],
+        abilityImpact: {},
+        candidateUpdates: [],
+      },
+      evidence: [],
+      sources: [],
+      assumptions: [],
+      warnings: ["上游失败"],
+      requiresUserConfirmation: false,
+      baseVersion: null,
+      nextActions: [],
+    };
+
+    mocks.chat.mockResolvedValue({
+      data: {
+        text: makeArtifactText(reportArtifact),
+        citations: [],
+        warnings: [],
+      },
+      meta: apiMeta,
+    });
+
+    const result = await generateSimulationReport({
+      userId: "user-1",
+      scenarioKey: "cross_role_communication",
+      scenarioTitle: "跨岗位沟通",
+      transcript: [
+        { role: "assistant", content: "问题？" },
+        { role: "user", content: "回答。" },
+      ],
+      sessionId: "session-1",
+    });
+
+    expect(result.meta.degraded).toBe(true);
+    expect((result.data.structured as { score: number }).score).not.toBe(99);
+  });
 });

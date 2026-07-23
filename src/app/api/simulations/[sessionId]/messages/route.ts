@@ -34,6 +34,8 @@ export async function POST(request: Request, context: { params: Promise<{ sessio
     scenarioTitle: session.scenarioTitle,
     transcript,
     remoteConversationId: session.remoteConversationId ?? undefined,
+    sessionId: session.id,
+    expectedRound: nextTurn,
   });
 
   // V2 协议：result.data.text 包含信封中的 nextQuestion；structured 已被淘汰

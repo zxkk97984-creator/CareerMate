@@ -456,6 +456,8 @@ describe("stateful stream (STATEFUL_CHAT_TURNS=true)", () => {
     const body = await response.json();
     expect(body.error).toBeDefined();
     expect(body.error.code).toBe("SNAPSHOT_LOAD_FAILED");
+    expect(body.error.message).toBe("职业上下文加载失败，请稍后重试");
+    expect(JSON.stringify(body)).not.toContain("SNAPSHOT_TOO_LARGE");
     mocks.snapshotShouldThrow = false;
   });
 });

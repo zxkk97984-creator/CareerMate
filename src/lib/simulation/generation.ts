@@ -226,6 +226,7 @@ export async function generateSimulationReport(input: {
     if (
       envelope.artifact
       && envelope.artifact.taskType === "simulation_report"
+      && envelope.artifact.status === "success"
     ) {
       // Zod 严格校验
       const parsed = simulationReportDataSchema.safeParse(envelope.artifact.data);
@@ -234,6 +235,10 @@ export async function generateSimulationReport(input: {
 
         if (d.scenarioKey === input.scenarioKey
           && (input.sessionId === undefined || d.sessionId === input.sessionId)
+          && (
+            d.candidateUpdates.length === 0
+            || envelope.artifact.requiresUserConfirmation === true
+          )
         ) {
           const structured: SimulationReportResult = {
             type: "simulation_report",
