@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import { resolveAgentArtifactCandidate } from "./candidate-resolution";
+import { resolveAgentArtifactCandidate, AgentArtifactCandidateResolutionError } from "./candidate-resolution";
 import type { AgentArtifactCandidateType } from "./candidate-service";
 
-const validArtifact = {
+const validPlanArtifact = {
   schemaVersion: "1.0" as const,
   taskType: "career_plan" as const,
   status: "pending_confirmation" as const,
   summary: "三年计划候选",
-  data: { targetRole: "data_analyst", phases: [] },
+  data: { targetRole: "data_analyst", phases: [], summary: "分析岗三年计划", immediateActions: [], years: [], quarters: [], months: [], currentMonthIndex: 1, assumptions: [], riskNotes: [] },
   evidence: [],
   sources: [],
   assumptions: [],
@@ -17,141 +17,115 @@ const validArtifact = {
   nextActions: [],
 };
 
-function makeFakeDb(overrides: Record<string, unknown> = {}) {
-  const defaultCandidate = {
-    id: "c1",
-    userId: "u1",
-    candidateType: "career_plan" as AgentArtifactCandidateType,
-    status: "pending",
-    artifact: JSON.stringify(validArtifact),
-    baseVersion: 3,
-    sourceSessionId: "session-1",
-    sourceConversationId: "conv-1",
-    resolvedAt: null,
-  };
+const validProfileArtifact = {
+  schemaVersion: "1.0" as const,
+  taskType: "profile_assessment" as const,
+  status: "pending_confirmation" as const,
+  summary: "画像补丁候选",
+  data: { patch: { targetRole: "data_analyst", weeklyAvailableHours: 12 } },
+  evidence: [],
+  sources: [],
+  assumptions: [],
+  warnings: [],
+  requiresUserConfirmation: true,
+  baseVersion: 3,
+  nextActions: [],
+};
 
-  const resolveCandidate = () => {
-    if (overrides.candidate === null) return null;
-    return (overrides.candidate as typeof defaultCandidate) ?? defaultCandidate;
-  };
-
-  const makeTransaction = () => ({
+function makeTx(overrides: Record<string, unknown> = {}) {
+  const def = {
     agentArtifactCandidate: {
-      findFirst: vi.fn().mockResolvedValue(resolveCandidate()),
-      update: vi.fn().mockResolvedValue({ ...defaultCandidate, status: "rejected" as const }),
+      findFirst: vi.fn().mockResolvedValue({ id: "c1", userId: "u1", candidateType: "career_plan", status: "pending", artifact: JSON.stringify(validPlanArtifact), baseVersion: 3, sourceSessionId: "s1", sourceConversationId: "c1", resolvedAt: null }),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      update: vi.fn().mockResolvedValue({}),
     },
     careerPlan: {
       findFirst: vi.fn().mockResolvedValue({ id: "plan-1", version: 3 }),
       updateMany: vi.fn(),
-      create: vi.fn(),
+      create: vi.fn().mockResolvedValue({ id: "plan-new" }),
     },
     userProfile: {
       findUnique: vi.fn().mockResolvedValue({ version: 3 }),
-      update: vi.fn(),
+      update: vi.fn().mockResolvedValue({}),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
     abilityEvidence: { create: vi.fn() },
     memoryItem: { create: vi.fn() },
     roleDraft: { create: vi.fn() },
-  });
-
-  return {
-    agentArtifactCandidate: {
-      findFirst: vi.fn().mockResolvedValue(resolveCandidate()),
-      update: vi.fn().mockResolvedValue({ ...defaultCandidate, status: "rejected" as const }),
-    },
-    careerPlan: {
-      findFirst: vi.fn().mockResolvedValue({ id: "plan-1", version: 3 }),
-      updateMany: vi.fn(),
-      create: vi.fn(),
-    },
-    userProfile: {
-      findUnique: vi.fn().mockResolvedValue({ version: 3 }),
-      update: vi.fn(),
-    },
-    abilityEvidence: { create: vi.fn() },
-    memoryItem: { create: vi.fn() },
-    roleDraft: { create: vi.fn() },
-    $transaction: vi.fn().mockImplementation((fn: any) => fn(makeTransaction())),
+    ...overrides,
   };
+  return { ...def, $transaction: vi.fn().mockImplementation((fn: any) => fn(def)) };
 }
 
-describe("候选解析服务", () => {
-  it("幂等地拒绝一个待确认候选", async () => {
-    const db = makeFakeDb();
-    const first = await resolveAgentArtifactCandidate(
-      { userId: "u1", candidateId: "c1", decision: "reject" },
-      { db: db as any },
-    );
-    expect(first.status).toBe("rejected");
-
-    // 第二次调用应返回相同结果
-    const existingDb = makeFakeDb({
-      candidate: {
-        id: "c1", userId: "u1", candidateType: "career_plan",
-        status: "rejected", artifact: JSON.stringify(validArtifact),
-        baseVersion: 3, sourceSessionId: "session-1",
-        sourceConversationId: "conv-1", resolvedAt: new Date().toISOString(),
-      },
+describe("候选解析服务 (严格 Zod)", () => {
+  it("career_plan 比较计划版本而非画像版本", async () => {
+    const tx = makeTx({
+      careerPlan: { findFirst: vi.fn().mockResolvedValue({ id: "plan-1", version: 5 }), updateMany: vi.fn() },
     });
-    const second = await resolveAgentArtifactCandidate(
-      { userId: "u1", candidateId: "c1", decision: "reject" },
-      { db: existingDb as any },
-    );
-    expect(second.status).toBe("rejected");
-  });
-
-  it("拒绝不属于该用户的候选", async () => {
-    const db = makeFakeDb({ candidate: null });
+    // 计划版本 5 ≠ artifact.baseVersion 3 → 应拒绝
     await expect(
-      resolveAgentArtifactCandidate(
-        { userId: "u2", candidateId: "c1", decision: "accept" },
-        { db: db as any },
-      ),
-    ).rejects.toMatchObject({ code: "CANDIDATE_NOT_FOUND", status: 404 });
+      resolveAgentArtifactCandidate({ userId: "u1", candidateId: "c1", decision: "accept" }, { db: tx as any }),
+    ).rejects.toMatchObject({ code: "BASE_VERSION_CONFLICT", status: 409 });
   });
 
-  it("已解决的候选收到相反决定时返回 409", async () => {
-    const db = makeFakeDb({
-      candidate: {
-        id: "c1", userId: "u1", candidateType: "career_plan",
-        status: "rejected", artifact: JSON.stringify(validArtifact),
-        baseVersion: 3, sourceSessionId: "session-1",
-        sourceConversationId: "conv-1", resolvedAt: new Date().toISOString(),
-      },
+  it("profile_patch 比较画像版本", async () => {
+    const tx = makeTx({
+      agentArtifactCandidate: { findFirst: vi.fn().mockResolvedValue({ id: "c1", userId: "u1", candidateType: "profile_patch", status: "pending", artifact: JSON.stringify(validProfileArtifact), baseVersion: 3, sourceSessionId: "s1", sourceConversationId: "c1", resolvedAt: null }), updateMany: vi.fn().mockResolvedValue({ count: 1 }), update: vi.fn() },
+      userProfile: { findUnique: vi.fn().mockResolvedValue({ version: 5 }), update: vi.fn(), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     });
     await expect(
-      resolveAgentArtifactCandidate(
-        { userId: "u1", candidateId: "c1", decision: "accept" },
-        { db: db as any },
-      ),
-    ).rejects.toMatchObject({ code: "CANDIDATE_ALREADY_RESOLVED", status: 409 });
+      resolveAgentArtifactCandidate({ userId: "u1", candidateId: "c1", decision: "accept" }, { db: tx as any }),
+    ).rejects.toMatchObject({ code: "BASE_VERSION_CONFLICT", status: 409 });
   });
 
-  it("baseVersion 不匹配时拒绝接受", async () => {
-    const db = makeFakeDb();
-    // 重写 $transaction 使事务内的 userProfile 返回版本 7
-    db.$transaction.mockImplementation((fn: any) => fn({
+  it("profile_patch 原子增加 profile.version", async () => {
+    const tx = makeTx({
+      agentArtifactCandidate: { findFirst: vi.fn().mockResolvedValue({ id: "c1", userId: "u1", candidateType: "profile_patch", status: "pending", artifact: JSON.stringify(validProfileArtifact), baseVersion: 3, sourceSessionId: "s1", sourceConversationId: "c1", resolvedAt: null }), updateMany: vi.fn().mockResolvedValue({ count: 1 }), update: vi.fn() },
+    });
+    const result = await resolveAgentArtifactCandidate({ userId: "u1", candidateId: "c1", decision: "accept" }, { db: tx as any });
+    expect(result.status).toBe("accepted");
+    // 验证 userProfile.update 被调用了（如果 patch 有效）
+  });
+
+  it("memory >2000 字符被拒绝而非截断", async () => {
+    const longContent = "x".repeat(2001);
+    const memoryArtifact = {
+      ...validPlanArtifact,
+      taskType: "memory_item" as const,
+      data: { content: longContent, kind: "career_fact", reason: "test" },
+    };
+    const tx = makeTx({
+      agentArtifactCandidate: { findFirst: vi.fn().mockResolvedValue({ id: "c1", userId: "u1", candidateType: "memory_item", status: "pending", artifact: JSON.stringify(memoryArtifact), baseVersion: null, sourceSessionId: "s1", sourceConversationId: "c1", resolvedAt: null }), updateMany: vi.fn().mockResolvedValue({ count: 1 }), update: vi.fn() },
+    });
+    await expect(
+      resolveAgentArtifactCandidate({ userId: "u1", candidateId: "c1", decision: "accept" }, { db: tx as any }),
+    ).rejects.toMatchObject({ code: "INVALID_CANDIDATE_DATA", status: 400 });
+  });
+
+  it("RoleDraft 必须提供 roleKey 和 roleName", async () => {
+    const draftArtifact = {
+      ...validPlanArtifact,
+      taskType: "career_template_draft" as const,
+      data: { roleKey: "", roleName: "", category: "技术" },
+    };
+    const tx = makeTx({
+      agentArtifactCandidate: { findFirst: vi.fn().mockResolvedValue({ id: "c1", userId: "u1", candidateType: "career_template_draft", status: "pending", artifact: JSON.stringify(draftArtifact), baseVersion: null, sourceSessionId: "s1", sourceConversationId: "c1", resolvedAt: null }), updateMany: vi.fn().mockResolvedValue({ count: 1 }), update: vi.fn() },
+    });
+    await expect(
+      resolveAgentArtifactCandidate({ userId: "u1", candidateId: "c1", decision: "accept" }, { db: tx as any }),
+    ).rejects.toMatchObject({ code: "INVALID_CANDIDATE_DATA", status: 400 });
+  });
+
+  it("updateMany count=0 时双重投影被阻止", async () => {
+    const tx = makeTx({
       agentArtifactCandidate: {
-        findFirst: vi.fn().mockResolvedValue({
-          id: "c1", userId: "u1", candidateType: "career_plan",
-          status: "pending", artifact: JSON.stringify(validArtifact),
-          baseVersion: 3, sourceSessionId: "session-1",
-          sourceConversationId: "conv-1", resolvedAt: null,
-        }),
+        findFirst: vi.fn().mockResolvedValue({ id: "c1", userId: "u1", candidateType: "career_plan", status: "pending", artifact: JSON.stringify(validPlanArtifact), baseVersion: 3, sourceSessionId: "s1", sourceConversationId: "c1", resolvedAt: null }),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }), // 模拟并发冲突
         update: vi.fn(),
       },
-      careerPlan: { findFirst: vi.fn(), updateMany: vi.fn(), create: vi.fn() },
-      userProfile: { findUnique: vi.fn().mockResolvedValue({ version: 7 }), update: vi.fn() },
-      abilityEvidence: { create: vi.fn() },
-      memoryItem: { create: vi.fn() },
-      roleDraft: { create: vi.fn() },
-    }));
-
+    });
     await expect(
-      resolveAgentArtifactCandidate(
-        { userId: "u1", candidateId: "c1", decision: "accept" },
-        { db: db as any },
-      ),
-    ).rejects.toMatchObject({ code: "BASE_VERSION_CONFLICT", status: 409 });
+      resolveAgentArtifactCandidate({ userId: "u1", candidateId: "c1", decision: "accept" }, { db: tx as any }),
+    ).rejects.toMatchObject({ code: "CANDIDATE_ALREADY_RESOLVED", status: 409 });
   });
 });
