@@ -25,9 +25,28 @@ describe("chat persistence contracts", () => {
       { type: "plan_ref", planId: "plan-1", version: 2 },
       { type: "exploration_report_ref", reportId: "report-1" },
       { type: "error", code: "UPSTREAM_INTERRUPTED", message: "回答未完成，可以重试。" },
+      {
+        type: "agent_artifact_candidate_ref",
+        candidateId: "cand-agent-1",
+        candidateType: "career_plan",
+        taskType: "career_plan",
+        summary: "三年计划候选",
+      },
     ];
 
     expect(chatMessagePartsSchema.parse(parts)).toEqual(parts);
+  });
+
+  it("rejects malformed agent_artifact_candidate_ref", () => {
+    expect(parseChatMessageParts(JSON.stringify([
+      {
+        type: "agent_artifact_candidate_ref",
+        candidateId: "",
+        candidateType: "invalid",
+        taskType: "career_plan",
+        summary: "ok",
+      },
+    ]))).toEqual([]);
   });
 
   it("drops malformed persisted parts instead of breaking conversation history", () => {

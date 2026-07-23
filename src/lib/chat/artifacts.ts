@@ -1,4 +1,6 @@
 import type { ChatMessagePart } from "./persistence";
+import type { AgentArtifactCandidateType } from "@/lib/agentic-v2/candidate-service";
+import type { AgentArtifactV1 } from "@/lib/agentic-v2/contracts";
 
 /**
  * AI 结构化结果到消息部件的白名单转换。
@@ -47,4 +49,22 @@ export function simulationReportRefPart(sessionId: string): ChatMessagePart {
 /** 创建错误部件 */
 export function errorPart(code: string, message: string): ChatMessagePart {
   return { type: "error", code, message };
+}
+
+/** 创建 Agentic V2 通用候选引用部件 */
+export function agentArtifactCandidateRefPart(
+  candidate: {
+    id: string;
+    candidateType: AgentArtifactCandidateType;
+    taskType: AgentArtifactV1["taskType"];
+    summary: string;
+  },
+): ChatMessagePart {
+  return {
+    type: "agent_artifact_candidate_ref",
+    candidateId: candidate.id,
+    candidateType: candidate.candidateType,
+    taskType: candidate.taskType,
+    summary: candidate.summary.slice(0, 500),
+  };
 }
