@@ -1,167 +1,224 @@
 # CareerMate
 
-AI 职业导航与终身学习伙伴系统 —— 为浙江大学学生服务创新大赛开发的本地原型，基于 Next.js 16 + Prisma + SQLite + 蚂蚁百宝箱。
+CareerMate 是一个基于蚂蚁百宝箱 Agentic 应用、Next.js 与 Prisma 构建的长期职业成长伙伴。它将职业探索、能力画像、成长规划、学习路线、职场模拟和持续复盘统一到一个可追踪、可确认、可扩展的产品闭环中。
 
-## 功能概览
+> 当前仓库包含可本地运行的 Mock 模式，以及对已发布百宝箱 Agentic V2 应用的真实 API 适配。职业类型可扩展，种子职业仅用于演示和回归测试。
 
-- **聊天首页**：持久化多会话、SSE 流式对话、画像候选确认、计划生成、职业探索报告
-- **成长仪表盘**：能力雷达图、匹配度分析、近期进度
-- **职业路径**：三年滚动计划、月度里程碑、90 天任务、本周行动
-- **模拟训练**：多轮职场模拟对话、自动评分
-- **资源中心**：按岗位和能力维度筛选的学习资源
-- **画像引导**：对话式 onboarding 收集用户背景信息
-- **MCP 兼容层**：JSON-RPC 2.0 端点，5 个业务工具，Token 用户绑定
-- **Admin**：岗位模板草稿生成与审核
+## 核心能力
+
+- 开放式职业咨询与可追溯的多会话对话
+- 基于个人事实和能力证据的职业画像候选
+- 面向任意职业的探索、比较与方向验证
+- 个性化 3–5 年职业规划、近期行动和学习任务
+- 多轮职场情境模拟、评分与能力证据沉淀
+- 简历与作品集事实提取、优化和风险检查
+- 结合计划、进度、训练和市场变化的持续复盘
+- 候选确认、版本冲突保护、跨用户数据隔离
+- CareerMate 权威记忆与百宝箱低敏感度偏好记忆协作
+
+## Agentic V2 架构
+
+百宝箱 Agentic V2 是唯一的 AI 决策中枢。前端描述用户请求和页面状态，CareerMate 后端提供经过裁剪和脱敏的业务快照；主 Agent 自主决定是否检索知识库、联网、调用工作流、Skill 或专业子智能体。
+
+```mermaid
+flowchart TB
+    U["用户"] --> UI["CareerMate 前端<br/>页面状态与自然语言请求"]
+    UI --> API["CareerMate 后端<br/>登录、权限、会话与 SSE"]
+
+    DB[("CareerMate 权威数据库<br/>画像、证据、计划、进度、训练、记忆")]
+    DB --> SNAP["脱敏业务快照<br/>profileSnapshot<br/>historySnapshot<br/>simulationState"]
+    SNAP --> API
+
+    API -->|"一个 agent_id<br/>business_data + conversation_id"| AGENT["百宝箱 Agentic V2<br/>唯一 AI 大脑"]
+
+    subgraph TBOX["百宝箱能力层"]
+        AGENT --> KB["职业知识库<br/>稳定基线"]
+        AGENT --> WF["确定性工作流<br/>结构化业务任务"]
+        AGENT --> SKILL["Skill<br/>解析、计算、标准化"]
+        AGENT --> SUB["专业子智能体<br/>研究与伦理审查"]
+        AGENT --> SEARCH["夸克搜索 MCP<br/>当前市场证据"]
+        AGENT --> PMEM["百宝箱长期记忆<br/>低敏感度偏好"]
+    end
+
+    AGENT --> ENVELOPE["一次最终答复<br/>可选 CAREERMATE_ARTIFACT 信封"]
+    ENVELOPE --> VALIDATE["后端严格校验<br/>Schema、所有权、权限、baseVersion"]
+    VALIDATE --> CARD["待确认候选卡片"]
+    CARD -->|"接受"| PROJECT["事务化正式投影"]
+    CARD -->|"拒绝"| REJECT["保留原正式数据"]
+    PROJECT --> DB
+```
+
+### 职责边界
+
+| 层级 | 负责 | 不负责 |
+|---|---|---|
+| 百宝箱 Agentic V2 | 意图理解、工具路由、联网判断、证据融合、候选生成 | 登录鉴权、直接覆盖正式业务数据 |
+| CareerMate 后端 | 用户身份、数据隔离、脱敏快照、会话绑定、Schema/版本校验、确认与正式写入 | 建立第二套 AI 决策逻辑 |
+| CareerMate 前端 | 用户交互、页面上下文、流式展示、候选确认 | 指定 Agent 必须调用哪个工作流 |
+| CareerMate 数据库 | 保存已确认画像、能力证据、计划、进度、训练和正式记忆 | 将未确认的模型推断视为事实 |
+
+当前真实 API 路径使用以下约定：
+
+- 后端只调用一个 V2 `agent_id`，并按本地会话复用百宝箱 `conversation_id`。
+- `business_data` 携带裁剪后的 `profileSnapshot`、`historySnapshot` 和可选 `simulationState`，不携带完整简历、联系方式或无关敏感信息。
+- 页面上下文只描述 `surface`、`action` 和可选目标引用，不能覆盖用户自然语言意图。
+- `TBOX_SEARCH_ENGINE=false`，避免内置搜索和 Agent 已挂载的夸克搜索 MCP 重复执行。
+- `/api/mcp/v2` 与短时签名上下文令牌属于保留的未来基础设施，不是当前聊天主链路的依赖。
+
+## 结构化候选与正式写入
+
+需要用户确认的模型产物必须在正常可读答复末尾附加一个精确信封：
+
+```text
+<CAREERMATE_ARTIFACT>
+{...AgentArtifactV1...}
+</CAREERMATE_ARTIFACT>
+```
+
+正式数据的生命周期为：
+
+```text
+AI 提案
+→ 精确标签提取
+→ JSON 与 AgentArtifactV1 Schema 校验
+→ 用户所有权、权限和 baseVersion 校验
+→ 候选卡片
+→ 用户明确接受或拒绝
+→ 事务化投影到正式数据库
+```
+
+无标签 JSON、多个信封、损坏的 JSON、无效 Schema 或版本冲突只能作为可读文本展示，不能创建正式候选，更不能写入正式数据。
+
+## 长期记忆
+
+CareerMate 采用分层记忆：
+
+- 百宝箱 `conversation_id` 维持同一远端对话的上下文连续性。
+- 百宝箱长期记忆只保存职业方向、学习偏好、时间预算等低敏感度且长期有用的信息。
+- CareerMate 数据库保存已确认的画像、能力证据、计划版本、训练记录、成长进度和正式记忆，是权威数据源。
+- 新的能力判断、分数、计划或记忆均先形成候选，用户确认后才生效。
 
 ## 技术栈
 
 | 领域 | 选型 |
-|------|------|
-| 框架 | Next.js 16 (App Router) |
+|---|---|
+| Web 框架 | Next.js 16（App Router） |
 | 语言 | TypeScript 5.9 |
-| 前端 | React 19 + Tailwind CSS v4 |
-| 数据库 | SQLite (Prisma 6 ORM) |
+| 前端 | React 19、Tailwind CSS v4、Recharts |
+| 数据与 ORM | SQLite、Prisma 6 |
 | 运行时校验 | Zod 3 |
-| 测试 | Vitest 3 (单元) + Playwright 1.61 (E2E) |
-| AI | 蚂蚁百宝箱 API (mock 模式默认可用) |
-
-## 前置条件
-
-- Node.js 18+ 
-- npm（Windows 用户使用 `npm.cmd`）
+| 测试 | Vitest 3、Playwright 1.61 |
+| AI 中枢 | 蚂蚁百宝箱 Agentic V2 |
+| AI 接入 | 服务端 API、SSE、`business_data` 脱敏快照 |
 
 ## 快速开始
 
+前置条件：
+
+- Node.js 20.9+
+- npm；Windows 环境建议使用 `.cmd` 命令
+
 ```bash
-# 1. 克隆仓库
-git clone https://github.com/zxkk97984-creator/CareerMate.git
+git clone <repository-url>
 cd CareerMate
-
-# 2. 安装依赖
 npm.cmd install
-
-# 3. 配置环境变量
 copy .env.example .env.local
-# .env.local 已默认为 mock 模式，无需修改即可运行
-
-# 4. 初始化数据库并填充种子数据
 npm.cmd run prisma:generate
 npm.cmd run db:migrate:deploy
 npm.cmd run seed
-
-# 5. 启动开发服务器
 npm.cmd run dev
 ```
 
-打开 http://localhost:3000 即可使用。
+启动后访问 `http://localhost:3000`。种子脚本只提供虚构的本地测试数据；请在本地环境中查看或自行创建测试账户，不要公开共享账户凭据。
 
-## 演示账号
+## Mock 与真实百宝箱模式
 
-种子数据包含以下测试账号，密码均为 `careermate123`：
+`.env.example` 默认使用 Mock 模式，不需要外部密钥即可验证主要产品流程：
 
-| 账号 | 显示名 | 身份 | 目标岗位 |
-|------|--------|------|---------|
-| `student_lin` | 小林 | 大三·数字媒体技术 | AI 产品经理 |
-| `student_chen` | 小周 | 大二·统计学 | 数据分析师 |
-| `student_wu` | 小陈 | 大三·新闻传播 | AIGC 内容运营 |
-| `worker_zhao` | 阿敏 | 职场新人·运营1年 | AI 产品经理（转岗） |
-| `career_switch_li` | 宇航 | 新媒体运营 | 数据分析师（摇摆中） |
-| `admin` | 管理员 | - | 管理员（审核岗位草稿） |
-
-## Mock 模式与真实百宝箱
-
-默认 `TBOX_MODE=mock`，所有 AI 对话使用本地固定响应，无需百宝箱凭证即可运行完整流程。
-
-如需接入真实百宝箱 API，在 `.env.local` 中修改：
-
+```env
+TBOX_MODE="mock"
+CAREERMATE_AGENTIC_V2="false"
 ```
+
+接入已发布并通过验证的 V2 主 Agent 时，在未提交的 `.env.local` 或部署平台环境变量中配置：
+
+```env
 TBOX_MODE="api"
-TBOX_API_KEY="你的API密钥"
-TBOX_APP_ID="你的应用ID"
-TBOX_AGENT_ID="你的智能体ID"
-TBOX_DATASET_ROLE_COMPETENCY="职业能力知识库ID"
-TBOX_DATASET_LEARNING_RESOURCES="学习资源知识库ID"
-TBOX_DATASET_SIMULATION_SCENES="训练场景知识库ID"
-TBOX_DATASET_ETHICS_RULES="伦理规则知识库ID"
+TBOX_API_KEY="<tbox-api-key>"
+TBOX_AGENT_ID="<tbox-agent-id>"
+TBOX_AGENT_VERSION="<validated-agent-version>"
+CAREERMATE_AGENTIC_V2="true"
+TBOX_CONTEXT_TRANSPORT="business_data"
+TBOX_HISTORY_MODE="provider"
+STATEFUL_CHAT_TURNS="true"
+TBOX_SEARCH_ENGINE="false"
 ```
 
-真实 API 验收结果见 `docs/tbox/acceptance-evidence.md`。
+`TBOX_API_KEY` 只能存在于服务端环境变量中，禁止添加 `NEXT_PUBLIC_` 前缀，也不要提交 `.env.local`。切换真实模式前，应先在测试环境固定并验收 `agent_id` 与 `agent_version`。
 
-## 可用脚本
+## 常用命令
 
 ```bash
-npm.cmd run dev              # 启动开发服务器
-npm.cmd run build            # 生产构建
-npm.cmd run start            # 启动生产服务器
+npm.cmd run dev               # 启动开发服务器
+npm.cmd run build             # 生产构建
+npm.cmd run start             # 启动生产服务器
 
-npm.cmd run test             # 运行单元测试
-npm.cmd run test:watch       # 监听模式
-npm.cmd run test:e2e         # 运行 E2E 测试
-npm.cmd run test:migrations  # 数据库迁移冒烟测试
+npm.cmd run test              # 单元与集成测试
+npm.cmd run test:watch        # 测试监听模式
+npm.cmd run test:e2e          # E2E 测试
+npm.cmd run test:migrations   # 数据库迁移冒烟测试
 
-npm.cmd run lint             # ESLint 检查
-npm.cmd run typecheck        # TypeScript 类型检查
-npm.cmd run secret:scan      # 敏感信息扫描
+npm.cmd run lint              # ESLint
+npm.cmd run typecheck         # TypeScript 类型检查
+npm.cmd run secret:scan       # 敏感信息扫描
+npm.cmd run verify            # 完整质量门禁
 
-npm.cmd run verify           # 全量质量门禁（扫描+lint+类型+测试+迁移+构建）
-
-npm.cmd run seed             # 重新填充演示数据（会覆盖已有数据）
-
-npm.cmd run db:migrate       # 开发环境创建新迁移
-npm.cmd run db:migrate:deploy # 应用已有迁移
+npm.cmd run prisma:generate
+npm.cmd run db:migrate
+npm.cmd run db:migrate:deploy
+npm.cmd run seed
 ```
 
 ## 项目结构
 
-```
+```text
 src/
-├── app/                      # Next.js App Router 页面与 API 路由
-│   ├── api/
-│   │   ├── auth/             # 登录/注册
-│   │   ├── chat/             # 聊天（会话、消息、SSE 流）
-│   │   ├── careers/          # 职业探索报告
-│   │   ├── mcp/              # JSON-RPC MCP 端点
-│   │   ├── plans/            # 职业计划（生成、确认、重规划）
-│   │   ├── profile/          # 画像候选
-│   │   └── ...
-│   ├── page.tsx              # 聊天首页（/）
-│   ├── dashboard/            # 成长仪表盘
-│   ├── path/                 # 职业路径
-│   ├── simulation/           # 模拟训练
-│   └── ...
-├── components/
-│   ├── chat/                 # 聊天组件（首页、侧栏、输入框、消息渲染、卡片）
-│   └── workspace.tsx         # 多页面工作台布局
-├── lib/
-│   ├── chat/                 # 聊天服务层（仓储、服务、流式、artifact）
-│   ├── careers/              # 职业探索（schema、服务）
-│   ├── plans/                # 计划服务（生成、重规划）
-│   ├── profile/              # 画像服务（候选、能力证据）
-│   ├── tbox/                 # 百宝箱适配层（流式、检索、SSE）
-│   ├── tools/                # MCP 工具注册表
-│   └── ...
-└── ...
-docs/                         # 项目文档
-prisma/                       # 数据库 Schema 与迁移
-e2e/                          # E2E 测试用例
+├── agentic-v2/               # 知识库素材、Skill、平台配置稿与评测数据
+├── app/
+│   └── api/
+│       ├── agentic-v2/       # 候选查询、接受与拒绝接口
+│       ├── chat/             # 对话、消息与 SSE
+│       ├── mcp/              # 保留的 MCP 兼容与未来 V2 基础设施
+│       ├── plans/            # 职业计划业务接口
+│       └── profile/          # 画像与证据业务接口
+├── components/               # 聊天、候选卡片与产品页面组件
+└── lib/
+    ├── agentic-v2/           # 契约、信封解析、候选生命周期与正式投影
+    ├── chat/                 # 脱敏快照、会话状态、流式处理与持久化
+    ├── tbox/                 # 百宝箱客户端、SSE 与响应归一化
+    └── ...
+
+prisma/                       # Schema、迁移与虚构种子数据
+docs/                         # 产品、接口、评测与设计文档
+e2e/                          # 端到端测试
 ```
 
-## 安全
+## 安全原则
 
-- `.env.local` 不入库。真实密钥只存在于本地或部署环境变量中
-- 插件/MCP 调用的 userId 和 scopes 仅从服务端环境读取，不接受工具参数覆盖
-- 画像、计划写入均需用户手动确认，AI 不能绕过
-- 跨用户数据隔离：所有查询绑定 userId
-- `npm.cmd run secret:scan` 在 `verify` 流程中自动执行
+- 密钥只存放在服务端环境变量中，日志和提交内容不得包含真实密钥、Token 或平台 ID。
+- 所有业务查询绑定当前登录用户，模型不能通过参数切换用户身份。
+- 发送给百宝箱和搜索服务的数据遵循最小必要原则；私人画像原文不得进入联网搜索词。
+- AI 只能生成候选，不能绕过用户确认直接修改正式画像、分数、计划或记忆。
+- 正式投影使用所有权检查、严格 Schema、幂等处理、版本冲突检测和数据库事务。
+- Mock、手工样本或降级结果必须在产品界面中明确标识，不能伪装成实时平台结果。
 
 ## 文档
 
 | 文档 | 说明 |
-|------|------|
-| `docs/AI职业导航项目方案.md` | 项目整体方案 |
-| `docs/产品需求文档_PRD.md` | 产品需求文档 |
-| `docs/接口设计文档.md` | API 接口设计 |
-| `docs/tbox/acceptance-evidence.md` | 百宝箱 5 场景真实 API 验收证据 |
-| `docs/tbox/百宝箱配置清单.md` | 百宝箱配置清单 |
-| `docs/evaluation/tbox-cases.md` | 40 条百宝箱评测用例 |
-| `docs/evaluation/user-testing.md` | 用户测试计划 |
+|---|---|
+| [Agentic V2 架构交接](AGENTIC_V2_HANDOFF.md) | 当前真实运行链路、平台资源边界和发布清单 |
+| [公开 README V2 设计](docs/superpowers/specs/2026-07-23-public-readme-v2-design.md) | 本 README 的信息架构与隐私约束 |
+| [百宝箱评测用例](docs/evaluation/tbox-cases.md) | 平台路由、安全与结构化输出评测 |
+| [V2 机器可读评测集](src/agentic-v2/evaluation/cases.json) | Agentic V2 自动化评测输入 |
+| [产品方案](docs/AI职业导航项目方案.md) | 产品目标和业务范围 |
+| [接口设计](docs/接口设计文档.md) | CareerMate 服务端接口说明 |

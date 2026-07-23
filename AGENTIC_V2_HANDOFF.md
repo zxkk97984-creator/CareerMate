@@ -1,246 +1,487 @@
-# CareerMate Agentic V2 — Claude / DeepSeek 续做交接单
+# CareerMate Agentic V2 架构交接
 
-更新时间：2026-07-23
+本文说明仓库当前的 Agentic V2 运行链路、百宝箱资源边界、结构化候选协议和发布检查项。它以实际代码为准，不依赖机器路径、个人账户或特定开发环境。
 
-## 0. No-Business-MCP 运行时（最新架构）
+## 1. 当前运行链路
 
-自 2026-07-23 起，活跃 Agentic V2 聊天路径不再依赖 CareerMate 业务 MCP V2。
+CareerMate 当前采用“单一 AI 大脑 + 业务后端治理”的架构：
 
-### 当前活跃运行时
-
-- **快照传输**：CareerMate 后端在每次请求时加载并消毒用户画像、能力证据、活动计划、近期进度、模拟历史和已确认记忆，以 `business_data.profileSnapshot` 和 `business_data.historySnapshot` 发送给 TBox Agent。
-- **不需要 `CAREERMATE_CONTEXT_TOKEN_SECRET`**：活跃 V2 运行时不再签署或验证 context token。该环境变量标记为可选/休眠。
-- **`/api/mcp/v2` 为休眠未来基础设施**：代码保留但不被活跃聊天路径依赖。
-- **单一 `agent_id`**：仅需 `TBOX_AGENT_ID`；无需 MCP 服务端配置。
-- **`search_engine=false`**：有意为之，夸克 MCP 已挂载在 Agent 内部。
-- **CareerMate DB 为权威**：后端负责身份、权限、版本、确认和正式写入。
-- **TBox 长期记忆**：仅存储低敏感偏好。
-
-### 精确信封协议
-
-候选和模拟结果使用 ONE 精确标签：
-
+```text
+用户
+→ CareerMate 前端
+→ CareerMate 后端 /api/chat
+→ 脱敏 profileSnapshot / historySnapshot / simulationState
+→ 一个已发布的百宝箱 Agentic V2 agent_id
+→ 知识库、工作流、Skill、专业子智能体、夸克搜索与平台记忆
+→ 可读答复 + 可选 CAREERMATE_ARTIFACT
+→ 后端校验并创建待确认候选
+→ 用户接受或拒绝
+→ CareerMate 权威数据库
 ```
+
+运行约束：
+
+- 百宝箱 Agentic 是唯一 AI 决策中枢，CareerMate 后端不维护第二套路由模型。
+- 所有页面统一经过 `/api/chat`，页面只描述用户动作和当前界面，不命令 Agent 调用具体工具。
+- 后端只调用一个 V2 `agent_id`，同一会话复用已绑定的百宝箱 `conversation_id`。
+- 当前真实链路使用脱敏快照，不使用上下文签名令牌访问业务 MCP。
+- 当前请求关闭百宝箱内置搜索，由 Agent 已挂载的夸克搜索 MCP 统一提供联网能力。
+- Mock 模式保留，用于无平台凭据时的本地开发和确定性回归测试。
+
+关键实现：
+
+- `src/lib/chat/agentic-v2-snapshot.ts`
+- `src/lib/chat/agentic-v2-context.ts`
+- `src/lib/chat/stream-service.ts`
+- `src/lib/tbox/client.ts`
+- `src/lib/agentic-v2/artifact-envelope.ts`
+- `src/lib/agentic-v2/candidate-ingestion.ts`
+- `src/lib/agentic-v2/candidate-resolution.ts`
+
+## 2. 职责边界
+
+### 百宝箱 Agentic V2
+
+负责：
+
+- 理解用户自然语言目标。
+- 判断是否需要当前市场信息。
+- 选择知识库、工作流、Skill、搜索 MCP 或专业子智能体。
+- 融合个人事实、历史记录、职业基线和市场证据。
+- 生成正常可读答复。
+- 在需要保存时生成结构化候选。
+
+不得：
+
+- 伪造用户经历、证书、项目或训练记录。
+- 将市场结论写成用户事实。
+- 将用户历史写成行业规律。
+- 直接覆盖正式画像、分数、计划、进度或记忆。
+- 将完整简历、联系方式或无关敏感信息放入联网搜索。
+
+### CareerMate 后端
+
+负责：
+
+- 登录态、用户所有权和跨用户隔离。
+- 从数据库生成最小必要的脱敏快照。
+- 管理本地会话与远端 `conversation_id` 绑定。
+- 解析精确信封并执行严格 Schema 校验。
+- 创建待确认候选。
+- 校验用户所有权、权限、候选状态和 `baseVersion`。
+- 在用户明确接受后事务化投影正式数据。
+
+不得：
+
+- 根据页面名称硬编码 Agent 的工具选择。
+- 将无标签或无效 JSON 当作可写业务对象。
+- 把 Mock 或降级结果伪装成实时平台结果。
+
+### CareerMate 前端
+
+负责：
+
+- 采集用户请求。
+- 发送页面 `surface`、`action` 和可选目标引用。
+- 展示 SSE 流式结果、来源和候选卡片。
+- 收集用户明确的接受或拒绝决定。
+
+前端页面上下文是观察信息，不是实现命令。例如应表达“用户在职业路径页请求重新规划”，而不是表达“调用 V2职业规划工作流”。
+
+### CareerMate 数据库
+
+数据库是以下数据的权威来源：
+
+- 已确认职业画像及版本。
+- 已确认能力证据和分数。
+- 活跃与历史职业计划。
+- 成长进度与实际完成记录。
+- 模拟训练会话和原始回答。
+- 用户确认的正式记忆。
+- 待确认候选和处理结果。
+
+## 3. 当前请求与响应契约
+
+### 3.1 前端到 CareerMate 后端
+
+所有页面使用统一聊天入口。除自然语言消息外，可提供页面上下文：
+
+```json
+{
+  "message": "根据我的最新情况调整职业规划",
+  "interaction": {
+    "surface": "career_path",
+    "action": "regenerate_plan",
+    "targetRef": "optional-local-reference"
+  }
+}
+```
+
+`interaction` 不能覆盖用户消息，也不能携带 `call_workflow_*` 一类实现指令。
+
+### 3.2 CareerMate 后端到百宝箱
+
+开启 Agentic V2 后，后端构造 `business_data`：
+
+```json
+{
+  "schemaVersion": "1",
+  "interaction": {
+    "surface": "career_path",
+    "action": "regenerate_plan"
+  },
+  "profileSnapshot": {
+    "available": true,
+    "version": 1,
+    "data": {}
+  },
+  "historySnapshot": {
+    "available": true,
+    "through": "ISO-8601",
+    "data": {}
+  },
+  "simulationState": null,
+  "permissions": {
+    "candidateCreationAllowed": true,
+    "officialWritesAllowed": false
+  }
+}
+```
+
+代码中的关键限制：
+
+- 快照只读取当前登录用户的数据。
+- 仅发送产品任务所需字段，并对文本、数组数量和总字节数设限。
+- 能力证据只包含已确认记录。
+- 正式记忆只有在用户开启记忆后，才包含正常敏感度、职业作用域、已确认且未过期的数据。
+- 模拟状态只在当前页面提供有效会话引用时加载。
+- `permissions.officialWritesAllowed` 固定为 `false`。
+- `search_engine` 在 Agentic V2 路径固定关闭。
+
+真实 API 环境建议：
+
+```env
+TBOX_MODE="api"
+TBOX_API_KEY="<tbox-api-key>"
+TBOX_AGENT_ID="<tbox-agent-id>"
+TBOX_AGENT_VERSION="<validated-agent-version>"
+CAREERMATE_AGENTIC_V2="true"
+TBOX_CONTEXT_TRANSPORT="business_data"
+TBOX_HISTORY_MODE="provider"
+STATEFUL_CHAT_TURNS="true"
+TBOX_SEARCH_ENGINE="false"
+```
+
+密钥和真实平台标识只能存放在未提交的服务端环境变量中。
+
+### 3.3 百宝箱到 CareerMate 后端
+
+普通回答可以只包含 Markdown 文本。需要创建候选时，答复末尾必须恰好包含一个精确信封：
+
+```text
 <CAREERMATE_ARTIFACT>
-{"schemaVersion":"1.0", ...}
+{...一个完整且有效的 AgentArtifactV1 对象...}
 </CAREERMATE_ARTIFACT>
 ```
 
-- 绝不解析无标签 JSON 或 Markdown 代码块
-- 多个信封 → 拒绝
-- 真实 TBox 不返回 `structured` 字段，仅从文本流提取
-
-### 休眠能力（保留但未激活）
-
-- `/api/mcp/v2` 端点
-- `careermate-v2-registry.ts` MCP 工具注册表
-- `CAREERMATE_CONTEXT_TOKEN_SECRET` 环境变量
-- `CAREERMATE_PLUGIN_TOKEN` 及相关 MCP 配置
-
-## 1. 唯一目标
-
-完成一套全新的 `CareerMate职业成长伙伴V2` 百宝箱 Agentic 架构，并与 CareerMate 前后端打通。现有百宝箱应用、工作流、知识库、长期记忆和正式环境一律不修改、不升级、不删除。
-
-工作空间固定为百宝箱“外包”。前端和后端只调用一个 V2 `agent_id`；百宝箱 Agentic 是唯一智能决策中枢，CareerMate 后端是身份、权限、权威数据、版本、确认和正式写入中枢。
-
-## 2. 权威工作位置
+`AgentArtifactV1` 的公共外壳定义在 `src/lib/agentic-v2/contracts.ts`。允许的任务类型包括：
 
 ```text
-仓库原目录：C:\Users\zxk\Documents\AI职业规划\CareerMate
-隔离工作树：C:\Users\zxk\Documents\AI职业规划\CareerMate\.worktrees\careermate-agentic-v2
-分支：Xiaoxiao/careermate-agentic-v2
-基线提交：d052096
-当前提交：a181f16
+profile_assessment
+career_exploration
+career_plan
+learning_route
+simulation_turn
+simulation_report
+resume_review
+growth_review
+memory_item
+career_template_draft
 ```
 
-必须从隔离工作树继续，不要在原目录或主分支开发。
-
-信息可信度顺序：
-
-1. 当前分支中的实际代码、测试、数据库 Schema 和迁移。
-2. 用户明确确认的本交接单与 V2 计划。
-3. 本地百宝箱官方文档：`C:\Users\zxk\Documents\AI职业规划\蚂蚁百宝箱企业版文档`。
-4. 百宝箱官网当前页面。
-5. `CareerMate/docs` 仅为低可信历史材料，不可作为架构真相。
-
-## 3. 已完成且禁止推翻的部分
-
-- V2 HMAC 短时上下文令牌，最长 600 秒；当前聊天令牌为 300 秒。
-- 令牌以 `sub` 固定用户、`sid` 固定本地会话，并包含精确 Scope、`iat`、`exp`、`jti`。
-- V2 统一契约：四路证据包、Agent Artifact、研究报告和伦理审查报告。
-- 通用 V2 候选存储及会话级幂等保护。
-- 7 个业务 MCP 工具注册表：
-  - `profile.read`
-  - `growth_history.read`
-  - `career_templates.query`
-  - `learning_resources.query`
-  - `simulation_state.read`
-  - `candidate.create`
-  - `simulation_turn.append`
-- `/api/mcp/v2`：带鉴权、Origin、请求大小、批量大小和消息种类校验的无状态 Streamable HTTP MCP。
-- V2 聊天 `business_data` 只发送签名令牌及有限页面交互上下文。
-- `search_engine=false`；V2 只通过挂载的“夸克搜索”MCP 联网。
-- 开启 V2 时禁止旧版 Agent Operations 直接写正式数据。
-- 百宝箱 `conversation_id` 按 `agent_id + agent_version` 绑定，切换/回滚 Agent 时不会错误复用。
-- `CAREERMATE_AGENTIC_V2=false` 可安全回滚到旧行为。
-- 已移除构建时 Google Fonts 下载依赖。
-
-当前验证证据：
+允许的状态：
 
 ```text
-npm.cmd run lint       通过
-npm.cmd run typecheck  通过
-npm.cmd test           92 个文件 / 843 项测试通过
-npm.cmd run build      通过
-npm.cmd run secret:scan 317 个文件通过
-git diff --check       通过
-代码复审              无 Critical / Important 问题
+success
+needs_input
+pending_confirmation
+error
 ```
 
-## 4. 不可突破的业务边界
+严格规则：
 
-- AI 只能生成画像、证据、分数、计划、学习路线、重规划和记忆的候选。
-- 正式数据必须经过后端 Schema/权限/版本校验，并由用户明确确认后写入。
-- 不向 Agent 暴露直接覆盖画像、发布计划、删除全部数据、修改已确认分数的工具。
-- 页面上下文只能描述 `surface + action`，不能命令调用具体工作流。
-- 百宝箱原生 Web 未绑定 CareerMate 登录态时只能做公共咨询。
-- 搜索不得发送姓名、联系方式、完整简历、身份信息或无关敏感信息。
-- 知识库、个人事实、历史记录、联网证据必须保持来源独立。
-- 旧的“百宝箱长期记忆-0514”及其测试数据不迁移到 V2。
+- 只识别精确的起止标签。
+- 不从无标签 JSON 或 Markdown 代码围栏猜测候选。
+- 多个信封、缺失闭合标签、超限内容、无效 JSON 或无效 Schema全部拒绝。
+- 可见正文与 artifact 分离保存。
+- 只有 `pending_confirmation` 且 `requiresUserConfirmation=true` 的兼容任务才创建候选。
+- `simulation_turn` 不创建正式候选。
 
-## 5. 尚未完成的真实任务
+## 4. 百宝箱 V2 资源拓扑
 
-按以下顺序执行，不得把准备资产误报为已经在百宝箱创建成功。
+下面是 V2 的目标资源拓扑和仓库内配套素材。平台的实际名称、引用绑定、发布状态和版本必须在每次发布前单独核验；本文不把未核验的草稿描述成已发布资源。
 
-### A. 制作并验证 2 个 Skill ZIP
-
-1. `CareerMate职业证据解析`
-2. `CareerMate成长数据分析`
-
-ZIP 根目录必须直接包含 `SKILL.md`。Skill 只做解析、计算和标准化，不联网、不写正式数据。为正常、空、损坏和敏感输入提供自动测试或验证脚本。
-
-### B. 制作 7 个知识库数据集
-
-1. `V2职业能力模板库`（文档）
-2. `V2学习资源库`（CSV 表格）
-3. `V2训练场景库`（文档）
-4. `V2伦理隐私规则库`（文档）
-5. `V2职业趋势研究库`（文档，必须带来源和日期）
-6. `V2简历作品方法库`（文档）
-7. `V2认证机会库`（CSV 表格）
-
-职业可扩展；三个种子职业只用于首轮内容和测试，任何主 Prompt/工作流不得写死只能支持三类职业。
-
-### C. 建立至少 40 条评测数据
-
-覆盖路由、四路证据融合、联网/跳过原因、候选确认、版本冲突、模拟连续性、数据隔离、记忆隔离、敏感信息脱敏、未知职业和新增职业无需改 Prompt 等场景。
-
-### D. 部署公网 CareerMate 业务 MCP V2
-
-- 使用独立预览/测试环境与 HTTPS。
-- 配置 V2 令牌密钥和 Origin，不打印或提交密钥。
-- 运行两个测试用户的数据隔离、过期令牌、Scope 和跨用户攻击测试。
-- 对外端点为 `/api/mcp/v2`。
-
-### E. 只在百宝箱“外包”空间新建资源
-
-依次创建：7 个知识库 → 2 个 MCP → 2 个 Skill → 2 个子智能体 → 7 个工作流 → 1 个 Agentic 主智能体 → 独立自动长期记忆。
-
-两个子智能体：
-
-- `CareerMate职业情报研究员V2`
-- `CareerMate伦理证据审查员V2`
-
-七个工作流（名称不超过 10 字）：
-
-- `V2画像评估`
-- `V2职业探索`
-- `V2职业规划`
-- `V2学习路线`
-- `V2职场模拟`
-- `V2简历作品`
-- `V2成长复盘`
-
-主应用：
+### 4.1 主智能体
 
 ```text
-名称：CareerMate职业成长伙伴V2
+CareerMate职业成长伙伴V2
 类型：Agentic 自主规划
-推理模型：DeepSeek-V3.2
-多模态模型：Qwen3.5-plus
-分段模型：开启
 ```
 
-所有 Prompt 资源引用必须先挂载资源，再在编辑器输入 `{` 从真实列表选择；不要手敲伪引用。工作流默认只以结束节点“变量消息”返回 `artifact`，避免直接回复、结束节点和主 Agent 三次输出。
+主智能体承担唯一认知与调度职责，不再增加重复的“成长战略规划师”认知层。
 
-### F. 长期记忆与全链路发布
-
-自动记忆只允许稳定、低敏感、长期有用的信息。CareerMate 数据库仍保存正式画像、证据、计划、训练、进度和版本。完成资源级测试及 40 条主 Agent 评测后再发布，并锁定 `agent_version`。
-
-## 6. Claude 与 DeepSeek 的分工
-
-### Claude（总控与最终审查）
-
-- 先读实际代码、`AGENTIC_V2_HANDOFF.md` 和相关官方文档。
-- 维护任务清单、接口一致性和“不碰旧资源”边界。
-- 审查知识库内容、Skill 说明、子智能体与主 Prompt。
-- 负责浏览器中的百宝箱资源创建和资源间真实引用。
-- 负责部署决策、密钥边界、全链路测试及最终验收。
-- DeepSeek 的任何输出都必须经 Claude 复核后才能进入仓库或百宝箱。
-
-### DeepSeek（边界明确的执行任务）
-
-- 生成知识库初稿、CSV 数据、评测用例和 Skill 脚本。
-- 编写明确规格下的代码与测试。
-- 修复可复现的测试失败。
-- 不独立修改总体架构、权限模型、数据写入边界或部署配置。
-- 不直接操作百宝箱现有资源，不接触生产密钥。
-
-推荐每次只下发一个独立任务，并要求返回：改动文件、设计依据、验证命令、验证输出和已知限制。
-
-## 7. Claude 启动提示词
+### 4.2 知识库
 
 ```text
-你是 CareerMate Agentic V2 的总控执行者。请在
-C:\Users\zxk\Documents\AI职业规划\CareerMate\.worktrees\careermate-agentic-v2
-的 Xiaoxiao/careermate-agentic-v2 分支继续工作。
-
-首先完整阅读仓库根目录 AGENTIC_V2_HANDOFF.md，并以实际代码、测试和
-C:\Users\zxk\Documents\AI职业规划\蚂蚁百宝箱企业版文档
-为权威来源；CareerMate/docs 仅为低可信历史材料。
-
-必须保留：百宝箱 Agentic 是唯一大脑；后端负责身份、权限、正式数据、版本与用户确认；只在“外包”空间新建 V2 资源；不得修改、升级、删除任何旧百宝箱资源。
-
-先执行 git status、git log、npm.cmd run lint、npm.cmd run typecheck、npm.cmd test 和 npm.cmd run build，确认交接基线。随后从交接单第 5 节 A 开始逐项完成。可以把边界明确的数据生成和测试任务交给 DeepSeek，但必须亲自审查，不能让 DeepSeek改变架构、安全边界或正式写入规则。每完成一项都提供可验证证据，不得以文档或意图代替实际创建、部署和测试结果。
+V2职业能力模板库
+V2学习资源库
+V2训练场景库
+V2伦理隐私规则库
+V2职业趋势研究库
+V2简历作品方法库
+V2认证机会库
 ```
 
-## 8. DeepSeek 单任务模板
+仓库素材位于 `src/agentic-v2/knowledge-bases/`。
+
+用途边界：
+
+- 职业能力、证据锚点和长期路径基线来自职业能力模板库。
+- 课程、练习、项目和机会需要结合资源有效期和当前联网核验。
+- 趋势研究库是带时间和来源的稳定研究材料，不能冒充实时市场。
+- 未知职业先形成研究报告和模板草稿，不能直接写入正式职业注册表。
+- 深度支持的已知职业也必须结合个人画像、历史记录和当前市场，不能仅套用模板。
+
+### 4.3 工作流
 
 ```text
-你只负责以下一个明确任务：【填写任务】。
-
-工作目录：C:\Users\zxk\Documents\AI职业规划\CareerMate\.worktrees\careermate-agentic-v2
-分支：Xiaoxiao/careermate-agentic-v2
-
-开始前阅读 AGENTIC_V2_HANDOFF.md。不得修改总体架构、权限模型、候选确认边界、旧百宝箱资源或生产配置。不要依赖 CareerMate/docs 推断当前实现。
-
-交付必须包含：
-1. 实际改动文件；
-2. 与既有契约对齐的说明；
-3. 自动验证命令和完整结果；
-4. 未完成项和风险；
-5. 不得声称未实际执行的测试或平台操作已经完成。
+V2画像评估
+V2职业探索
+V2职业规划
+V2学习路线
+V2职场模拟
+V2简历作品
+V2成长复盘
 ```
 
-## 9. 低成本直接启动方式
+平台配置稿位于 `src/agentic-v2/platform/workflows/`。
 
-如果采用“Claude Code 工具外壳 + DeepSeek 模型后端”，先在当前终端临时设置 `DEEPSEEK_API_KEY`，再执行：
+工作流负责步骤稳定、输出结构明确的任务。结束节点应返回结构化变量，不应同时由“直接回复”、结束节点和主 Agent 重复输出同一正文。
 
-```bat
-scripts\start-claude-with-deepseek.cmd --check
-scripts\start-claude-with-deepseek.cmd
+### 4.4 Skill
+
+```text
+CareerMate职业证据解析
+CareerMate成长数据分析
 ```
 
-脚本不会保存或打印 API Key。它使用 DeepSeek 官方 Anthropic 兼容端点，主任务映射到 `deepseek-v4-pro[1m]`，子任务映射到 `deepseek-v4-flash`。
+源码位于：
 
-这种模式下，Claude Code 只是代理工具外壳，真正推理模型是 DeepSeek；它不等于 Anthropic Claude 与 DeepSeek 的双模型协作。若要真正双供应商编排，需要额外路由层，当前项目不采用该复杂方案。
+- `src/agentic-v2/skills/evidence-parser/`
+- `src/agentic-v2/skills/growth-analyzer/`
+
+Skill 只进行文件解析、事实与推断分离、敏感字段识别、数据计算和标准化，不负责联网，也不写正式业务数据。
+
+### 4.5 专业子智能体
+
+```text
+CareerMate职业情报研究员V2
+CareerMate伦理证据审查员V2
+```
+
+职责：
+
+- 职业情报研究员处理未知职业、多职业比较、地区/经验差异和多来源交叉核验。
+- 伦理证据审查员检查证据充分性、来源时效、偏见、隐私、过度承诺和确认要求。
+
+第一版不配置重复的成长战略规划师或模拟教练子智能体。只有评测证明主 Agent 或模拟工作流无法满足需求时才增加。
+
+### 4.6 联网 MCP
+
+```text
+夸克搜索
+```
+
+联网原则：
+
+- Agent 自主判断是否联网，并默认偏向核验会变化的现实职业信息。
+- 简单实时事实由主 Agent 直接搜索。
+- 多职业、未知职业、地区差异或多来源研究委派职业情报研究员。
+- 搜索词不得包含私人画像原文、联系方式或完整简历。
+- 搜索失败必须说明无法核验，不得伪造“当前市场”数据。
+
+当前聊天路径不依赖 `CareerMate业务MCP V2`。
+
+### 4.7 平台资源引用
+
+在人设和指令中，应通过百宝箱编辑器选择已挂载资源，让界面生成真实资源引用芯片。不要仅手写同名普通文字，也不要在仓库文档中硬编码编辑器内部生成的资源标记。
+
+## 5. 候选确认生命周期
+
+候选主流程：
+
+```text
+Agent 生成 artifact
+→ 精确标签解析
+→ AgentArtifactV1 校验
+→ 任务类型到候选类型的确定性映射
+→ 以当前用户、会话和幂等键创建 pending 候选
+→ 前端展示候选卡片
+→ 用户接受或拒绝
+→ 再次校验所有权、状态、任务兼容性、业务 Schema 和 baseVersion
+→ 事务化投影或保持原数据
+```
+
+支持的候选类型：
+
+```text
+profile_patch
+ability_evidence
+career_plan
+learning_route
+growth_replan
+memory_item
+career_template_draft
+```
+
+安全机制：
+
+- 候选查询和决策均绑定当前登录用户。
+- 重复同一决定保持幂等；相反决定返回冲突。
+- 画像和计划类候选使用 `baseVersion` 防止覆盖新版本。
+- 正式投影前按候选类型执行更严格的数据 Schema。
+- 正式投影在数据库事务中完成。
+- `learning_route` 当前可被确认，但不直接投影为正式任务。
+- 任何解析或摄入失败都不阻断可读正文，但不会产生正式数据。
+
+候选接口：
+
+- `src/app/api/agentic-v2/candidates/[candidateId]/route.ts`
+- `src/app/api/agentic-v2/candidates/[candidateId]/decision/route.ts`
+
+## 6. 长期记忆边界
+
+CareerMate 使用三层上下文：
+
+1. 本地聊天消息和远端 `conversation_id`：维持当前对话连续性。
+2. 百宝箱自动长期记忆：保存低敏感度且长期有用的偏好。
+3. CareerMate 数据库：保存用户已确认的权威业务状态。
+
+允许平台自动记忆的典型内容：
+
+```text
+明确的职业方向
+每周可投入时间
+稳定学习偏好
+回复风格偏好
+用户主动要求记住的低敏感度约束
+```
+
+不应自动记忆：
+
+```text
+模型推断的性格
+未经确认的能力弱项和分数
+一次性情绪
+完整简历
+联系方式和身份信息
+健康、财务和家庭敏感信息
+正式职业计划全文
+```
+
+数据优先级：
+
+```text
+系统安全规则
+> 用户当前明确要求
+> CareerMate 已确认正式数据
+> 百宝箱长期记忆
+> 模型推断
+```
+
+CareerMate 记忆写入仍遵循 artifact 候选和用户确认流程。平台记忆不能覆盖数据库正式状态。
+
+## 7. 保留的未来基础设施
+
+仓库保留了可供后续启用的业务 MCP 与签名上下文令牌实现：
+
+- `src/app/api/mcp/v2/route.ts`
+- `src/lib/agent-context-auth.ts`
+- `src/agentic-v2/deploy/`
+
+相关环境变量包括：
+
+```text
+CAREERMATE_PLUGIN_TOKEN
+CAREERMATE_CONTEXT_TOKEN_SECRET
+CAREERMATE_MCP_ALLOWED_ORIGINS
+```
+
+这些代码当前是休眠基础设施：
+
+- 不属于 Agentic V2 聊天主链路。
+- 不需要为了运行当前 V2 聊天而部署公网 MCP。
+- 不应在主 Agent 提示词中假装其已连接。
+- 只有完成公网 HTTPS、平台协议兼容、短时令牌、Scope、跨用户隔离和故障降级测试后，才能作为新的架构变更启用。
+
+启用它将改变信任边界，必须单独设计、评审和发布，不能仅通过打开环境变量完成。
+
+## 8. 本地验证与发布清单
+
+### 8.1 本地质量门禁
+
+```bash
+npm.cmd run secret:scan
+npm.cmd run lint
+npm.cmd run typecheck
+npm.cmd run test
+npm.cmd run test:migrations
+npm.cmd run build
+```
+
+也可以执行：
+
+```bash
+npm.cmd run verify
+```
+
+### 8.2 百宝箱资源检查
+
+- 主应用类型确认为 Agentic 自主规划。
+- 实际挂载资源与本节拓扑一致。
+- 人设中的资源均为编辑器生成的真实绑定引用。
+- 工作流引用的是已验证版本，不存在待升级的旧引用。
+- 子工作流只返回一个最终 artifact，不产生重复正文。
+- 夸克搜索已启用，内置 `search_engine` 保持关闭。
+- 平台自动长期记忆遵守低敏感度边界。
+- 原生百宝箱 Web 在没有 CareerMate 登录态时不声称读取私人数据。
+
+### 8.3 契约与安全检查
+
+- 同一职业、不同画像生成不同建议。
+- 已知职业同时使用个人画像、历史记录、知识库和当前市场证据。
+- 未知职业触发职业情报研究，不要求修改主 Prompt。
+- 搜索失败时明确说明时效限制。
+- artifact 只有一个精确信封，字段满足 `AgentArtifactV1`。
+- 未确认时正式数据库不变化。
+- `baseVersion` 冲突时拒绝覆盖。
+- 模拟训练复用会话和本地 `SimulationSession`，不重复开场问题。
+- 不同用户的快照、候选和正式数据完全隔离。
+- 简历原文和敏感字段不进入搜索查询。
+
+### 8.4 发布顺序
+
+```text
+核验知识库
+→ 核验 Skill
+→ 核验子智能体
+→ 核验工作流
+→ 核验主 Agent 资源绑定
+→ 运行平台评测
+→ 发布并固定 agent_version
+→ 在 CareerMate 测试环境设置 V2 agent_id
+→ 端到端验收
+→ 再决定是否切换正式环境
+```
+
+回滚只需恢复上一组已验证的 `agent_id` 和 `agent_version`，无需删除 V2 资源。
