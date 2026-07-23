@@ -188,18 +188,34 @@ export async function loadAgenticV2Snapshot(
     : null;
 
   const activePlan = activePlanRow
-    ? {
-        id: truncateText(activePlanRow.id),
-        version: typeof activePlanRow.version === "number" ? activePlanRow.version : 1,
-        targetRole: truncateText(activePlanRow.targetRole),
-        targetRoleLabel: truncateText(activePlanRow.targetRoleLabel) || null,
-        currentMonthIndex: typeof activePlanRow.currentMonthIndex === "number"
-          ? activePlanRow.currentMonthIndex
-          : 1,
-        activatedAt: activePlanRow.activatedAt instanceof Date
-          ? activePlanRow.activatedAt.toISOString()
-          : null,
-      }
+    ? (() => {
+        const parsed = safeJson<Record<string, unknown>>(activePlanRow.content as string, {});
+        const v2plan = (activePlanRow.schemaVersion as number) >= 2 ? parsed : null;
+        const immediateActions = (v2plan?.immediateActions as Array<{ title: string }>) ?? [];
+        const phases = v2plan?.phases as Array<{ title: string; months: unknown[] }> | undefined;
+        return {
+          id: truncateText(activePlanRow.id),
+          version: typeof activePlanRow.version === "number" ? activePlanRow.version : 1,
+          targetRole: truncateText(activePlanRow.targetRole),
+          targetRoleLabel: truncateText(activePlanRow.targetRoleLabel) || null,
+          summary: truncateText((v2plan?.summary as string) ?? (v2plan?.title as string) ?? ""),
+          currentMonthIndex: typeof activePlanRow.currentMonthIndex === "number"
+            ? activePlanRow.currentMonthIndex
+            : 1,
+          activatedAt: activePlanRow.activatedAt instanceof Date
+            ? activePlanRow.activatedAt.toISOString()
+            : null,
+          immediateActions: immediateActions.slice(0, 5).map((a) => ({
+            title: truncateText(a.title),
+          })),
+          phases: phases
+            ? phases.slice(0, 4).map((p) => ({
+                title: truncateText(p.title),
+                monthCount: Array.isArray(p.months) ? p.months.length : 0,
+              }))
+            : [],
+        };
+      })()
     : null;
 
   // 4. 近期进度
@@ -240,7 +256,7 @@ export async function loadAgenticV2Snapshot(
       scenarioTitle: truncateText(row.scenarioTitle),
       score: typeof row.score === "number" ? row.score : null,
       turnCount: typeof row.turnCount === "number" ? row.turnCount : 0,
-      transcript: rawTranscript.slice(0, LIMITS.transcriptItems),
+      transcript: rawTranscript.slice(-LIMITS.transcriptItems),
       completedAt: row.updatedAt instanceof Date
         ? row.updatedAt.toISOString()
         : String(row.updatedAt ?? ""),
@@ -316,7 +332,7 @@ export async function loadAgenticV2Snapshot(
         scenarioKey: truncateText(sessionRow.scenarioKey),
         status: truncateText(sessionRow.status),
         round: typeof sessionRow.turnCount === "number" ? sessionRow.turnCount : 0,
-        transcript: rawTranscript.slice(0, LIMITS.transcriptItems),
+        transcript: rawTranscript.slice(-LIMITS.transcriptItems),
       };
     }
   }
@@ -349,62 +365,96 @@ export async function loadAgenticV2Snapshot(
     simulationState,
   };
 
-  // ── 字节预算控制 ──────────────────────────────────────
-  let serialized = JSON.stringify(result);
+  // ── 字节预算控制：构建可变对象，逐级裁剪后返回最终版本 ──
+  let finalSimulationState = simulationState;
+  let finalRecentProgress = recentProgress;
+  let finalAbilityEvidence = abilityEvidence;
+  let finalConfirmedMemories = confirmedMemories;
+  let finalProfileData = profileData as Record<string, unknown>;
+
+  const buildResult = (): LoadAgenticV2SnapshotResult => ({
+    profileSnapshot: {
+      available: profileAvailable,
+      version: profileVersion,
+      data: finalProfileData as unknown as Record<string, unknown>,
+    } as ProfileSnapshotV1,
+    historySnapshot: {
+      available: true,
+      through: throughDate,
+      data: {
+        activePlan,
+        recentProgress: finalRecentProgress,
+        recentSimulations: recentSimulations.map((s) => ({
+          ...s,
+          transcript: s.transcript,
+        })),
+        confirmedMemories: finalConfirmedMemories,
+        conversationSummary,
+        contextVersion,
+      },
+    },
+    simulationState: finalSimulationState,
+  });
+
+  let current = buildResult();
+  let serialized = JSON.stringify(current);
   let byteSize = Buffer.byteLength(serialized, "utf8");
 
   if (byteSize > LIMITS.bytes) {
-    // 第1级：缩减模拟转录条目
-    if (simulationState && simulationState.transcript.length > 6) {
-      simulationState = {
-        ...simulationState,
-        transcript: simulationState.transcript.slice(0, 6),
+    // 第1级：缩减模拟转录条目到 6
+    if (finalSimulationState && finalSimulationState.transcript.length > 6) {
+      finalSimulationState = {
+        ...finalSimulationState,
+        transcript: finalSimulationState.transcript.slice(-6),
       };
     }
     for (const sim of recentSimulations) {
       if (sim.transcript.length > 6) {
-        sim.transcript = sim.transcript.slice(0, 6);
+        sim.transcript = sim.transcript.slice(-6);
       }
     }
-    serialized = JSON.stringify({ ...result, simulationState });
+    current = buildResult();
+    serialized = JSON.stringify(current);
     byteSize = Buffer.byteLength(serialized, "utf8");
   }
 
   if (byteSize > LIMITS.bytes) {
-    // 第2级：缩减进度条目
-    (historySnapshot.data as Record<string, unknown>).recentProgress = recentProgress.slice(0, 10);
-    serialized = JSON.stringify({ ...result, historySnapshot });
+    // 第2级：缩减进度条目到 10
+    finalRecentProgress = recentProgress.slice(-10);
+    current = buildResult();
+    serialized = JSON.stringify(current);
     byteSize = Buffer.byteLength(serialized, "utf8");
   }
 
   if (byteSize > LIMITS.bytes) {
-    // 第3级：缩减能力证据
-    (profileData as Record<string, unknown>).abilityEvidence = abilityEvidence.slice(0, 10);
-    serialized = JSON.stringify({ ...result, profileSnapshot: { ...profileSnapshot, data: profileData as unknown as Record<string, unknown> } });
+    // 第3级：缩减能力证据到 10
+    finalAbilityEvidence = abilityEvidence.slice(-10);
+    finalProfileData = { ...finalProfileData, abilityEvidence: finalAbilityEvidence };
+    current = buildResult();
+    serialized = JSON.stringify(current);
     byteSize = Buffer.byteLength(serialized, "utf8");
   }
 
   if (byteSize > LIMITS.bytes) {
-    // 第4级：缩减记忆
-    (historySnapshot.data as Record<string, unknown>).confirmedMemories = confirmedMemories.slice(0, 5);
-    serialized = JSON.stringify({ ...result, historySnapshot });
+    // 第4级：缩减记忆到 5
+    finalConfirmedMemories = confirmedMemories.slice(-5);
+    current = buildResult();
+    serialized = JSON.stringify(current);
     byteSize = Buffer.byteLength(serialized, "utf8");
   }
 
   if (byteSize > LIMITS.bytes) {
-    // 第5级：缩减文本字段
-    // 此步骤通过重构对象实现，对过大的自由文本截断到 600 字符
-    const reducedProfileData = { ...profileData };
-    for (const key of Object.keys(reducedProfileData)) {
-      const val = (reducedProfileData as Record<string, unknown>)[key];
+    // 第5级：缩减文本字段到 600
+    const reduced = { ...finalProfileData };
+    for (const key of Object.keys(reduced)) {
+      const val = reduced[key];
       if (typeof val === "string" && val.length > 600) {
-        (reducedProfileData as Record<string, unknown>)[key] = val.slice(0, 600);
+        reduced[key] = val.slice(0, 600);
       }
     }
-    serialized = JSON.stringify({
-      ...result,
-      profileSnapshot: { ...profileSnapshot, data: reducedProfileData },
-    });
+    finalProfileData = reduced;
+    current = buildResult();
+    serialized = JSON.stringify(current);
     byteSize = Buffer.byteLength(serialized, "utf8");
   }
 
@@ -415,5 +465,5 @@ export async function loadAgenticV2Snapshot(
     );
   }
 
-  return result;
+  return current;
 }

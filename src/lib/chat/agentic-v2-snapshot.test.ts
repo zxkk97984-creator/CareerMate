@@ -293,4 +293,103 @@ describe("Agentic V2 快照加载器", () => {
     const serialized = JSON.stringify(loadedResult);
     expect(serialized).toContain("plan-1");
   });
+
+  it("activePlan 包含实际计划摘要、近期行动或阶段信息", async () => {
+    const fakeDb = makeFakeDb();
+    const loadedResult = await loadAgenticV2Snapshot(input, { db: fakeDb });
+
+    const historyData = loadedResult.historySnapshot.data as Record<string, unknown>;
+    const plan = historyData.activePlan as Record<string, unknown> | null;
+    expect(plan).toBeDefined();
+    // 应包含内容摘要字段
+    const planKeys = Object.keys(plan!);
+    const hasContent = planKeys.some((k) =>
+      k === "summary" || k === "immediateActions" || k === "phases" || k === "content",
+    );
+    expect(hasContent).toBe(true);
+  });
+
+  it("最近的 simulation transcript 取最后 N 条而非前 N 条", async () => {
+    // 构造含 20 条 transcript 的模拟会话
+    const longTranscript = Array.from({ length: 20 }, (_, i) => ({
+      role: (i % 2 === 0 ? "user" : "assistant") as "user" | "assistant",
+      content: `第${i + 1}条消息`,
+    }));
+    const fakeDb = makeFakeDb({
+      simulationSession: {
+        findMany: vi.fn().mockResolvedValue([{
+          id: "sim-1",
+          userId: "user-1",
+          scenarioKey: "cross_role_communication",
+          scenarioTitle: "跨岗位沟通",
+          transcript: JSON.stringify(longTranscript),
+          score: 80,
+          turnCount: 10,
+          status: "completed",
+          updatedAt: new Date("2026-07-22"),
+        }]),
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
+    });
+
+    const loadedResult = await loadAgenticV2Snapshot(input, { db: fakeDb });
+    const historyData = loadedResult.historySnapshot.data as Record<string, unknown>;
+    const sims = historyData.recentSimulations as Array<Record<string, unknown>>;
+    expect(sims.length).toBe(1);
+    const transcript = sims[0].transcript as Array<{ content: string }>;
+    // 应取最后 12 条，包含第 20 条消息
+    expect(transcript.length).toBe(12);
+    expect(transcript[transcript.length - 1].content).toBe("第20条消息");
+  });
+
+  it("字节裁剪后返回最终裁剪对象而非旧对象", async () => {
+    // 构造超大数据触发字节裁剪：每条 evidence summary 4000 字符，20 条 ≈ 80KB+，远超 49152
+    const bigText = "ABCDEFGHIJ".repeat(400); // 4000 chars
+    const bigEvidence = Array.from({ length: 20 }, (_, i) => ({
+      id: `ev-${i}`,
+      userId: "user-1",
+      abilityKey: `skill${i}`,
+      summary: bigText,
+      sourceType: "simulation",
+      sourceRef: `session-${i}`,
+      confidence: 0.8,
+      status: "confirmed",
+      observedAt: new Date("2026-07-20"),
+    }));
+    const bigProgress = Array.from({ length: 20 }, (_, i) => ({
+      id: `log-${i}`,
+      userId: "user-1",
+      eventType: "task_completed",
+      title: `超大进度标题 ${i} `.repeat(30),
+      summary: `超大进度摘要 ${i} `.repeat(50),
+      relatedPlanId: "plan-1",
+      relatedTaskId: null,
+      metadata: "{}",
+      createdAt: new Date("2026-07-22"),
+    }));
+
+    const fakeDb = makeFakeDb({
+      abilityEvidence: {
+        findMany: vi.fn().mockImplementation((args?: { where?: Record<string, unknown> }) => {
+          if (args?.where?.status === "confirmed") return Promise.resolve(bigEvidence);
+          return Promise.resolve(bigEvidence);
+        }),
+      },
+      progressLog: {
+        findMany: vi.fn().mockResolvedValue(bigProgress),
+      },
+    });
+
+    const loadedResult = await loadAgenticV2Snapshot(input, { db: fakeDb });
+    const resultBytes = Buffer.byteLength(JSON.stringify(loadedResult), "utf8");
+
+    // 返回对象的实际字节数必须在限制内
+    expect(resultBytes).toBeLessThanOrEqual(49_152);
+
+    // 验证 profileData 中的 evidence 已被裁剪
+    const pd = loadedResult.profileSnapshot.data as Record<string, unknown>;
+    const ev = (pd.abilityEvidence ?? []) as unknown[];
+    // 裁剪后不应超过 10 条（可能更少如果还触发后续裁剪）
+    expect(ev.length).toBeLessThanOrEqual(10);
+  });
 });
