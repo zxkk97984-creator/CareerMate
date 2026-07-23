@@ -132,62 +132,63 @@ export function AgentArtifactCandidateCard({
         </button>
       </div>
 
-      {expanded && detail && (
+      {expanded && detail && (detail.artifact as any) && (
         <div className="candidate-detail">
-          {detail.artifact && typeof detail.artifact === "object" && (
-            <div className="candidate-detail-section">
-              {(detail.artifact as Record<string, unknown>).evidence && (
+          {(() => {
+            const art = detail.artifact as Record<string, unknown>;
+            return (<div className="candidate-detail-section">
+              {(art.evidence as unknown[])?.length > 0 && (
                 <div className="detail-block">
                   <h5>证据</h5>
                   <ul>
-                    {((detail.artifact as Record<string, unknown>).evidence as Array<unknown>).map((item, i) => (
-                      <li key={i}>{String(item)}</li>
+                    {(art.evidence as unknown[]).map((item, i) => (
+                      <li key={i}>{item as any as string}</li>
                     ))}
                   </ul>
                 </div>
               )}
-              {(detail.artifact as Record<string, unknown>).assumptions && (
+              {(art.assumptions as unknown[])?.length > 0 && (
                 <div className="detail-block">
                   <h5>假设</h5>
                   <ul>
-                    {((detail.artifact as Record<string, unknown>).assumptions as Array<unknown>).map((item, i) => (
-                      <li key={i}>{String(item)}</li>
+                    {(art.assumptions as unknown[]).map((item, i) => (
+                      <li key={i}>{item as any as string}</li>
                     ))}
                   </ul>
                 </div>
               )}
-              {(detail.artifact as Record<string, unknown>).warnings && (
+              {(art.warnings as unknown[])?.length > 0 && (
                 <div className="detail-block">
                   <h5>警告</h5>
                   <ul>
-                    {((detail.artifact as Record<string, unknown>).warnings as Array<unknown>).map((item, i) => (
-                      <li key={i}>{String(item)}</li>
+                    {(art.warnings as unknown[]).map((item, i) => (
+                      <li key={i}>{item as any as string}</li>
                     ))}
                   </ul>
                 </div>
               )}
-              {(detail.artifact as Record<string, unknown>).sources && (
+              {(art.sources as unknown[])?.length > 0 && (
                 <div className="detail-block">
                   <h5>来源</h5>
                   <ul>
-                    {((detail.artifact as Record<string, unknown>).sources as Array<unknown>).map((item, i) => (
-                      <li key={i}>{String(item)}</li>
+                    {(art.sources as unknown[]).map((item, i) => (
+                      <li key={i}>{item as any as string}</li>
                     ))}
                   </ul>
                 </div>
               )}
-              {(detail.artifact as Record<string, unknown>).nextActions && (
+              {(art.nextActions as unknown[])?.length > 0 && (
                 <div className="detail-block">
                   <h5>后续行动</h5>
                   <ul>
-                    {((detail.artifact as Record<string, unknown>).nextActions as Array<unknown>).map((item, i) => (
-                      <li key={i}>{String(item)}</li>
+                    {(art.nextActions as unknown[]).map((item, i) => (
+                      <li key={i}>{item as any as string}</li>
                     ))}
                   </ul>
                 </div>
               )}
-            </div>
-          )}
+            </div>);
+          })()}
         </div>
       )}
     </div>

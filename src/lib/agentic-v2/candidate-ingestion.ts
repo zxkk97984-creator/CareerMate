@@ -1,6 +1,5 @@
 import type { AgentArtifactV1 } from "./contracts";
 import {
-  AGENT_ARTIFACT_CANDIDATE_TYPES,
   type AgentArtifactCandidateService,
   type AgentArtifactCandidateType,
 } from "./candidate-service";
@@ -87,8 +86,7 @@ export async function ingestAgentArtifact(
       },
       warnings: [],
     };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "未知候选摄入错误";
+  } catch {
     return {
       warnings: ["CANDIDATE_INGESTION_FAILED"],
     };

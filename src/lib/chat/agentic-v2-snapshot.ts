@@ -296,7 +296,8 @@ export async function loadAgenticV2Snapshot(
   const contextVersion = conversationRow?.contextVersion ?? 1;
 
   // 8. 模拟训练状态
-  const targetRef = input.interaction?.targetRef;
+  const interactionAny = input.interaction as Record<string, unknown> | undefined;
+  const targetRef = interactionAny?.targetRef as string | undefined;
   let simulationState: SimulationStateV1 | null = null;
 
   if (targetRef && input.interaction?.surface === "simulation") {
@@ -324,8 +325,8 @@ export async function loadAgenticV2Snapshot(
   const profileSnapshot: ProfileSnapshotV1 = {
     available: profileAvailable,
     version: profileVersion,
-    data: profileData,
-  };
+    data: profileData as unknown as Record<string, unknown>,
+  } as ProfileSnapshotV1;
 
   const throughDate = now().toISOString();
 
@@ -371,21 +372,21 @@ export async function loadAgenticV2Snapshot(
 
   if (byteSize > LIMITS.bytes) {
     // 第2级：缩减进度条目
-    historySnapshot.data.recentProgress = recentProgress.slice(0, 10);
+    (historySnapshot.data as Record<string, unknown>).recentProgress = recentProgress.slice(0, 10);
     serialized = JSON.stringify({ ...result, historySnapshot });
     byteSize = Buffer.byteLength(serialized, "utf8");
   }
 
   if (byteSize > LIMITS.bytes) {
     // 第3级：缩减能力证据
-    profileData.abilityEvidence = abilityEvidence.slice(0, 10);
-    serialized = JSON.stringify({ ...result, profileSnapshot: { ...profileSnapshot, data: profileData } });
+    (profileData as Record<string, unknown>).abilityEvidence = abilityEvidence.slice(0, 10);
+    serialized = JSON.stringify({ ...result, profileSnapshot: { ...profileSnapshot, data: profileData as unknown as Record<string, unknown> } });
     byteSize = Buffer.byteLength(serialized, "utf8");
   }
 
   if (byteSize > LIMITS.bytes) {
     // 第4级：缩减记忆
-    historySnapshot.data.confirmedMemories = confirmedMemories.slice(0, 5);
+    (historySnapshot.data as Record<string, unknown>).confirmedMemories = confirmedMemories.slice(0, 5);
     serialized = JSON.stringify({ ...result, historySnapshot });
     byteSize = Buffer.byteLength(serialized, "utf8");
   }

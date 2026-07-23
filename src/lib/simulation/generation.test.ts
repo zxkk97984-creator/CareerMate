@@ -255,8 +255,9 @@ describe("simulation generation (V2 envelope protocol)", () => {
     });
 
     expect(result.data.structured).toBeDefined();
-    expect(result.data.structured?.type).toBe("simulation_report");
-    expect(result.data.structured?.scenarioKey).toBe("cross_role_communication");
-    expect(result.data.structured?.score).toBe(85);
+    const report = result.data.structured as Record<string, unknown> | undefined;
+    expect(report?.type).toBe("simulation_report");
+    expect(report?.scenarioKey).toBe("cross_role_communication");
+    expect(report?.score).toBe(85);
   });
 });

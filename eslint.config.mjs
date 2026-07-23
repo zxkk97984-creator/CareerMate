@@ -9,6 +9,7 @@ const eslintConfig = [
       "out/**",
       "coverage/**",
       ".worktrees/**",
+      "src/agentic-v2/platform/automation/**",
       "prisma/dev.db",
     ],
   },

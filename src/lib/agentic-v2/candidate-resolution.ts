@@ -293,7 +293,6 @@ async function applyProjection(
     }
 
     case "learning_route":
-    case "simulation_report":
       // 标记接受但不执行直接写入——artifact 即权威提案
       break;
 

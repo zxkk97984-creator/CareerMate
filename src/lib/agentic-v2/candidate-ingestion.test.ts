@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { ingestAgentArtifact, type IngestAgentArtifactInput } from "./candidate-ingestion";
-import type { AgentArtifactCandidateService, CreateAgentArtifactCandidateInput } from "./candidate-service";
+import type { AgentArtifactCandidateService } from "./candidate-service";
 
 const baseInput: IngestAgentArtifactInput = {
   userId: "user-1",

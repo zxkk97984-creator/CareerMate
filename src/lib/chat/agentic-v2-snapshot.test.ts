@@ -191,7 +191,7 @@ describe("Agentic V2 快照加载器", () => {
 
     const result = await loadAgenticV2Snapshot({
       ...input,
-      interaction: { surface: "simulation", action: "continue", targetRef: "session-1" },
+      interaction: { surface: "simulation" as const, action: "continue" as const, targetRef: "session-1" } as any,
     }, { db: fakeDb });
 
     expect(result.simulationState?.sessionId).toBe("session-1");
@@ -275,14 +275,14 @@ describe("Agentic V2 快照加载器", () => {
       },
     });
 
-    const result = await loadAgenticV2Snapshot(input, { db: fakeDb });
+    await loadAgenticV2Snapshot(input, { db: fakeDb });
     // 不应该查询记忆
     expect(fakeDb.memoryItem.findMany).not.toHaveBeenCalled();
   });
 
   it("仅加载活动计划，不加载历史计划", async () => {
     const fakeDb = makeFakeDb();
-    const result = await loadAgenticV2Snapshot(input, { db: fakeDb });
+    const loadedResult = await loadAgenticV2Snapshot(input, { db: fakeDb });
 
     expect(fakeDb.careerPlan.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -290,7 +290,7 @@ describe("Agentic V2 快照加载器", () => {
         orderBy: { version: "desc" },
       }),
     );
-    const serialized = JSON.stringify(result);
+    const serialized = JSON.stringify(loadedResult);
     expect(serialized).toContain("plan-1");
   });
 });

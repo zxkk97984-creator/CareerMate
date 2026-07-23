@@ -3,7 +3,6 @@ import { getTboxConfig } from "@/lib/env";
 import { buildSimulationFeedback } from "@/lib/career";
 import type { AiResult, NormalizedAssistantResult } from "@/lib/tbox/types";
 import {
-  simulationTurnResultSchema,
   type SimulationReportResult,
 } from "@/lib/tbox/capability-schemas";
 import { parseAgentArtifactEnvelope } from "@/lib/agentic-v2/artifact-envelope";
@@ -39,8 +38,6 @@ export async function generateSimulationTurn(input: {
     role: turn.role,
     content: turn.content,
   }));
-  const expectedTurnIndex = history.filter((turn) => turn.role === "user").length;
-
   // API 模式：调用主 Agent
   if (config.mode === "api") {
     const result = await chatWithTbox({
@@ -123,7 +120,7 @@ export async function generateSimulationTurn(input: {
 /** 构建本地降级响应 */
 function buildLocalFallback(
   input: { scenarioKey: SimulationScenarioKey; scenarioTitle: string; transcript: SimulationTranscriptTurn[]; remoteConversationId?: string },
-  result: { data: { text: string; citations: unknown[]; warnings: string[]; conversationId?: string | null }; meta: Record<string, unknown> },
+  result: { data: { text: string; citations?: unknown[]; warnings: string[]; conversationId?: string | null }; meta: { degraded?: boolean; requestedMode?: string; actualMode?: string; fallbackReason?: string | null; source?: string } },
   reason: string,
 ): AiResult<NormalizedAssistantResult> {
   const config = getTboxConfig();
@@ -191,9 +188,9 @@ export async function generateSimulationReport(input: {
           score: (data?.score as number) ?? 0,
           strengths: (data?.strengths as string[]) ?? [],
           improvements: (data?.improvements as string[]) ?? [],
-          evidence: (data?.evidence as unknown[]) ?? [],
-          abilityImpact: (data?.abilityImpact as Record<string, unknown>) ?? {},
-          candidateUpdates: (data?.candidateUpdates as unknown[]) ?? [],
+          evidence: (data?.evidence as string[]) ?? [],
+          abilityImpact: (data?.abilityImpact as Record<string, number>) ?? {},
+          candidateUpdates: (data?.candidateUpdates as { field: string; newValue: unknown; confidence: number; reason: string; evidenceExcerpt: string; requiresConfirmation: true; impactSummary: string }[]) ?? [],
         };
 
         return {
@@ -223,7 +220,7 @@ export async function generateSimulationReport(input: {
 /** 构建降级报告 */
 function buildDegradedReport(
   input: { scenarioKey: SimulationScenarioKey; scenarioTitle: string; transcript: SimulationTranscriptTurn[]; remoteConversationId?: string },
-  result: { data: { text: string; citations: unknown[]; warnings: string[]; conversationId?: string | null }; meta: Record<string, unknown> },
+  result: { data: { text: string; citations?: unknown[]; warnings: string[]; conversationId?: string | null }; meta: { degraded?: boolean; requestedMode?: string; actualMode?: string; fallbackReason?: string | null; source?: string } },
 ): AiResult<NormalizedAssistantResult> {
   const config = getTboxConfig();
   const userAnswers = input.transcript
