@@ -1,6 +1,41 @@
 # CareerMate Agentic V2 — Claude / DeepSeek 续做交接单
 
-更新时间：2026-07-22
+更新时间：2026-07-23
+
+## 0. No-Business-MCP 运行时（最新架构）
+
+自 2026-07-23 起，活跃 Agentic V2 聊天路径不再依赖 CareerMate 业务 MCP V2。
+
+### 当前活跃运行时
+
+- **快照传输**：CareerMate 后端在每次请求时加载并消毒用户画像、能力证据、活动计划、近期进度、模拟历史和已确认记忆，以 `business_data.profileSnapshot` 和 `business_data.historySnapshot` 发送给 TBox Agent。
+- **不需要 `CAREERMATE_CONTEXT_TOKEN_SECRET`**：活跃 V2 运行时不再签署或验证 context token。该环境变量标记为可选/休眠。
+- **`/api/mcp/v2` 为休眠未来基础设施**：代码保留但不被活跃聊天路径依赖。
+- **单一 `agent_id`**：仅需 `TBOX_AGENT_ID`；无需 MCP 服务端配置。
+- **`search_engine=false`**：有意为之，夸克 MCP 已挂载在 Agent 内部。
+- **CareerMate DB 为权威**：后端负责身份、权限、版本、确认和正式写入。
+- **TBox 长期记忆**：仅存储低敏感偏好。
+
+### 精确信封协议
+
+候选和模拟结果使用 ONE 精确标签：
+
+```
+<CAREERMATE_ARTIFACT>
+{"schemaVersion":"1.0", ...}
+</CAREERMATE_ARTIFACT>
+```
+
+- 绝不解析无标签 JSON 或 Markdown 代码块
+- 多个信封 → 拒绝
+- 真实 TBox 不返回 `structured` 字段，仅从文本流提取
+
+### 休眠能力（保留但未激活）
+
+- `/api/mcp/v2` 端点
+- `careermate-v2-registry.ts` MCP 工具注册表
+- `CAREERMATE_CONTEXT_TOKEN_SECRET` 环境变量
+- `CAREERMATE_PLUGIN_TOKEN` 及相关 MCP 配置
 
 ## 1. 唯一目标
 
