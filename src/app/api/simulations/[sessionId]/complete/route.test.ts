@@ -101,6 +101,30 @@ beforeEach(() => {
 });
 
 describe("POST /api/simulations/[sessionId]/complete", () => {
+  it("已完成会话从反馈元数据恢复 V2 候选 ID", async () => {
+    mocks.findFirst.mockResolvedValue({
+      ...session,
+      status: "completed",
+      candidateId: null,
+      feedback: JSON.stringify({
+        score: 84,
+        strengths: ["目标清晰"],
+        candidateId: "candidate-1",
+      }),
+    });
+
+    const response = await POST(new Request(
+      "http://localhost/api/simulations/session-1/complete",
+      { method: "POST" },
+    ), { params: Promise.resolve({ sessionId: "session-1" }) });
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.data.candidateId).toBe("candidate-1");
+    expect(payload.data.alreadyCompleted).toBe(true);
+    expect(mocks.generateReport).not.toHaveBeenCalled();
+  });
+
   it("keeps the session retryable when the API report has no valid structure", async () => {
     mocks.generateReport.mockResolvedValue({
       data: {

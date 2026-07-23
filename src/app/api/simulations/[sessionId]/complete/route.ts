@@ -9,13 +9,31 @@ import { createAgentArtifactCandidateService } from "@/lib/agentic-v2/candidate-
 
 class CompletionConflict extends Error {}
 
+function resolvedCandidateId(session: {
+  candidateId: string | null;
+  feedback: string;
+}): string | null {
+  if (session.candidateId) return session.candidateId;
+  const feedback = parseJson<Record<string, unknown>>(session.feedback, {});
+  return typeof feedback.candidateId === "string" && feedback.candidateId.trim()
+    ? feedback.candidateId.trim()
+    : null;
+}
+
 export async function POST(_request: Request, context: { params: Promise<{ sessionId: string }> }) {
   const user = await requireCurrentUser().catch(() => null);
   if (!user?.profile) return fail("UNAUTHORIZED", "未登录或缺少画像", 401);
   const { sessionId } = await context.params;
   const session = await getPrisma().simulationSession.findFirst({ where: { id: sessionId, userId: user.id } });
   if (!session) return fail("NOT_FOUND", "训练会话不存在", 404);
-  if (session.status === "completed") return ok({ session: simulationDto(session), feedback: parseJson(session.feedback, {}), candidateId: session.candidateId, alreadyCompleted: true });
+  if (session.status === "completed") {
+    return ok({
+      session: simulationDto(session),
+      feedback: parseJson(session.feedback, {}),
+      candidateId: resolvedCandidateId(session),
+      alreadyCompleted: true,
+    });
+  }
   if (session.status !== "active") return fail("SESSION_CONFLICT", "训练会话正在完成", 409);
   if (!canCompleteSimulation(session.turnCount)) return fail("MIN_TURNS", "至少完成 3 轮回答后才能评分", 409);
   const transcript = parseSimulationTranscript(session.transcript);
@@ -138,7 +156,14 @@ export async function POST(_request: Request, context: { params: Promise<{ sessi
   } catch (error) {
     if (error instanceof CompletionConflict) {
       const latest = await getPrisma().simulationSession.findFirst({ where: { id: session.id, userId: user.id } });
-      if (latest?.status === "completed") return ok({ session: simulationDto(latest), feedback: parseJson(latest.feedback, {}), candidateId: latest.candidateId, alreadyCompleted: true });
+      if (latest?.status === "completed") {
+        return ok({
+          session: simulationDto(latest),
+          feedback: parseJson(latest.feedback, {}),
+          candidateId: resolvedCandidateId(latest),
+          alreadyCompleted: true,
+        });
+      }
       return fail("SESSION_CONFLICT", "训练会话正在完成，请稍后刷新", 409);
     }
     return fail("SIMULATION_COMPLETE_FAILED", "训练评分保存失败", 500);
