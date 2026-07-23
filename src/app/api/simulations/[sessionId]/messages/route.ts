@@ -36,7 +36,7 @@ export async function POST(request: Request, context: { params: Promise<{ sessio
     remoteConversationId: session.remoteConversationId ?? undefined,
   });
 
-  // 优先使用 Agent 结构化 simulation_turn.assistantMessage，其次 text，最后本地兜底
+  // V2 协议：result.data.text 包含信封中的 nextQuestion；structured 已被淘汰
   const structuredTurn = simulationTurnResultSchema.safeParse(result.data.structured);
   const structuredMessage = structuredTurn.success
     && structuredTurn.data.scenarioKey === scenarioKey.data
@@ -44,9 +44,9 @@ export async function POST(request: Request, context: { params: Promise<{ sessio
     ? structuredTurn.data.assistantMessage.trim()
     : "";
   const protocolText = containsSimulationTurnProtocol(result.data.text);
-  const agentMessage = structuredMessage || (protocolText ? "" : result.data.text.trim());
+  const v2TextMessage = result.data.text?.trim() ?? "";
+  const agentMessage = structuredMessage || (protocolText ? "" : v2TextMessage);
   const fallbackMessage = nextSimulationPrompt(scenarioKey.data, nextTurn);
-  const schemaMismatch = result.data.warnings.includes("SCHEMA_MISMATCH");
   const usedLocalFallback = result.meta.degraded || !agentMessage;
   const executionMeta = usedLocalFallback
     ? {
@@ -54,7 +54,7 @@ export async function POST(request: Request, context: { params: Promise<{ sessio
       actualMode: "mock" as const,
       degraded: true,
       fallbackReason: result.meta.fallbackReason
-        ?? (schemaMismatch ? "validation_error" : "invalid_response"),
+        ?? (result.data.warnings.includes("SCHEMA_MISMATCH") ? "validation_error" : "invalid_response"),
       source: "local-simulation-fallback",
     }
     : result.meta;
