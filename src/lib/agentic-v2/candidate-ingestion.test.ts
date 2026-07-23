@@ -121,4 +121,34 @@ describe("候选摄入", () => {
     expect(result.candidate).toBeUndefined();
     expect(result.warnings).toContain("CANDIDATE_INGESTION_FAILED");
   });
+
+  it("career_exploration 且 data.candidateType=career_template_draft 时创建草稿候选", async () => {
+    const candidateService = makeCandidateService();
+    const artifact = {
+      ...pendingConfirmationArtifact,
+      taskType: "career_exploration" as const,
+      data: { candidateType: "career_template_draft", roleKey: "ai_pm", roleName: "AI产品经理" },
+    };
+    const result = await ingestAgentArtifact(
+      { ...baseInput, artifact },
+      candidateService,
+    );
+    expect(result.candidate).toBeDefined();
+    expect(result.candidate?.candidateType).toBe("career_template_draft");
+    expect(candidateService.createCandidate).toHaveBeenCalledOnce();
+  });
+
+  it("career_exploration 但无 data.candidateType 时不创建候选", async () => {
+    const candidateService = makeCandidateService();
+    const artifact = {
+      ...pendingConfirmationArtifact,
+      taskType: "career_exploration" as const,
+      data: { someOtherData: true },
+    };
+    const result = await ingestAgentArtifact(
+      { ...baseInput, artifact },
+      candidateService,
+    );
+    expect(result.candidate).toBeUndefined();
+  });
 });

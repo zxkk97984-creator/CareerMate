@@ -15,7 +15,7 @@ const defaultCandidateTypeByTask: Record<AgentArtifactV1["taskType"], AgentArtif
   memory_item: "memory_item",
   career_template_draft: "career_template_draft",
   // 以下任务类型不创建候选：
-  career_exploration: null,
+  career_exploration: null, // 运行时检查 data.candidateType
   simulation_turn: null,
 };
 
@@ -59,9 +59,14 @@ export async function ingestAgentArtifact(
   }
 
   // 查找候选类型映射
-  const candidateType = defaultCandidateTypeByTask[artifact.taskType];
+  let candidateType: AgentArtifactCandidateType | null = defaultCandidateTypeByTask[artifact.taskType];
+  // career_exploration: 仅当 data.candidateType=career_template_draft 时创建
+  if (artifact.taskType === "career_exploration") {
+    const data = artifact.data as Record<string, unknown> | null | undefined;
+    candidateType = (data?.candidateType === "career_template_draft") ? "career_template_draft" : null;
+  }
   if (!candidateType) {
-    // career_exploration 或 simulation_turn → 不创建候选
+    // simulation_turn 或无匹配 → 不创建候选
     return { warnings: [] };
   }
 
