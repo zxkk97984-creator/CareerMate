@@ -6,7 +6,20 @@ const validArtifact = {
   taskType: "career_plan",
   status: "pending_confirmation",
   summary: "三年计划候选",
-  data: { targetRole: "data_analyst", phases: [] },
+  data: {
+    plan: {
+      schemaVersion: 2,
+      title: "数据分析师计划",
+      targetRole: { key: "data_analyst", label: "数据分析师" },
+      summary: "三年成长为资深数据分析师",
+      horizon: { value: 3, unit: "year" },
+      phases: [{ id: "p1", title: "阶段一", objective: "入门", duration: { value: 6, unit: "month" }, skills: [], actions: [{ id: "a1", title: "学SQL", description: "基础", type: "learning", status: "not_started", resources: [] }], outputs: [], evaluationCriteria: [], risks: [] }],
+      immediateActions: [],
+      assumptions: [],
+      riskNotes: [],
+      evidenceRefs: [],
+    },
+  },
   evidence: [],
   sources: [],
   assumptions: [],
@@ -92,5 +105,115 @@ describe("CAREERMATE_ARTIFACT 信封解析器", () => {
     );
     expect(result.artifact).toBeUndefined();
     expect(result.warnings).toContain("INVALID_ARTIFACT_SCHEMA");
+  });
+
+  it("success 状态但 career_plan 缺少 plan 字段 → 被 validated 拒绝", () => {
+    const badArtifact = {
+      schemaVersion: "1.0",
+      taskType: "career_plan",
+      status: "success",
+      summary: "计划已生成",
+      data: { title: "无 plan 字段的自由格式" },
+      evidence: [],
+      sources: [],
+      assumptions: [],
+      warnings: [],
+      requiresUserConfirmation: false,
+      baseVersion: null,
+      nextActions: [],
+    };
+    const result = parseAgentArtifactEnvelope(
+      `<CAREERMATE_ARTIFACT>${JSON.stringify(badArtifact)}</CAREERMATE_ARTIFACT>`,
+    );
+    expect(result.artifact).toBeUndefined();
+    expect(result.warnings).toContain("INVALID_ARTIFACT_SCHEMA");
+  });
+
+  it("pending_confirmation 但 simulation_report 缺少 abilityEvidence → 被拒绝", () => {
+    const badArtifact = {
+      schemaVersion: "1.0",
+      taskType: "simulation_report",
+      status: "pending_confirmation",
+      summary: "训练报告",
+      data: { score: 85, strengths: ["沟通好"] },
+      evidence: [],
+      sources: [],
+      assumptions: [],
+      warnings: [],
+      requiresUserConfirmation: true,
+      baseVersion: 3,
+      nextActions: [],
+    };
+    const result = parseAgentArtifactEnvelope(
+      `<CAREERMATE_ARTIFACT>${JSON.stringify(badArtifact)}</CAREERMATE_ARTIFACT>`,
+    );
+    expect(result.artifact).toBeUndefined();
+    expect(result.warnings).toContain("INVALID_ARTIFACT_SCHEMA");
+  });
+
+  it("needs_input 但 data 为空对象 → 被拒绝（缺少 question 或 missingFields）", () => {
+    const badArtifact = {
+      schemaVersion: "1.0",
+      taskType: "career_plan",
+      status: "needs_input",
+      summary: "需要更多信息",
+      data: {},
+      evidence: [],
+      sources: [],
+      assumptions: [],
+      warnings: [],
+      requiresUserConfirmation: false,
+      baseVersion: null,
+      nextActions: [],
+    };
+    const result = parseAgentArtifactEnvelope(
+      `<CAREERMATE_ARTIFACT>${JSON.stringify(badArtifact)}</CAREERMATE_ARTIFACT>`,
+    );
+    expect(result.artifact).toBeUndefined();
+    expect(result.warnings).toContain("INVALID_ARTIFACT_SCHEMA");
+  });
+
+  it("needs_input 带 question 字段 → 通过验证", () => {
+    const validNeedsInput = {
+      schemaVersion: "1.0",
+      taskType: "career_plan",
+      status: "needs_input",
+      summary: "需要更多信息",
+      data: { question: "请提供你的目标岗位" },
+      evidence: [],
+      sources: [],
+      assumptions: [],
+      warnings: [],
+      requiresUserConfirmation: false,
+      baseVersion: null,
+      nextActions: [],
+    };
+    const result = parseAgentArtifactEnvelope(
+      `<CAREERMATE_ARTIFACT>${JSON.stringify(validNeedsInput)}</CAREERMATE_ARTIFACT>`,
+    );
+    expect(result.artifact).toBeDefined();
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("error 状态带 message → 通过验证", () => {
+    const validError = {
+      schemaVersion: "1.0",
+      taskType: "career_plan",
+      status: "error",
+      summary: "生成失败",
+      data: { message: "夸克搜索超时", code: "SEARCH_TIMEOUT", recoverable: true },
+      evidence: [],
+      sources: [],
+      assumptions: [],
+      warnings: [],
+      requiresUserConfirmation: false,
+      baseVersion: null,
+      nextActions: [],
+    };
+    const result = parseAgentArtifactEnvelope(
+      `<CAREERMATE_ARTIFACT>${JSON.stringify(validError)}</CAREERMATE_ARTIFACT>`,
+    );
+    expect(result.artifact).toBeDefined();
+    expect(result.warnings).toEqual([]);
   });
 });

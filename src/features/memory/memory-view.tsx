@@ -10,11 +10,11 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 /* ── 主视图 ── */
 
-interface MemoryViewProps { memories: any[]; candidates: any[]; memoryEnabled: boolean; refresh: () => Promise<void>; setNotice: (v: string) => void; }
+interface MemoryViewProps { memories: any[]; candidates: any[]; v2Candidates?: any[]; memoryEnabled: boolean; refresh: () => Promise<void>; setNotice: (v: string) => void; }
 
 const inputStyle: React.CSSProperties = { height: 40, borderRadius: "var(--cm-radius-control)", border: "1px solid var(--cm-border-strong)", background: "var(--cm-surface)", padding: "0 12px", fontSize: 14, color: "var(--cm-text-strong)", outline: "none" };
 
-export function MemoryView({ memories, candidates, memoryEnabled, refresh, setNotice }: MemoryViewProps) {
+export function MemoryView({ memories, candidates, v2Candidates = [], memoryEnabled, refresh, setNotice }: MemoryViewProps) {
   const router = useRouter();
   const [content, setContent] = useState("");
   const [clearConfirmation, setClearConfirmation] = useState("");
@@ -136,6 +136,41 @@ export function MemoryView({ memories, candidates, memoryEnabled, refresh, setNo
           ))}
         </div>
       </SurfaceCard>
+
+      {v2Candidates.length > 0 && (
+        <SurfaceCard title="AI 分析候选（V2）">
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {v2Candidates.map((c: any) => (
+              <div key={c.id} style={{ borderRadius: "var(--cm-radius-sm)", border: "1px solid var(--cm-border)", padding: 16 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: "var(--cm-text-strong)" }}>
+                  {c.candidateType === "profile_patch" ? "画像更新"
+                    : c.candidateType === "profile_assessment" ? "综合评估"
+                    : c.candidateType === "ability_evidence" ? "能力证据"
+                    : c.candidateType === "career_plan" ? "职业规划"
+                    : c.candidateType === "learning_route" ? "学习路线"
+                    : c.candidateType === "growth_replan" ? "成长复盘"
+                    : c.candidateType === "memory_item" ? "长期记忆"
+                    : c.candidateType === "career_template_draft" ? "岗位草稿"
+                    : c.candidateType}
+                </div>
+                <p style={{ marginTop: 8, fontSize: 14, lineHeight: 1.6, color: "var(--cm-text-muted)" }}>
+                  创建于 {new Date(c.createdAt).toLocaleDateString("zh-CN")} · 状态：{c.status}
+                </p>
+                <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
+                  <Button disabled={c.status !== "pending"} onClick={async () => {
+                    const r = await fetchApi(`/api/agentic-v2/candidates/${c.id}/decision`, { method: "POST", body: JSON.stringify({ decision: "accept" }) });
+                    if (r.ok) { setNotice("已确认候选"); refresh(); } else { setNotice(r.error?.message ?? "确认失败"); }
+                  }}>确认</Button>
+                  <Button variant="secondary" disabled={c.status !== "pending"} onClick={async () => {
+                    const r = await fetchApi(`/api/agentic-v2/candidates/${c.id}/decision`, { method: "POST", body: JSON.stringify({ decision: "reject" }) });
+                    if (r.ok) { setNotice("已拒绝候选"); refresh(); } else { setNotice(r.error?.message ?? "拒绝失败"); }
+                  }}>拒绝</Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </SurfaceCard>
+      )}
 
       {/* 删除确认弹窗 */}
       <ConfirmDialog

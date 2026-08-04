@@ -5,6 +5,8 @@ import { profileDto } from "@/lib/dto";
 import { parseJson, toJson } from "@/lib/json";
 import { calculateOnboardingCompleteness, onboardingDraftSchema } from "@/lib/onboarding";
 import { getPrisma } from "@/lib/prisma";
+import { mutateUserProfile } from "@/lib/profile/profile-mutation-service";
+import type { ProfilePatch } from "@/lib/profile/profile-patch";
 
 const completeOnboardingSchema = z.object({
   conversationId: z.string().trim().min(1).max(100),
@@ -47,7 +49,6 @@ export async function POST(request: Request) {
   if (!user.profile) return fail("PROFILE_NOT_FOUND", "用户画像不存在", 409);
 
   const draft = draftResult.data;
-  const existing = user.profile;
   const completion = await prisma.$transaction(async (transaction) => {
     const claim = await transaction.onboardingConversation.updateMany({
       where: { id: conversation.id, userId: user.id, status: "active" },
@@ -58,21 +59,22 @@ export async function POST(request: Request) {
       return { profile, alreadyCompleted: true } as const;
     }
 
+    // 通过统一画像修改服务写入（含 version 递增），复用当前事务 tx
+    const patch: ProfilePatch = {};
+    if (draft.educationStage) patch.educationStage = draft.educationStage;
+    if (draft.major) patch.major = draft.major;
+    if (draft.targetRole) patch.targetRole = { key: draft.targetRole, label: draft.targetRoleLabel ?? draft.targetRole };
+    if (draft.weeklyAvailableHours) patch.weeklyAvailableHours = draft.weeklyAvailableHours;
+    if (draft.learningPreference) patch.learningPreference = draft.learningPreference;
+    if (draft.experienceSummary) patch.experienceSummary = draft.experienceSummary;
+    if (draft.constraints) patch.constraints = draft.constraints;
+
+    await mutateUserProfile(user.id, patch, undefined, transaction);
+
+    // 单独设置 onboardingCompleted（非画像字段）
     const profile = await transaction.userProfile.update({
       where: { userId: user.id },
-      data: {
-        educationStage: draft.educationStage ?? existing.educationStage,
-        major: draft.major ?? existing.major,
-        targetRole: draft.targetRole ?? existing.targetRole,
-        targetRoleLabel: draft.targetRoleLabel ?? existing.targetRoleLabel,
-        weeklyAvailableHours: draft.weeklyAvailableHours ?? existing.weeklyAvailableHours,
-        learningPreference: toJson(
-          draft.learningPreference ?? parseJson<string[]>(existing.learningPreference, []),
-        ),
-        experienceSummary: draft.experienceSummary ?? existing.experienceSummary,
-        constraints: toJson(draft.constraints ?? parseJson<string[]>(existing.constraints, [])),
-        onboardingCompleted: true,
-      },
+      data: { onboardingCompleted: true },
     });
     await transaction.progressLog.create({
       data: {

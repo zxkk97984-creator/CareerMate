@@ -3,7 +3,7 @@
 /** 对话式画像引导 —— 多轮对话 + 画像摘要 + 确认生成工作台 */
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { canCompleteOnboarding, type OnboardingDraft } from "@/lib/onboarding";
+import { canCompleteOnboarding, type OnboardingDraft } from "@/lib/onboarding-utils";
 import { createOnboardingInitialState, type ActiveOnboardingConversation } from "@/lib/onboarding-resume";
 import type { AiRuntimeSnapshot } from "@/lib/ai-runtime";
 import type { OnboardingMessage } from "@/lib/workspace-types";

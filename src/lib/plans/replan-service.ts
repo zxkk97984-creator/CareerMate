@@ -140,12 +140,21 @@ export function createReplanService(): ReplanService {
 
     async acceptReplan(planId, userId) {
       return db.$transaction(async (transaction) => {
-      // 查找待确认计划，校验所有权
-      const pending = await transaction.careerPlan.findFirst({
+      // 原子 CAS：仅当 status=pending 时接受，避免并发接受和拒绝互相覆盖
+      const claim = await transaction.careerPlan.updateMany({
         where: { id: planId, userId, status: "pending" },
+        data: { status: "activating" },
       });
-      if (!pending) {
-        throw new ReplanServiceError("重规划候选不存在", "NOT_FOUND", 404);
+      if (claim.count !== 1) {
+        // 已被并发处理或不存在
+        const current = await transaction.careerPlan.findFirst({
+          where: { id: planId, userId },
+          select: { status: true },
+        });
+        if (!current) {
+          throw new ReplanServiceError("重规划候选不存在", "NOT_FOUND", 404);
+        }
+        throw new ReplanServiceError("重规划候选已被处理，无法重复操作", "PLAN_ALREADY_RESOLVED", 409);
       }
 
       // 归档所有当前 active 计划
@@ -157,6 +166,14 @@ export function createReplanService(): ReplanService {
           where: { id: active.id },
           data: { status: "archived" },
         });
+      }
+
+      // 获取 pending plan 的版本信息
+      const pending = await transaction.careerPlan.findUnique({
+        where: { id: planId },
+      });
+      if (!pending) {
+        throw new ReplanServiceError("重规划候选不存在", "NOT_FOUND", 404);
       }
 
       // pending 计划在生成时已经分配版本；仅当旧 active 版本更高时才补齐。

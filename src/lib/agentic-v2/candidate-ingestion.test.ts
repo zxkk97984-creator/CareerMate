@@ -16,6 +16,11 @@ function makeCandidateService(overrides: Partial<AgentArtifactCandidateService> 
       status: "pending",
       candidateType: "career_plan",
     }),
+    createCandidateInTx: vi.fn().mockResolvedValue({
+      id: "cand-1",
+      status: "pending",
+      candidateType: "career_plan",
+    }),
     ...overrides,
   };
 }
@@ -82,6 +87,38 @@ describe("候选摄入", () => {
     );
   });
 
+  it("profile_assessment → 创建 profile_assessment 候选（而非 profile_patch）", async () => {
+    const candidateService = makeCandidateService();
+    const artifact = {
+      ...pendingConfirmationArtifact,
+      taskType: "profile_assessment" as const,
+      data: { patch: { experienceSummary: "测试" }, scores: { aiTooling: { value: 72, evidence: "表现好" } } },
+    };
+    const result = await ingestAgentArtifact(
+      { ...baseInput, artifact },
+      candidateService,
+    );
+    expect(result.candidate).toBeDefined();
+    expect(result.candidate?.candidateType).toBe("profile_assessment");
+    expect(candidateService.createCandidate).toHaveBeenCalledOnce();
+  });
+
+  it("learning_route → 创建 learning_route 候选", async () => {
+    const candidateService = makeCandidateService();
+    const artifact = {
+      ...pendingConfirmationArtifact,
+      taskType: "learning_route" as const,
+      data: { targetRole: "ai_product_manager", stages: [], baseRouteVersion: null },
+    };
+    const result = await ingestAgentArtifact(
+      { ...baseInput, artifact },
+      candidateService,
+    );
+    expect(result.candidate).toBeDefined();
+    expect(result.candidate?.candidateType).toBe("learning_route");
+    expect(candidateService.createCandidate).toHaveBeenCalledOnce();
+  });
+
   it("simulation_turn 从不创建候选", async () => {
     const candidateService = makeCandidateService();
     const result = await ingestAgentArtifact(
@@ -122,12 +159,12 @@ describe("候选摄入", () => {
     expect(result.warnings).toContain("CANDIDATE_INGESTION_FAILED");
   });
 
-  it("career_exploration 且 data.candidateType=career_template_draft 时创建草稿候选", async () => {
+  it("career_exploration 且 data 含 roleKey+roleName → 创建 career_template_draft 候选", async () => {
     const candidateService = makeCandidateService();
     const artifact = {
       ...pendingConfirmationArtifact,
       taskType: "career_exploration" as const,
-      data: { candidateType: "career_template_draft", roleKey: "ai_pm", roleName: "AI产品经理" },
+      data: { options: [{ roleName: "AI产品经理" }], roleKey: "ai_pm", roleName: "AI产品经理" },
     };
     const result = await ingestAgentArtifact(
       { ...baseInput, artifact },
@@ -138,12 +175,26 @@ describe("候选摄入", () => {
     expect(candidateService.createCandidate).toHaveBeenCalledOnce();
   });
 
-  it("career_exploration 但无 data.candidateType 时不创建候选", async () => {
+  it("career_exploration 但无 roleKey 或 roleName → 不创建候选", async () => {
     const candidateService = makeCandidateService();
     const artifact = {
       ...pendingConfirmationArtifact,
       taskType: "career_exploration" as const,
-      data: { someOtherData: true },
+      data: { options: [{ roleName: "AI产品经理" }] },
+    };
+    const result = await ingestAgentArtifact(
+      { ...baseInput, artifact },
+      candidateService,
+    );
+    expect(result.candidate).toBeUndefined();
+  });
+
+  it("career_exploration 有 roleName 但 roleKey 为空字符串 → 不创建候选", async () => {
+    const candidateService = makeCandidateService();
+    const artifact = {
+      ...pendingConfirmationArtifact,
+      taskType: "career_exploration" as const,
+      data: { options: [{ roleName: "AI产品经理" }], roleKey: "", roleName: "AI产品经理" },
     };
     const result = await ingestAgentArtifact(
       { ...baseInput, artifact },

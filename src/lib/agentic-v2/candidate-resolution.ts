@@ -1,12 +1,17 @@
-import { z } from "zod";
 import { getPrisma } from "@/lib/prisma";
-import { agentArtifactV1Schema, type AgentArtifactV1 } from "./contracts";
+import {
+  validatedAgentArtifactV1Schema,
+  profilePatchDataSchema,
+  profileAssessmentDataSchema,
+  CANDIDATE_DATA_SCHEMA,
+  type AgentArtifactV1,
+} from "./contracts";
 import type { AgentArtifactCandidateType } from "./candidate-service";
 
 // ── 候选类型白名单 ────────────────────────────────────────
 const ALLOWED_CANDIDATE_TYPES = new Set<string>([
-  "profile_patch", "ability_evidence", "career_plan", "learning_route",
-  "growth_replan", "memory_item", "career_template_draft",
+  "profile_patch", "profile_assessment", "ability_evidence", "career_plan",
+  "learning_route", "growth_replan", "memory_item", "career_template_draft",
 ]);
 
 const COMPATIBLE_TASK_TYPES: Record<
@@ -14,7 +19,8 @@ const COMPATIBLE_TASK_TYPES: Record<
   readonly AgentArtifactV1["taskType"][]
 > = {
   profile_patch: ["profile_assessment"],
-  ability_evidence: ["profile_assessment", "simulation_report", "resume_review", "growth_review"],
+  profile_assessment: ["profile_assessment"],
+  ability_evidence: ["simulation_report", "resume_review"],
   career_plan: ["career_plan"],
   learning_route: ["learning_route"],
   growth_replan: ["growth_review"],
@@ -29,73 +35,6 @@ export class AgentArtifactCandidateResolutionError extends Error {
     this.name = "AgentArtifactCandidateResolutionError";
   }
 }
-
-// ── 按候选类型的严格数据 Schema ─────────────────────────
-const profilePatchSchema = z.object({
-  targetRole: z.string().trim().min(1).max(160).nullable().optional(),
-  targetRoleLabel: z.string().trim().min(1).max(200).nullable().optional(),
-  weeklyAvailableHours: z.number().int().min(1).max(168).nullable().optional(),
-  educationStage: z.string().trim().min(1).max(120).nullable().optional(),
-  major: z.string().trim().min(1).max(160).nullable().optional(),
-  learningPreference: z.array(z.string().trim().min(1).max(80)).max(12).optional(),
-  experienceSummary: z.string().trim().max(2_000).optional(),
-  interestTags: z.array(z.string().trim().min(1).max(80)).max(20).optional(),
-  constraints: z.array(z.string().trim().min(1).max(240)).max(12).optional(),
-}).strict().refine(
-  (patch) => Object.values(patch).some((value) => value !== undefined),
-  { message: "补丁不能为空" },
-);
-
-const profilePatchDataSchema = z.object({
-  patch: profilePatchSchema,
-}).strict();
-
-const confidenceSchema = z.number().min(0).max(1);
-
-const abilityEvidenceItemSchema = z.object({
-  abilityKey: z.string().trim().min(1),
-  summary: z.string().trim().min(1).max(500),
-  sourceType: z.string().trim().min(1),
-  sourceRef: z.string().trim().optional(),
-  confidence: confidenceSchema,
-}).strict();
-
-const abilityEvidenceDataSchema = z.object({
-  abilityEvidence: z.array(abilityEvidenceItemSchema).min(1),
-}).strict();
-
-const careerPlanDataSchema = z.object({
-  targetRole: z.string().trim().min(1).max(160),
-  phases: z.array(z.unknown()).optional(),
-  summary: z.string().trim().optional(),
-  immediateActions: z.array(z.unknown()).optional(),
-  years: z.array(z.unknown()).optional(),
-  quarters: z.array(z.unknown()).optional(),
-  months: z.array(z.unknown()).optional(),
-  currentMonthIndex: z.number().int().optional(),
-  assumptions: z.array(z.unknown()).optional(),
-  riskNotes: z.array(z.unknown()).optional(),
-  targetRoleLabel: z.string().trim().optional(),
-});
-
-const growthReplanDataSchema = careerPlanDataSchema.extend({
-  planPatch: z.object({
-    parentPlanId: z.string().trim().min(1).optional(),
-    targetRole: z.string().trim().min(1).optional(),
-  }).optional(),
-});
-
-const memoryItemDataSchema = z.object({
-  content: z.string().trim().min(1).max(2000),
-  kind: z.string().trim().min(1).max(40),
-  reason: z.string().trim().max(500).optional(),
-}).strict();
-
-const careerTemplateDraftDataSchema = z.object({
-  roleKey: z.string().trim().min(1).max(160),
-  roleName: z.string().trim().min(1).max(200),
-  category: z.string().trim().max(40).optional(),
-}).strict();
 
 // ── 输入输出 ─────────────────────────────────────────────
 export interface ResolveAgentArtifactCandidateInput {
@@ -129,19 +68,26 @@ interface ResolutionTx {
       data: Record<string, unknown>;
     }): Promise<{ count: number }>;
   };
+  learningRoute: {
+    findFirst(args: { where: { userId: string; status: string }; orderBy: { version: "desc" } }): Promise<{ id: string; version: number } | null>;
+    updateMany(args: { where: { userId: string; status: string }; data: { status: string } }): Promise<unknown>;
+    create(args: { data: Record<string, unknown> }): Promise<{ id: string }>;
+  };
   abilityEvidence: { create(args: { data: Record<string, unknown> }): Promise<unknown> };
   memoryItem: { create(args: { data: Record<string, unknown> }): Promise<unknown> };
   roleDraft: { create(args: { data: Record<string, unknown> }): Promise<unknown> };
+  progressLog?: { create(args: { data: Record<string, unknown> }): Promise<unknown> };
   $transaction<T>(operation: (tx: Omit<ResolutionTx, "$transaction">) => Promise<T>): Promise<T>;
 }
 
 // ── 版本化候选类型集合（需要比较计划版本而非画像版本）───
+// 注意：learning_route 也在其中——baseVersion 表示 CareerPlan 版本
 const PLAN_VERSIONED_TYPES = new Set<AgentArtifactCandidateType>([
   "career_plan", "learning_route", "growth_replan",
 ]);
 
 const PROFILE_VERSIONED_TYPES = new Set<AgentArtifactCandidateType>([
-  "profile_patch", "ability_evidence",
+  "profile_patch", "profile_assessment", "ability_evidence",
 ]);
 
 // ── 主入口 ───────────────────────────────────────────────
@@ -171,13 +117,9 @@ export async function resolveAgentArtifactCandidate(
     try {
       rawArtifact = JSON.parse(candidate.artifact);
     } catch {
-      throw new AgentArtifactCandidateResolutionError(
-        "候选数据损坏",
-        "CANDIDATE_CORRUPT",
-        500,
-      );
+      throw new AgentArtifactCandidateResolutionError("候选数据损坏", "CANDIDATE_CORRUPT", 500);
     }
-    const artifactResult = agentArtifactV1Schema.safeParse(rawArtifact);
+    const artifactResult = validatedAgentArtifactV1Schema.safeParse(rawArtifact);
     if (!artifactResult.success) {
       throw new AgentArtifactCandidateResolutionError("候选数据损坏", "CANDIDATE_CORRUPT", 500);
     }
@@ -185,9 +127,7 @@ export async function resolveAgentArtifactCandidate(
 
     if (!COMPATIBLE_TASK_TYPES[candidateType].includes(artifact.taskType)) {
       throw new AgentArtifactCandidateResolutionError(
-        "候选类型与任务类型不兼容",
-        "TASK_TYPE_MISMATCH",
-        400,
+        "候选类型与任务类型不兼容", "TASK_TYPE_MISMATCH", 400,
       );
     }
 
@@ -271,33 +211,12 @@ function validateCandidateData(
   candidateType: AgentArtifactCandidateType,
   data: unknown,
 ): void {
-  let result;
-  switch (candidateType) {
-    case "profile_patch":
-      result = profilePatchDataSchema.safeParse(data);
-      break;
-    case "ability_evidence":
-      result = abilityEvidenceDataSchema.safeParse(data);
-      break;
-    case "career_plan":
-      result = careerPlanDataSchema.safeParse(data);
-      break;
-    case "learning_route":
-      result = z.object({}).passthrough().safeParse(data); // 自由格式但必须为对象
-      break;
-    case "growth_replan":
-      result = growthReplanDataSchema.safeParse(data);
-      break;
-    case "memory_item":
-      result = memoryItemDataSchema.safeParse(data);
-      break;
-    case "career_template_draft":
-      result = careerTemplateDraftDataSchema.safeParse(data);
-      break;
-    default:
-      throw new AgentArtifactCandidateResolutionError("不支持的候选类型", "UNSUPPORTED_CANDIDATE_TYPE", 400);
+  const schema = CANDIDATE_DATA_SCHEMA[candidateType];
+  if (!schema) {
+    throw new AgentArtifactCandidateResolutionError("不支持的候选类型", "UNSUPPORTED_CANDIDATE_TYPE", 400);
   }
-  if (result && !result.success) {
+  const result = schema.safeParse(data);
+  if (!result.success) {
     throw new AgentArtifactCandidateResolutionError(
       `候选数据不符合 ${candidateType} schema`, "INVALID_CANDIDATE_DATA", 400,
     );
@@ -331,10 +250,87 @@ async function applyProjection(
       });
       if (updated.count !== 1) {
         throw new AgentArtifactCandidateResolutionError(
-          "数据版本已变化，请重新生成候选",
-          "BASE_VERSION_CONFLICT",
-          409,
+          "数据版本已变化，请重新生成候选", "BASE_VERSION_CONFLICT", 409,
         );
+      }
+      break;
+    }
+
+    case "profile_assessment": {
+      const parsed = profileAssessmentDataSchema.parse(data);
+
+      // 1. 先读取当前画像，合并 abilityScores
+      const profile = await tx.userProfile.findUnique({ where: { userId } });
+      const currentScores: Record<string, number> = {};
+      try {
+        if (profile) {
+          const raw = JSON.parse(
+            (profile as unknown as Record<string, unknown>).abilityScores as string ?? "{}",
+          );
+          if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+            Object.assign(currentScores, raw);
+          }
+        }
+      } catch { /* 忽略损坏的能力分数 */ }
+      if (parsed.scores) {
+        for (const [key, entry] of Object.entries(parsed.scores)) {
+          currentScores[key] = entry.value;
+        }
+      }
+
+      // 2. 构建合并数据（patch 字段 + merged scores）
+      const mergedData: Record<string, unknown> = {};
+      if (parsed.patch) {
+        for (const [key, value] of Object.entries(parsed.patch)) {
+          if (value === undefined) continue;
+          mergedData[key] = Array.isArray(value) ? JSON.stringify(value) : value;
+        }
+      }
+      // 包含 abilityScores（无论是否变更，确保持久化）
+      mergedData.abilityScores = JSON.stringify(currentScores);
+
+      // 3. 统一 CAS：所有 profile_assessment 都执行一次 updateMany
+      //    包括 evidence-only——必须递增版本以防同一 baseVersion 反复接受
+      const updated = await tx.userProfile.updateMany({
+        where: {
+          userId,
+          ...(artifact.baseVersion === null ? {} : { version: artifact.baseVersion }),
+        },
+        data: { ...mergedData, version: { increment: 1 } },
+      });
+      if (updated.count !== 1) {
+        throw new AgentArtifactCandidateResolutionError(
+          "数据版本已变化，请重新生成候选", "BASE_VERSION_CONFLICT", 409,
+        );
+      }
+
+      // 4. CAS 成功后，在同一事务写能力证据
+      const allEvidence: Array<{
+        abilityKey: string; summary: string; sourceType: string;
+        sourceRef?: string; confidence: number;
+      }> = [...(parsed.abilityEvidence ?? [])];
+      if (parsed.scores) {
+        for (const [key, entry] of Object.entries(parsed.scores)) {
+          allEvidence.push({
+            abilityKey: key,
+            summary: entry.evidence,
+            sourceType: "profile_assessment",
+            confidence: entry.confidence ?? 0.7,
+          });
+        }
+      }
+      for (const item of allEvidence) {
+        await tx.abilityEvidence.create({
+          data: {
+            userId,
+            abilityKey: item.abilityKey,
+            summary: item.summary,
+            sourceType: item.sourceType,
+            sourceRef: item.sourceRef ?? null,
+            confidence: item.confidence,
+            status: "confirmed",
+          },
+        });
       }
       break;
     }
@@ -360,37 +356,40 @@ async function applyProjection(
       break;
     }
 
-    case "career_plan": {
-      await tx.careerPlan.updateMany({
-        where: { userId, status: "active" },
-        data: { status: "inactive" },
-      });
-      await tx.careerPlan.create({
-        data: {
-          userId,
-          targetRole: String(data.targetRole ?? "unknown"),
-          version: (artifact.baseVersion ?? 1) + 1,
-          status: "active",
-          schemaVersion: 2,
-          content: JSON.stringify(data),
-          targetRoleLabel: data.targetRoleLabel ? String(data.targetRoleLabel) : null,
-          activatedAt: new Date(),
-          years: JSON.stringify((data.years as unknown[]) ?? []),
-          quarters: JSON.stringify((data.quarters as unknown[]) ?? []),
-          months: JSON.stringify((data.months as unknown[]) ?? []),
-          currentMonthIndex: (data.currentMonthIndex as number) ?? 1,
-          assumptions: JSON.stringify((data.assumptions as unknown[]) ?? []),
-          riskNotes: JSON.stringify((data.riskNotes as unknown[]) ?? []),
-          generationMeta: JSON.stringify({ source: "agent_artifact_accept", candidateType }),
-        },
-      });
-      break;
-    }
-
+    case "career_plan":
     case "growth_replan": {
-      const parentPlanId = data.planPatch && typeof data.planPatch === "object"
-        ? String((data.planPatch as Record<string, unknown>).parentPlanId ?? "")
-        : null;
+      const plan = (data as Record<string, unknown>).plan as Record<string, unknown> | undefined;
+      const targetRole = (plan?.targetRole as Record<string, unknown> | undefined);
+      const planPatch = candidateType === "growth_replan"
+        ? (data as Record<string, unknown>).planPatch as Record<string, unknown> | undefined
+        : undefined;
+      const parentPlanId = planPatch?.parentPlanId ? String(planPatch.parentPlanId) : null;
+
+      const phases = (plan?.phases as Array<Record<string, unknown>> | undefined) ?? [];
+      const years = phases.slice(0, 3).map((p, i) => ({
+        yearIndex: i + 1,
+        goal: String(p.objective ?? p.title ?? ""),
+        expectedOutputs: (p.outputs as string[] | undefined) ?? [],
+      }));
+      const quarters = phases.slice(0, 12).map((p, i) => ({
+        quarterIndex: i + 1,
+        goal: String(p.objective ?? p.title ?? ""),
+        milestone: String(p.title ?? ""),
+        evaluation: String((p.evaluationCriteria as string[] | undefined)?.[0] ?? ""),
+      }));
+      const months: Array<Record<string, unknown>> = [];
+      for (const phase of phases) {
+        for (const action of (phase.actions as Array<Record<string, unknown>> | undefined) ?? []) {
+          months.push({
+            monthIndex: months.length + 1,
+            goal: String(action.title ?? ""),
+            learningTasks: [{ id: `task_m${months.length + 1}_1`, title: String(action.title ?? ""), type: action.type ?? "learning", status: "not_started", dueWeek: 2 }],
+            practiceOutputs: [String(action.description ?? "")],
+            evaluationMetrics: ["是否按时完成"],
+          });
+        }
+      }
+
       await tx.careerPlan.updateMany({
         where: { userId, status: "active" },
         data: { status: "inactive" },
@@ -398,40 +397,132 @@ async function applyProjection(
       await tx.careerPlan.create({
         data: {
           userId,
-          targetRole: String(data.targetRole ?? "unknown"),
+          targetRole: String(targetRole?.key ?? "unknown"),
           version: (artifact.baseVersion ?? 1) + 1,
           status: "active",
           schemaVersion: 2,
-          content: JSON.stringify(data),
-          targetRoleLabel: data.targetRoleLabel ? String(data.targetRoleLabel) : null,
+          content: JSON.stringify(plan ?? data),
+          targetRoleLabel: targetRole?.label ? String(targetRole.label) : null,
           parentPlanId: parentPlanId || null,
           activatedAt: new Date(),
-          years: JSON.stringify((data.years as unknown[]) ?? []),
-          quarters: JSON.stringify((data.quarters as unknown[]) ?? []),
-          months: JSON.stringify((data.months as unknown[]) ?? []),
-          currentMonthIndex: (data.currentMonthIndex as number) ?? 1,
-          assumptions: JSON.stringify((data.assumptions as unknown[]) ?? []),
-          riskNotes: JSON.stringify((data.riskNotes as unknown[]) ?? []),
+          years: JSON.stringify(years),
+          quarters: JSON.stringify(quarters),
+          months: JSON.stringify(months),
+          currentMonthIndex: 1,
+          assumptions: JSON.stringify((plan?.assumptions as unknown[]) ?? []),
+          riskNotes: JSON.stringify((plan?.riskNotes as unknown[]) ?? []),
           generationMeta: JSON.stringify({ source: "agent_artifact_accept", candidateType }),
         },
       });
       break;
     }
 
-    case "learning_route":
-      // 标记接受但不执行直接写入
+    case "learning_route": {
+      // ── 权威存储：写入独立 LearningRoute 模型 ──
+      // 不修改 CareerPlan——职业规划和学习路线独立版本化
+
+      // 获取当前 active 职业规划作为关联
+      const activePlan = await tx.careerPlan.findFirst({
+        where: { userId, status: "active" },
+        orderBy: { version: "desc" },
+      });
+
+      // 1. 先读取当前 active LearningRoute（归档前读取，否则永远为 null）
+      const currentRoute = await tx.learningRoute.findFirst({
+        where: { userId, status: "active" },
+        orderBy: { version: "desc" },
+      });
+
+      // 2. 验证 LearningRoute 自身版本冲突
+      //    baseRouteVersion 记录生成候选时的当前路线版本
+      const baseRouteVersion = data.baseRouteVersion;
+      const routeVersionMatches = currentRoute
+        ? baseRouteVersion === currentRoute.version
+        : baseRouteVersion === null;
+      if (!routeVersionMatches) {
+        throw new AgentArtifactCandidateResolutionError(
+          "学习路线版本已变化，请重新生成候选", "BASE_VERSION_CONFLICT", 409,
+        );
+      }
+
+      // 3. 计算新版本号
+      const newVersion = (currentRoute?.version ?? 0) + 1;
+
+      // 4. 归档旧 LearningRoute
+      await tx.learningRoute.updateMany({
+        where: { userId, status: "active" },
+        data: { status: "inactive" },
+      });
+
+      // 5. 创建新 LearningRoute
+      const targetRole = typeof data.targetRole === "string" ? data.targetRole : "unknown";
+      const routeContent = {
+        schemaVersion: 1,
+        targetRole: data.targetRole,
+        weeklyBudgetHours: data.weeklyBudgetHours,
+        period: data.period,
+        stages: data.stages,
+        tasks: data.tasks,
+        resources: data.resources,
+        deliverables: data.deliverables,
+        acceptanceCriteria: data.acceptanceCriteria,
+        adjustmentTriggers: data.adjustmentTriggers,
+      };
+
+      await tx.learningRoute.create({
+        data: {
+          userId,
+          relatedPlanId: activePlan?.id ?? null,
+          version: newVersion,
+          status: "active",
+          schemaVersion: 1,
+          content: JSON.stringify(routeContent),
+          basePlanVersion: activePlan?.version ?? null,
+        },
+      });
+
+      // ProgressLog 仅做审计记录
+      const weeklyHours = typeof data.weeklyBudgetHours === "number" ? `${data.weeklyBudgetHours}h/周` : "";
+      const stages = Array.isArray(data.stages) ? data.stages : [];
+      const tasks = Array.isArray(data.tasks) ? data.tasks : [];
+      if (tx.progressLog) {
+        await tx.progressLog.create({
+          data: {
+            userId,
+            eventType: "learning_route_accepted",
+            title: `采纳学习路线：${targetRole}`,
+            summary: [
+              weeklyHours,
+              typeof data.period === "string" ? data.period : "",
+              `${stages.length} 阶段, ${tasks.length} 任务`,
+            ].filter(Boolean).join("；") || `已确认 ${targetRole} 学习路线`,
+            metadata: JSON.stringify({
+              source: "agent_artifact_accept",
+              candidateType,
+              targetRole,
+              relatedPlanId: activePlan?.id ?? null,
+              learningRouteVersion: newVersion,
+              stagesCount: stages.length,
+              tasksCount: tasks.length,
+            }),
+          },
+        });
+      }
       break;
+    }
 
     case "memory_item": {
       const content = String(data.content).slice(0, 2000);
       if (content) {
+        const rawSensitivity = String(data.sensitivity ?? "");
+        const sensitivity = rawSensitivity === "sensitive" ? "sensitive" : "normal";
         await tx.memoryItem.create({
           data: {
             userId,
             content,
             kind: String(data.kind ?? "career_fact"),
             source: "agent",
-            sensitivity: "normal",
+            sensitivity,
             status: "confirmed",
             scope: "career",
             reason: String(data.reason ?? "").slice(0, 500),

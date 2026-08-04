@@ -159,6 +159,11 @@ function setup() {
       status: "pending",
       candidateType: "career_plan",
     }),
+    createCandidateInTx: vi.fn().mockResolvedValue({
+      id: "candidate-1",
+      status: "pending",
+      candidateType: "career_plan",
+    }),
   };
   const registry = createCareerMateV2ToolRegistry({
     db: db as never,

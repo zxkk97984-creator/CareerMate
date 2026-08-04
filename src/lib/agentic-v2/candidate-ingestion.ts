@@ -6,16 +6,16 @@ import {
 
 // ── 任务类型到候选类型的确定性映射 ──────────────────────
 const defaultCandidateTypeByTask: Record<AgentArtifactV1["taskType"], AgentArtifactCandidateType | null> = {
-  profile_assessment: "profile_patch",
+  profile_assessment: "profile_assessment", // 综合候选：patch + abilityEvidence + scores
   career_plan: "career_plan",
-  learning_route: "learning_route",
+  learning_route: "learning_route", // 可确认的学习路线候选
   simulation_report: "ability_evidence",
   resume_review: "ability_evidence",
   growth_review: "growth_replan",
   memory_item: "memory_item",
   career_template_draft: "career_template_draft",
   // 以下任务类型不创建候选：
-  career_exploration: null, // 运行时检查 data.candidateType
+  career_exploration: null, // 运行时检查 roleKey+roleName 以决定是否创建 career_template_draft
   simulation_turn: null,
 };
 
@@ -60,10 +60,12 @@ export async function ingestAgentArtifact(
 
   // 查找候选类型映射
   let candidateType: AgentArtifactCandidateType | null = defaultCandidateTypeByTask[artifact.taskType];
-  // career_exploration: 仅当 data.candidateType=career_template_draft 时创建
+  // career_exploration: 仅当 data 包含 roleKey 和 roleName 时创建 career_template_draft 候选
   if (artifact.taskType === "career_exploration") {
     const data = artifact.data as Record<string, unknown> | null | undefined;
-    candidateType = (data?.candidateType === "career_template_draft") ? "career_template_draft" : null;
+    candidateType = (typeof data?.roleKey === "string" && data.roleKey.trim()
+      && typeof data?.roleName === "string" && data.roleName.trim())
+      ? "career_template_draft" : null;
   }
   if (!candidateType) {
     // simulation_turn 或无匹配 → 不创建候选

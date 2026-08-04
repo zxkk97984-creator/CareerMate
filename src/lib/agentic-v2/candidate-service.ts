@@ -1,8 +1,9 @@
 import { getPrisma } from "@/lib/prisma";
-import { agentArtifactV1Schema, type AgentArtifactV1 } from "./contracts";
+import { validatedAgentArtifactV1Schema, CANDIDATE_DATA_SCHEMA, type AgentArtifactV1 } from "./contracts";
 
 export const AGENT_ARTIFACT_CANDIDATE_TYPES = [
   "profile_patch",
+  "profile_assessment",
   "ability_evidence",
   "career_plan",
   "learning_route",
@@ -17,7 +18,8 @@ const allowedCandidateTypes = new Set<string>(AGENT_ARTIFACT_CANDIDATE_TYPES);
 
 const COMPATIBLE_TASK_TYPES: Record<AgentArtifactCandidateType, readonly AgentArtifactV1["taskType"][]> = {
   profile_patch: ["profile_assessment"],
-  ability_evidence: ["profile_assessment", "simulation_report", "resume_review", "growth_review"],
+  profile_assessment: ["profile_assessment"],
+  ability_evidence: ["simulation_report", "resume_review"],
   career_plan: ["career_plan"],
   learning_route: ["learning_route"],
   growth_replan: ["growth_review"],
@@ -27,6 +29,7 @@ const COMPATIBLE_TASK_TYPES: Record<AgentArtifactCandidateType, readonly AgentAr
 
 const VERSIONED_CANDIDATE_TYPES = new Set<AgentArtifactCandidateType>([
   "profile_patch",
+  "profile_assessment",
   "ability_evidence",
   "career_plan",
   "learning_route",
@@ -44,7 +47,8 @@ export class AgentArtifactCandidateError extends Error {
   }
 }
 
-interface CandidateTransaction {
+/** 候选创建所需的 Prisma transaction client 最小接口——与 Prisma.TransactionClient 兼容 */
+export interface CandidateTransaction {
   chatConversation: {
     findFirst(args: {
       where: { id: string; userId: string };
@@ -115,6 +119,8 @@ export interface CreatedAgentArtifactCandidate {
 
 export interface AgentArtifactCandidateService {
   createCandidate(input: CreateAgentArtifactCandidateInput): Promise<CreatedAgentArtifactCandidate>;
+  /** 在已有事务中创建候选，不开启独立事务 */
+  createCandidateInTx(input: CreateAgentArtifactCandidateInput, tx: CandidateTransaction): Promise<CreatedAgentArtifactCandidate>;
 }
 
 function requiredIdentifier(value: unknown, field: string): string {
@@ -125,7 +131,7 @@ function requiredIdentifier(value: unknown, field: string): string {
 }
 
 function validateArtifact(value: unknown): AgentArtifactV1 {
-  const result = agentArtifactV1Schema.safeParse(value);
+  const result = validatedAgentArtifactV1Schema.safeParse(value);
   if (!result.success) {
     throw new AgentArtifactCandidateError(
       "Artifact does not satisfy AgentArtifactV1",
@@ -150,6 +156,20 @@ function validateArtifact(value: unknown): AgentArtifactV1 {
   return result.data;
 }
 
+/** 候选创建前验证 data Schema，复用与接受时相同的 Schema */
+function validateCandidateData(candidateType: string, data: unknown): void {
+  const schema = CANDIDATE_DATA_SCHEMA[candidateType];
+  if (!schema) return; // memory_item 和 career_template_draft 等类型暂无精确 Schema
+  const result = schema.safeParse(data);
+  if (!result.success) {
+    throw new AgentArtifactCandidateError(
+      `候选数据不符合 ${candidateType} schema`,
+      "INVALID_CANDIDATE_DATA",
+      400,
+    );
+  }
+}
+
 function canonicalJson(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
@@ -172,103 +192,122 @@ export function createAgentArtifactCandidateService(
 ): AgentArtifactCandidateService {
   const db = dependencies.db ?? (getPrisma() as unknown as CandidateDatabase);
 
+  /** 提取验证和参数准备逻辑，供 createCandidate 和 createCandidateInTx 共享 */
+  function prepareAndValidate(input: CreateAgentArtifactCandidateInput) {
+    const userId = requiredIdentifier(input.userId, "userId");
+    const sourceSessionId = requiredIdentifier(input.context?.sessionId, "context.sessionId");
+    const idempotencyKey = requiredIdentifier(
+      input.context?.idempotencyKey,
+      "context.idempotencyKey",
+    );
+    if (!allowedCandidateTypes.has(input.candidateType)) {
+      throw new AgentArtifactCandidateError(
+        "Candidate type is not allowed",
+        "CANDIDATE_TYPE_NOT_ALLOWED",
+        400,
+      );
+    }
+    const candidateType = input.candidateType as AgentArtifactCandidateType;
+    const artifact = validateArtifact(input.artifact);
+    if (!COMPATIBLE_TASK_TYPES[candidateType].includes(artifact.taskType)) {
+      throw new AgentArtifactCandidateError(
+        "Candidate type is incompatible with artifact task type",
+        "TASK_TYPE_MISMATCH",
+        400,
+      );
+    }
+    validateCandidateData(candidateType, artifact.data);
+    if (VERSIONED_CANDIDATE_TYPES.has(candidateType) && artifact.baseVersion === null) {
+      throw new AgentArtifactCandidateError(
+        "This candidate type requires a base version",
+        "BASE_VERSION_REQUIRED",
+        400,
+      );
+    }
+    const sourceConversationId = input.context.conversationId?.trim() || null;
+    return { userId, sourceSessionId, idempotencyKey, candidateType, artifact, sourceConversationId };
+  }
+
+  /** 核心 upsert 逻辑——验证和写入 */
+  async function upsertCandidate(
+    tx: CandidateTransaction,
+    params: ReturnType<typeof prepareAndValidate>,
+  ): Promise<CreatedAgentArtifactCandidate> {
+    const { userId, sourceSessionId, idempotencyKey, candidateType, artifact, sourceConversationId } = params;
+
+    if (sourceConversationId) {
+      const conversation = await tx.chatConversation.findFirst({
+        where: { id: sourceConversationId, userId },
+        select: { id: true },
+      });
+      if (!conversation) {
+        throw new AgentArtifactCandidateError(
+          "Source conversation was not found",
+          "CONVERSATION_NOT_FOUND",
+          404,
+        );
+      }
+    }
+
+    const stored = await tx.agentArtifactCandidate.upsert({
+      where: {
+        userId_sourceSessionId_idempotencyKey: {
+          userId,
+          sourceSessionId,
+          idempotencyKey,
+        },
+      },
+      create: {
+        userId,
+        sourceSessionId,
+        idempotencyKey,
+        candidateType,
+        status: "pending",
+        artifact: JSON.stringify(artifact),
+        baseVersion: artifact.baseVersion,
+        sourceConversationId,
+      },
+      update: {},
+      select: {
+        id: true,
+        status: true,
+        candidateType: true,
+        artifact: true,
+        baseVersion: true,
+        sourceSessionId: true,
+        sourceConversationId: true,
+      },
+    });
+
+    if (
+      stored.candidateType !== candidateType
+      || !artifactsMatch(stored.artifact, artifact)
+      || stored.sourceSessionId !== sourceSessionId
+      || stored.sourceConversationId !== sourceConversationId
+    ) {
+      throw new AgentArtifactCandidateError(
+        "Idempotency key was already used for a different candidate",
+        "IDEMPOTENCY_CONFLICT",
+        409,
+      );
+    }
+
+    return {
+      id: stored.id,
+      status: stored.status,
+      candidateType: stored.candidateType,
+    };
+  }
+
   return {
     async createCandidate(input) {
-      const userId = requiredIdentifier(input.userId, "userId");
-      const sourceSessionId = requiredIdentifier(input.context?.sessionId, "context.sessionId");
-      const idempotencyKey = requiredIdentifier(
-        input.context?.idempotencyKey,
-        "context.idempotencyKey",
-      );
-      if (!allowedCandidateTypes.has(input.candidateType)) {
-        throw new AgentArtifactCandidateError(
-          "Candidate type is not allowed",
-          "CANDIDATE_TYPE_NOT_ALLOWED",
-          400,
-        );
-      }
-      const candidateType = input.candidateType as AgentArtifactCandidateType;
-      const artifact = validateArtifact(input.artifact);
-      if (!COMPATIBLE_TASK_TYPES[candidateType].includes(artifact.taskType)) {
-        throw new AgentArtifactCandidateError(
-          "Candidate type is incompatible with artifact task type",
-          "TASK_TYPE_MISMATCH",
-          400,
-        );
-      }
-      if (VERSIONED_CANDIDATE_TYPES.has(candidateType) && artifact.baseVersion === null) {
-        throw new AgentArtifactCandidateError(
-          "This candidate type requires a base version",
-          "BASE_VERSION_REQUIRED",
-          400,
-        );
-      }
-      const sourceConversationId = input.context.conversationId?.trim() || null;
+      const params = prepareAndValidate(input);
+      return db.$transaction(async (transaction) => upsertCandidate(transaction, params));
+    },
 
-      return db.$transaction(async (transaction) => {
-        if (sourceConversationId) {
-          const conversation = await transaction.chatConversation.findFirst({
-            where: { id: sourceConversationId, userId },
-            select: { id: true },
-          });
-          if (!conversation) {
-            throw new AgentArtifactCandidateError(
-              "Source conversation was not found",
-              "CONVERSATION_NOT_FOUND",
-              404,
-            );
-          }
-        }
-
-        const stored = await transaction.agentArtifactCandidate.upsert({
-          where: {
-            userId_sourceSessionId_idempotencyKey: {
-              userId,
-              sourceSessionId,
-              idempotencyKey,
-            },
-          },
-          create: {
-            userId,
-            sourceSessionId,
-            idempotencyKey,
-            candidateType,
-            status: "pending",
-            artifact: JSON.stringify(artifact),
-            baseVersion: artifact.baseVersion,
-            sourceConversationId,
-          },
-          update: {},
-          select: {
-            id: true,
-            status: true,
-            candidateType: true,
-            artifact: true,
-            baseVersion: true,
-            sourceSessionId: true,
-            sourceConversationId: true,
-          },
-        });
-
-        if (
-          stored.candidateType !== candidateType
-          || !artifactsMatch(stored.artifact, artifact)
-          || stored.sourceSessionId !== sourceSessionId
-          || stored.sourceConversationId !== sourceConversationId
-        ) {
-          throw new AgentArtifactCandidateError(
-            "Idempotency key was already used for a different candidate",
-            "IDEMPOTENCY_CONFLICT",
-            409,
-          );
-        }
-
-        return {
-          id: stored.id,
-          status: stored.status,
-          candidateType: stored.candidateType,
-        };
-      });
+    async createCandidateInTx(input, tx) {
+      const params = prepareAndValidate(input);
+      return upsertCandidate(tx, params);
     },
   };
 }

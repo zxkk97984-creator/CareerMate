@@ -40,6 +40,7 @@ export interface WorkspaceData {
   resources: ResourceItemDto[];
   memories: any[];
   candidates: any[];
+  v2Candidates?: any[]; // AgentArtifactCandidate 待确认列表
   simulations: any[];
   drafts: any[];
   templates: any[];

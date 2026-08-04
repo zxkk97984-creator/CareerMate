@@ -5,7 +5,7 @@ import { getPrisma } from "@/lib/prisma";
 import { canCompleteSimulation, parseSimulationTranscript, simulationDto } from "@/lib/simulation";
 import { generateSimulationReport } from "@/lib/simulation/generation";
 import { simulationReportResultSchema } from "@/lib/tbox/capability-schemas";
-import { createAgentArtifactCandidateService } from "@/lib/agentic-v2/candidate-service";
+import { createAgentArtifactCandidateService, type CandidateTransaction } from "@/lib/agentic-v2/candidate-service";
 
 class CompletionConflict extends Error {}
 
@@ -15,6 +15,10 @@ function resolvedCandidateId(session: {
 }): string | null {
   if (session.candidateId) return session.candidateId;
   const feedback = parseJson<Record<string, unknown>>(session.feedback, {});
+  // 优先从 feedback 中查找 V2 候选 ID（AgentArtifactCandidate）
+  if (typeof feedback.artifactCandidateId === "string" && feedback.artifactCandidateId.trim()) {
+    return feedback.artifactCandidateId.trim();
+  }
   return typeof feedback.candidateId === "string" && feedback.candidateId.trim()
     ? feedback.candidateId.trim()
     : null;
@@ -82,48 +86,7 @@ export async function POST(_request: Request, context: { params: Promise<{ sessi
     candidateUpdates: validReport.candidateUpdates,
   };
 
-  // 只有通过 Schema 校验的合法报告才创建画像候选
-  let candidateId: string | null = null;
-
-  if (shouldCreateCandidate && feedback.candidateUpdates.length > 0) {
-    try {
-      const candidateService = createAgentArtifactCandidateService();
-      const result = await candidateService.createCandidate({
-        userId: user.id,
-        candidateType: "ability_evidence",
-        artifact: {
-          schemaVersion: "1.0",
-          taskType: "simulation_report",
-          status: "pending_confirmation",
-          summary: `${session.scenarioTitle} 训练报告`,
-          data: {
-            abilityEvidence: feedback.candidateUpdates.map((update) => ({
-              abilityKey: update.field.replace("abilityScores.", ""),
-              summary: update.reason,
-              sourceType: "simulation",
-              sourceRef: session.id,
-              confidence: update.confidence,
-            })),
-          },
-          evidence: [],
-          sources: [],
-          assumptions: [],
-          warnings: [],
-          requiresUserConfirmation: true,
-          baseVersion: user.profile?.version ?? 1,
-          nextActions: [],
-        },
-        context: {
-          sessionId: session.id,
-          idempotencyKey: `sim-report-${session.id}`,
-        },
-      });
-      candidateId = result.id;
-    } catch {
-      // 候选创建失败不影响训练报告保存
-    }
-  }
-
+  // 候选创建、模拟完成、ProgressLog 写入放在同一事务
   try {
     const result = await getPrisma().$transaction(async (tx) => {
       const claim = await tx.simulationSession.updateMany({
@@ -132,27 +95,79 @@ export async function POST(_request: Request, context: { params: Promise<{ sessi
       });
       if (claim.count !== 1) throw new CompletionConflict();
 
+      // 在同一事务内创建 V2 候选（AgentArtifactCandidate）
+      // shouldCreateCandidate=true 时，候选创建失败让事务回滚，返回稳定错误码允许重试
+      let candidateIdInTx: string | null = null;
+      if (shouldCreateCandidate && feedback.candidateUpdates.length > 0) {
+        try {
+          const candidateService = createAgentArtifactCandidateService();
+          const candidateResult = await candidateService.createCandidateInTx({
+            userId: user.id,
+            candidateType: "ability_evidence",
+            artifact: {
+              schemaVersion: "1.0",
+              taskType: "simulation_report",
+              status: "pending_confirmation",
+              summary: `${session.scenarioTitle} 训练报告`,
+              data: {
+                abilityEvidence: feedback.candidateUpdates.map((update) => ({
+                  abilityKey: update.field.replace("abilityScores.", ""),
+                  summary: update.reason,
+                  sourceType: "simulation",
+                  sourceRef: session.id,
+                  confidence: update.confidence,
+                })),
+              },
+              evidence: [],
+              sources: [],
+              assumptions: [],
+              warnings: [],
+              requiresUserConfirmation: true,
+              baseVersion: user.profile?.version ?? 1,
+              nextActions: [],
+            },
+            context: {
+              sessionId: session.id,
+              idempotencyKey: `sim-report-${session.id}`,
+            },
+          }, tx as unknown as CandidateTransaction);
+          candidateIdInTx = candidateResult.id;
+        } catch (err) {
+          // 候选创建失败 → 事务回滚，返回稳定公开错误码，允许安全重试
+          const msg = err instanceof Error ? err.message : "候选创建失败";
+          if (msg.includes("INVALID_CANDIDATE_DATA") || msg.includes("INVALID_ARTIFACT")) {
+            throw new Error(`SIMULATION_CANDIDATE_INVALID: ${msg.slice(0, 200)}`);
+          }
+          throw new Error(`SIMULATION_CANDIDATE_FAILED: ${msg.slice(0, 200)}`);
+        }
+      }
+
       const completed = await tx.simulationSession.update({ where: { id: session.id }, data: {
         status: "completed",
         score: feedback.score,
-        feedback: toJson({ ...feedback, candidateId }),
+        feedback: toJson({ ...feedback, artifactCandidateId: candidateIdInTx }),
         actualMode: report.meta.actualMode,
         remoteConversationId: report.data.conversationId ?? session.remoteConversationId,
       } });
       const summaryBase = `训练得分 ${score}`;
       const summaryExtra = isDegraded
         ? "；来源：降级评分；未生成画像更新候选"
-        : candidateId
+        : candidateIdInTx
           ? "；已生成画像更新候选"
           : "；未生成画像更新候选";
       await tx.progressLog.create({ data: {
         userId: user.id, eventType: "simulation_completed", title: `完成模拟训练：${session.scenarioTitle}`,
         summary: summaryBase + summaryExtra,
-        metadata: toJson({ simulationId: session.id, candidateId, executionMeta: report.meta }),
+        metadata: toJson({ simulationId: session.id, candidateId: candidateIdInTx, executionMeta: report.meta }),
       } });
-      return { completed, candidateId };
+      return { completed, candidateId: candidateIdInTx };
     });
-    return ok({ session: simulationDto(result.completed), feedback, candidateId: result.candidateId, alreadyCompleted: false }, report.meta as unknown as Record<string, unknown>);
+    return ok({
+      session: simulationDto(result.completed),
+      feedback,
+      candidateId: result.candidateId,
+      alreadyCompleted: false,
+    }, report.meta as unknown as Record<string, unknown>);
   } catch (error) {
     if (error instanceof CompletionConflict) {
       const latest = await getPrisma().simulationSession.findFirst({ where: { id: session.id, userId: user.id } });

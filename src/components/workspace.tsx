@@ -88,11 +88,12 @@ export function Workspace({ initialView, isAdmin = false }: { initialView: View;
       router.push("/login");
       return;
     }
-    const [plan, resources, memories, candidates, simulations, admin] = await Promise.all([
+    const [plan, resources, memories, candidates, v2Candidates, simulations, admin] = await Promise.all([
       fetchApi<{ plan: CareerPlanDto | null; pendingPlan: CareerPlanDto | null; executionMeta: AiExecutionMeta | null }>("/api/plans/current"),
       fetchApi<{ items: ResourceItemDto[] }>("/api/resources"),
       fetchApi<{ items: any[] }>("/api/memories"),
       fetchApi<{ items: any[] }>("/api/profile/candidates"),
+      fetchApi<{ items: any[] }>("/api/agentic-v2/candidates?status=pending"),
       fetchApi<{ items: any[] }>("/api/simulations"),
       isAdmin ? fetchApi<{ drafts: any[]; templates: any[] }>("/api/admin/role-drafts") : Promise.resolve({ ok: true, data: { drafts: [], templates: [] } }),
     ]);
@@ -105,6 +106,7 @@ export function Workspace({ initialView, isAdmin = false }: { initialView: View;
       resources: resources.ok ? resources.data.items : [],
       memories: memories.ok ? memories.data.items : [],
       candidates: candidates.ok ? candidates.data.items : [],
+      v2Candidates: v2Candidates.ok ? v2Candidates.data.items : [],
       simulations: simulations.ok ? simulations.data.items : [],
       drafts: admin.ok ? admin.data.drafts : [],
       templates: admin.ok ? admin.data.templates : [],
@@ -131,7 +133,8 @@ export function Workspace({ initialView, isAdmin = false }: { initialView: View;
     );
   }
 
-  const pendingCandidateCount = data.candidates.filter((c: any) => c.status === "pending").length;
+  const pendingCandidateCount = data.candidates.filter((c: any) => c.status === "pending").length
+    + (data.v2Candidates ?? []).length; // V2 候选列表接口已按 status=pending 过滤
 
   return (
     <div className="chat-home-layout" data-testid="app-shell">
@@ -198,7 +201,7 @@ export function Workspace({ initialView, isAdmin = false }: { initialView: View;
           {activeView === "path" && <PathView plan={data.plan} pendingPlan={data.pendingPlan} executionMeta={data.planExecutionMeta} refresh={loadAll} setNotice={setNotice} />}
           {activeView === "simulation" && <SimulationView simulations={data.simulations} refresh={loadAll} setNotice={setNotice} />}
           {activeView === "resources" && <ResourceView resources={data.resources} profile={data.profile} weakAbilities={data.match?.weakAbilities ?? []} />}
-          {activeView === "memory" && <MemoryView memories={data.memories} candidates={data.candidates} memoryEnabled={data.profile.memoryEnabled} refresh={loadAll} setNotice={setNotice} />}
+          {activeView === "memory" && <MemoryView memories={data.memories} candidates={data.candidates} v2Candidates={data.v2Candidates} memoryEnabled={data.profile.memoryEnabled} refresh={loadAll} setNotice={setNotice} />}
           {activeView === "chat" && (
             <div className="p-8 text-center text-muted-foreground">
               聊天功能已迁移到首页，请返回首页开始对话。

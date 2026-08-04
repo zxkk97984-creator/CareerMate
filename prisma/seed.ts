@@ -263,11 +263,89 @@ function buildPlan(roleName: string) {
   };
 }
 
+// ── 数据库目标校验 ──────────────────────────────────────
+function validateDatabaseTarget(): { valid: boolean; reason?: string } {
+  const dbUrl = process.env.DATABASE_URL ?? "";
+  const isE2E = process.env.CAREERMATE_E2E === "true";
+
+  // E2E 模式必须指向 e2e.db（精确文件名匹配，避免 prod-e2e.db-backup 等误判）
+  if (isE2E) {
+    const extracted = extractDbFilename(dbUrl);
+    if (!extracted) {
+      return {
+        valid: false,
+        reason: `E2E 模式 (CAREERMATE_E2E=true) 无法解析 DATABASE_URL 中的数据库文件名: ${dbUrl}`,
+      };
+    }
+    const normalized = extracted.toLowerCase();
+    if (normalized !== "e2e.db" && normalized !== "e2e-test.db") {
+      return {
+        valid: false,
+        reason: `E2E 模式 (CAREERMATE_E2E=true) 只能指向 e2e.db，当前数据库文件: ${extracted}`,
+      };
+    }
+    return { valid: true };
+  }
+
+  // 非 E2E 的生产环境：永远禁止破坏性操作
+  const isProduction = process.env.NODE_ENV === "production";
+  if (isProduction) {
+    return {
+      valid: false,
+      reason: "生产环境 (NODE_ENV=production) 禁止运行破坏性 seed。管理员初始化请使用非破坏性引导流程。",
+    };
+  }
+
+  // 开发/测试环境：允许
+  return { valid: true };
+}
+
+/** 从 DATABASE_URL 中提取数据库文件名（精确解析，不用 includes 模糊匹配） */
+function extractDbFilename(dbUrl: string): string | null {
+  // 去除协议前缀 file: 或 file:./
+  const cleaned = dbUrl.replace(/^file:[.]?[\/\\]?/i, "");
+  // 取最后一个路径段作为文件名
+  const segments = cleaned.replace(/\\/g, "/").split("/");
+  const filename = segments[segments.length - 1];
+  if (!filename) return null;
+  // 去除查询参数（如 ?connection_limit=1）
+  const qIdx = filename.indexOf("?");
+  return qIdx >= 0 ? filename.slice(0, qIdx) : filename;
+}
+
 async function main() {
+  // ── 安全保护：数据库目标校验 + 生产环境禁止破坏性操作 ──
+  const isProduction = process.env.NODE_ENV === "production";
+  const isE2E = process.env.CAREERMATE_E2E === "true";
+
+  // 数据库目标校验优先
+  const targetCheck = validateDatabaseTarget();
+  if (!targetCheck.valid) {
+    console.error(`[seed] 数据库目标校验失败：${targetCheck.reason}`);
+    console.error("[seed] 操作已拒绝，进程退出。");
+    process.exit(1);
+  }
+
+  // 双重保险：生产环境永远禁止破坏性 seed
+  if (isProduction && !isE2E) {
+    console.error("[seed] 生产环境 (NODE_ENV=production) 禁止运行破坏性 seed。");
+    console.error("[seed] 管理员凭据应从 CAREERMATE_ADMIN_USERNAME / CAREERMATE_ADMIN_PASSWORD_HASH 环境变量显式设置。");
+    console.error("[seed] 请使用非破坏性引导流程或联系管理员。");
+    process.exit(1);
+  }
+
+  if (isE2E) {
+    console.log("[seed] E2E 模式：数据库目标已校验，开始创建测试数据。");
+  } else {
+    console.log("[seed] 开发环境：开始创建演示数据。");
+  }
+
+  // deleteMany 操作——仅在安全校验通过后执行
   await prisma.manualAiSample.deleteMany();
   await prisma.roleDraft.deleteMany();
   await prisma.simulationSession.deleteMany();
   await prisma.profileUpdateCandidate.deleteMany();
+  await prisma.agentArtifactCandidate.deleteMany();
   await prisma.memoryItem.deleteMany();
   await prisma.progressLog.deleteMany();
   await prisma.careerPlan.deleteMany();

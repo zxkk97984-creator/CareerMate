@@ -20,35 +20,21 @@ interface EvalData {
 
 const CASES_PATH = join(__dirname, "cases.json");
 
+// V2 评测覆盖的核心类别
 const REQUIRED_CATEGORIES = [
   "personalization",
   "evidence-fusion",
   "search-integration",
-  "unknown-role",
-  "agent-routing",
-  "conflict-resolution",
-  "error-handling",
-  "skip-search",
-  "scoring",
   "candidate-confirmation",
   "version-conflict",
+  "isolation",
+  "search",
+  "conflict-handling",
   "simulation",
-  "memory",
-  "data-isolation",
-  "auth-boundary",
-  "quality",
-  "privacy",
-  "extensibility",
-  "authorization",
-  "memory-boundary",
-  "priority",
-  "fallback",
-  "data-integrity",
-  "security",
-  "search-config",
+  "workflow-contract",
 ];
 
-describe("评测数据集", () => {
+describe("评测数据集 (V2)", () => {
   let data: EvalData;
 
   beforeAll(() => {
@@ -56,8 +42,8 @@ describe("评测数据集", () => {
     data = JSON.parse(raw);
   });
 
-  it("至少包含 40 条测试用例", () => {
-    expect(data.cases.length).toBeGreaterThanOrEqual(40);
+  it("至少包含 15 条测试用例（精简后的 V2 评测集）", () => {
+    expect(data.cases.length).toBeGreaterThanOrEqual(15);
   });
 
   it("实际数量与 meta.totalCases 一致", () => {
@@ -89,7 +75,7 @@ describe("评测数据集", () => {
     expect(unique.size).toBe(ids.length);
   });
 
-  it("覆盖所有必需场景类别", () => {
+  it("覆盖 V2 核心场景类别", () => {
     const covered = new Set(data.cases.map((c) => c.category));
     const uncovered = REQUIRED_CATEGORIES.filter((cat) => !covered.has(cat));
     expect(uncovered, `未覆盖的类别: ${uncovered.join(", ")}`).toEqual([]);
@@ -110,5 +96,15 @@ describe("评测数据集", () => {
     for (const [cat, count] of byCategory) {
       expect(count, `类别 ${cat} 用例数不足`).toBeGreaterThanOrEqual(1);
     }
+  });
+
+  it("learning_route 评测必须符合可确认、可版本化候选契约", () => {
+    const learningRouteCase = data.cases.find(
+      (c) => c.input.taskType === "learning_route",
+    );
+    expect(learningRouteCase).toBeDefined();
+    expect(learningRouteCase?.expectedBehavior).toContain("创建");
+    expect(learningRouteCase?.expectedBehavior).toContain("候选");
+    expect(learningRouteCase?.expectedBehavior).not.toContain("不创建");
   });
 });

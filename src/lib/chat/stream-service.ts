@@ -290,10 +290,13 @@ async function handleStatefulStream(
 
             if (event.event === "message" && event.data.type === "delta") {
               fullContent += event.data.content;
-              writeSseEvent(controller, "delta", {
-                messageId: turn.assistantMessageId,
-                text: event.data.content,
-              });
+              // Agentic V2：缓冲完整响应，不直接发送 delta（防止 CAREERMATE_ARTIFACT 泄露到前端气泡）
+              if (!agenticV2) {
+                writeSseEvent(controller, "delta", {
+                  messageId: turn.assistantMessageId,
+                  text: event.data.content,
+                });
+              }
             }
 
             if (event.event === "done") {
@@ -344,7 +347,6 @@ async function handleStatefulStream(
               status: "pending" as const,
             };
             parts.push(qaPart);
-            // quick_actions 通过下方统一的 artifact 循环发送（约364行），避免重复
           }
         }
 
@@ -404,7 +406,16 @@ async function handleStatefulStream(
 
         const assistantText = agenticV2 ? envelope.displayText : fullContent;
 
+        // Agentic V2：解析完成后发送缓冲的正文（此时已剥离 CAREERMATE_ARTIFACT）
+        if (agenticV2 && assistantText) {
+          writeSseEvent(controller, "delta", {
+            messageId: turn.assistantMessageId,
+            text: assistantText,
+          });
+        }
+
         // 摄入候选（仅当有有效 artifact 时）
+        let candidateIngestionError: string | null = null;
         if (agenticV2 && envelope.artifact) {
           try {
             const candidateService = createAgentArtifactCandidateService();
@@ -427,8 +438,10 @@ async function handleStatefulStream(
                 agentResponseResult.warnings.push(w);
               }
             }
-          } catch {
-            // 候选摄入失败不影响主流程
+          } catch (err) {
+            // 候选摄入失败不能静默吞掉——记录错误并追加到 warnings
+            candidateIngestionError = err instanceof Error ? err.message : "候选摄入失败";
+            agentResponseResult.warnings.push(`CANDIDATE_INGESTION_FAILED: ${candidateIngestionError}`);
           }
         } else if (envelope.warnings.length > 0) {
           // 信封解析有警告但无候选时合并警告
@@ -473,6 +486,7 @@ async function handleStatefulStream(
         // 非阻塞触发摘要
         triggerSummaryIfNeeded(conversationId).catch(() => {});
 
+        // done 事件必须携带最终 warnings
         writeSseEvent(controller, "done", {
           messageId: turn.assistantMessageId,
           remoteConversationId,
@@ -484,6 +498,7 @@ async function handleStatefulStream(
             fallbackReason: null,
             source: "tbox-api",
           },
+          warnings: agentResponseResult.warnings.length > 0 ? agentResponseResult.warnings : undefined,
         });
       } catch (err) {
         const errMessage = err instanceof Error ? err.message : "未知错误";
@@ -614,10 +629,13 @@ async function handleLegacyStream(
             if (event.meta) finalMeta = event.meta;
             if (event.event === "message" && event.data.type === "delta") {
               fullContent += event.data.content;
-              writeSseEvent(controller, "delta", {
-                messageId: assistantMsg.id,
-                text: event.data.content,
-              });
+              // Agentic V2：缓冲完整响应，不直接发送 delta（防止 CAREERMATE_ARTIFACT 泄露）
+              if (!agenticV2) {
+                writeSseEvent(controller, "delta", {
+                  messageId: assistantMsg.id,
+                  text: event.data.content,
+                });
+              }
             }
             if (event.event === "done") {
               remoteConversationId = event.data.conversationId;
@@ -633,6 +651,14 @@ async function handleLegacyStream(
           : { displayText: fullContent, warnings: [] as string[] };
         const legacyAssistantText = agenticV2 ? legacyEnvelope.displayText : fullContent;
 
+        // Agentic V2：解析完成后发送缓冲的正文（已剥离 CAREERMATE_ARTIFACT）
+        if (agenticV2 && legacyAssistantText) {
+          writeSseEvent(controller, "delta", {
+            messageId: assistantMsg.id,
+            text: legacyAssistantText,
+          });
+        }
+
         // 旧路径：只保留正文，不执行业务写入
         // AgentResponse 解析仅用于结构化模式下的 operations
         let operations: AgentOperation[] = [];
@@ -643,6 +669,7 @@ async function handleLegacyStream(
 
         // finalize 消息
         const parts: unknown[] = [];
+        const legacyWarnings: string[] = [...legacyEnvelope.warnings];
 
         // 摄入候选（V2 信封协议）
         if (agenticV2 && legacyEnvelope.artifact) {
@@ -661,8 +688,12 @@ async function handleLegacyStream(
             if (ingestionResult.candidate) {
               parts.push(agentArtifactCandidateRefPart(ingestionResult.candidate));
             }
-          } catch {
-            // 候选摄入失败不影响主流程
+            for (const w of ingestionResult.warnings) {
+              if (!legacyWarnings.includes(w)) legacyWarnings.push(w);
+            }
+          } catch (err) {
+            // 候选摄入失败不能静默吞掉
+            legacyWarnings.push(`CANDIDATE_INGESTION_FAILED: ${err instanceof Error ? err.message : "候选摄入失败"}`);
           }
         }
 
@@ -694,6 +725,7 @@ async function handleLegacyStream(
           remoteConversationId,
           status: "completed" as const,
           meta: finalMeta ?? { source: "tbox-api" },
+          warnings: legacyWarnings.length > 0 ? legacyWarnings : undefined,
         });
       } catch (err) {
         const errMessage = err instanceof Error ? err.message : "未知错误";

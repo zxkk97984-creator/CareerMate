@@ -29,6 +29,7 @@ model User {
   explorationReports      CareerExplorationReport[]
   reviewedDrafts          RoleDraft[]               @relation("RoleDraftReviewer")
   artifactCandidates      AgentArtifactCandidate[]
+  learningRoutes          LearningRoute[]
 }
 
 model UserProfile {
@@ -110,9 +111,30 @@ model CareerPlan {
 
   user         User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
   sourceReport CareerExplorationReport? @relation(fields: [sourceReportId], references: [id], onDelete: SetNull)
+  learningRoutes LearningRoute[]
 
   @@index([sourceReportId])
   @@index([parentPlanId])
+}
+
+model LearningRoute {
+  id              String    @id @default(cuid())
+  userId          String
+  relatedPlanId   String?
+  version         Int       @default(1)
+  status          String    @default("active")
+  schemaVersion   Int       @default(1)
+  content         String    @default("{}")
+  basePlanVersion Int?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  relatedPlan CareerPlan? @relation(fields: [relatedPlanId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status])
+  @@index([relatedPlanId])
+  @@unique([userId, version])
 }
 
 model ProgressLog {

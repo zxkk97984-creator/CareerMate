@@ -11,6 +11,8 @@ const env = {
   PLAN_V2_WRITE: "true",
   STATEFUL_CHAT_TURNS: "true",
   OPEN_CHAT_ENTRY: "true",
+  CAREERMATE_E2E: "true", // E2E 环境标记，seed 正常运行
+  ALLOW_DESTRUCTIVE_SEED: "true", // E2E 需要全新数据库
 };
 const windows = process.platform === "win32";
 const dbPath = "prisma/e2e.db";

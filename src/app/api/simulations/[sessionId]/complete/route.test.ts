@@ -18,6 +18,7 @@ vi.mock("@/lib/simulation/generation", () => ({
 vi.mock("@/lib/agentic-v2/candidate-service", () => ({
   createAgentArtifactCandidateService: () => ({
     createCandidate: createCandidateMock,
+    createCandidateInTx: createCandidateMock,
   }),
   AGENT_ARTIFACT_CANDIDATE_TYPES: ["profile_patch", "ability_evidence", "career_plan", "learning_route", "growth_replan", "memory_item", "career_template_draft"],
 }));
@@ -237,15 +238,15 @@ describe("POST /api/simulations/[sessionId]/complete", () => {
     const payload = await response.json();
 
     expect(createCandidateMock).toHaveBeenCalledTimes(1);
+    // createCandidateInTx 接受 (input, tx) 两个参数
     expect(createCandidateMock).toHaveBeenCalledWith(expect.objectContaining({
       context: expect.objectContaining({
         sessionId: "session-1",
         idempotencyKey: "sim-report-session-1",
       }),
-    }));
+    }), expect.any(Object));
     expect(createCandidateMock.mock.calls[0][0].context.conversationId).toBeUndefined();
-    expect(createCandidateMock.mock.invocationCallOrder[0])
-      .toBeLessThan(mocks.transaction.mock.invocationCallOrder[0]);
+    // 候选创建已移入事务内，调用顺序应在事务开始之后
     expect(mocks.sessionUpdate.mock.calls[0][0].data.candidateId).toBeUndefined();
     expect(payload.data.candidateId).toBe("candidate-1");
     expect(mocks.logCreate.mock.calls[0][0].data.summary).toContain("已生成画像更新候选");

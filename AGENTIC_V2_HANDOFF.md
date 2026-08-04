@@ -351,7 +351,7 @@ career_template_draft
 - 画像和计划类候选使用 `baseVersion` 防止覆盖新版本。
 - 正式投影前按候选类型执行更严格的数据 Schema。
 - 正式投影在数据库事务中完成。
-- `learning_route` 当前可被确认，但不直接投影为正式任务。
+- `learning_route` 当前可被确认并投影为版本化的 `LearningRoute`，但不直接创建或完成正式任务。
 - 任何解析或摄入失败都不阻断可读正文，但不会产生正式数据。
 
 候选接口：

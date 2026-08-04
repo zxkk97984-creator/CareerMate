@@ -100,18 +100,25 @@ export function simulationDto(session: {
   feedback: string; status: string; turnCount: number; requestedMode: string; actualMode: string;
   candidateId: string | null; remoteConversationId?: string | null; createdAt: Date; updatedAt: Date;
 }) {
+  const parsedFeedback = parseJson<Record<string, unknown>>(session.feedback, {});
+  // 优先从 feedback 中读取 V2 候选 ID（AgentArtifactCandidate），回退到旧的 candidateId 字段
+  const resolvedCandidateId: string | null =
+    (typeof parsedFeedback.artifactCandidateId === "string" && parsedFeedback.artifactCandidateId.trim())
+      ? parsedFeedback.artifactCandidateId.trim()
+      : session.candidateId;
+
   return {
     id: session.id,
     scenarioKey: session.scenarioKey,
     scenarioTitle: session.scenarioTitle,
     transcript: parseSimulationTranscript(session.transcript),
     score: session.score,
-    feedback: parseJson<unknown>(session.feedback, {}),
+    feedback: parsedFeedback,
     status: session.status,
     turnCount: session.turnCount,
     requestedMode: session.requestedMode,
     actualMode: session.actualMode,
-    candidateId: session.candidateId,
+    candidateId: resolvedCandidateId,
     remoteConversationId: session.remoteConversationId ?? null,
     createdAt: session.createdAt.toISOString(),
     updatedAt: session.updatedAt.toISOString(),

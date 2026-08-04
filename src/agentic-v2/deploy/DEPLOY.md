@@ -1,11 +1,19 @@
-# CareerMate 业务 MCP V2 部署指南
+# CareerMate 部署指南
 
 ## 概述
 
-将 CareerMate MCP V2 Streamable HTTP 端点部署到公网 HTTPS，供百宝箱 Agentic V2 调用。
+将 CareerMate Next.js 应用部署到公网 HTTPS，供百宝箱 Agentic V2 通过 HTTP API 调用。
 
-端点路径：`/api/mcp/v2`
-协议：JSON-RPC 2.0 over HTTP POST（Streamable HTTP MCP）
+端点路径：`/api/agentic-v2`、`/api/chat/conversations/:id/stream`
+协议：REST + SSE（Server-Sent Events）
+
+## 数据库说明
+
+当前 Prisma provider 为 **SQLite**，适用于本地开发或单实例持久卷演示场景。
+
+SQLite = 本地或单实例持久卷演示。不要声称只改 `DATABASE_URL` 就能部署 PostgreSQL/Turso/Vercel。
+
+如需生产环境多实例部署，需先完成正式的 PostgreSQL 迁移（修改 schema 中的 provider 并重新生成迁移），本文档不涉及半套数据库迁移。
 
 ## 前置条件
 
@@ -30,20 +38,18 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 在部署平台（如 Vercel）设置以下环境变量：
 
 ```env
-# 数据库（生产环境使用 PostgreSQL 或 Turso）
-DATABASE_URL="postgresql://..."
+# 数据库（当前为 SQLite，仅支持单实例持久卷）
+DATABASE_URL="file:./data/production.db"
 
-# MCP V2 客户端认证
-CAREERMATE_PLUGIN_TOKEN="<第一步生成的 Bearer Token>"
-
-# Agentic V2 上下文令牌签名密钥
-CAREERMATE_CONTEXT_TOKEN_SECRET="<第一步生成的签名密钥>"
-
-# Origin 白名单（逗号分隔，不含空格）
-CAREERMATE_MCP_ALLOWED_ORIGINS="https://b.tbox.cn,https://o.tbox.cn"
+# 应用内认证密钥
+CAREERMATE_AUTH_SECRET="<生成的随机密钥>"
 
 # 开启 Agentic V2 模式
 CAREERMATE_AGENTIC_V2="true"
+
+# 管理员凭据（生产环境必填，从显式环境变量读取）
+CAREERMATE_ADMIN_USERNAME=""
+CAREERMATE_ADMIN_PASSWORD_HASH=""
 ```
 
 ## 第三步：部署
@@ -68,54 +74,26 @@ npm start
 ## 第四步：验证部署
 
 ```bash
-# 健康检查 — 应返回 405（GET 不允许，但验证鉴权和 Origin）
-curl -v -X GET https://your-deploy.example/api/mcp/v2 \
-  -H "Authorization: Bearer <CAREERMATE_PLUGIN_TOKEN>"
+# 健康检查 — 应返回 200
+curl -v -X GET https://your-deploy.example/
 
-# 工具列表 — 应返回 200 + JSON-RPC 响应
-curl -v -X POST https://your-deploy.example/api/mcp/v2 \
-  -H "Authorization: Bearer <CAREERMATE_PLUGIN_TOKEN>" \
-  -H "Origin: https://b.tbox.cn" \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+# Agentic V2 候选列表 — 应返回 200 + JSON
+curl -v -X GET https://your-deploy.example/api/agentic-v2/candidates?status=pending \
+  -H "Cookie: session=<your-session-token>"
 ```
 
-预期响应包含 7 个 V2 工具。
+## 第五步：百宝箱配置
 
-## 第五步：运行验证脚本
+在百宝箱"外包"空间配置 Agentic V2 连接：
 
-```bash
-node src/agentic-v2/deploy/verify-deploy.mjs \
-  --url "https://your-deploy.example/api/mcp/v2" \
-  --token "<CAREERMATE_PLUGIN_TOKEN>" \
-  --origin "https://b.tbox.cn"
-```
-
-验证包含：
-- 工具列表正确性
-- 令牌过期拒绝
-- 错误 Scope 拒绝
-- 跨用户数据隔离
-- 非法 Origin 拒绝
-- 请求大小限制
-- 批量大小限制
-
-## 第六步：百宝箱 MCP 配置
-
-在百宝箱"外包"空间新建 MCP 连接：
-
-1. 名称：`CareerMate业务MCP V2`
-2. 类型：Streamable HTTP
-3. URL：`https://your-deploy.example/api/mcp/v2`
-4. 认证头：`Authorization: Bearer <CAREERMATE_PLUGIN_TOKEN>`
-5. 传输协议：`2025-03-26`
+1. 名称：`CareerMate Agentic V2`
+2. 协议：REST + SSE
+3. Chat 端点：`https://your-deploy.example/api/chat/conversations/:id/stream`
+4. 上下文通过 `business_data` 一次性注入，不需要独立业务 MCP
 
 ## 安全注意事项
 
-- 不在前端代码中引用 `CAREERMATE_PLUGIN_TOKEN`
-- Origin 白名单仅包含百宝箱域名
+- 不在前端代码中引用认证密钥
 - 定期轮换密钥（建议 90 天）
-- 监控 `/api/mcp/v2` 的 401/403 错误率
-- 请求大小限制 1MB，批量上限 100
-- 令牌中的 `sub` 固定用户身份，不可被请求参数覆盖
+- 生产环境必须通过 `CAREERMATE_ADMIN_USERNAME` / `CAREERMATE_ADMIN_PASSWORD_HASH` 显式设置管理员凭据，种子脚本不得自动创建固定密码管理员
+- 开发机 IP 等敏感配置通过环境变量传入，不在 next.config.ts 中硬编码

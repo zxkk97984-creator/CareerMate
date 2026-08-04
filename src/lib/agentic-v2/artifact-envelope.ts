@@ -1,4 +1,4 @@
-import { agentArtifactV1Schema, type AgentArtifactV1 } from "./contracts";
+import { validatedAgentArtifactV1Schema, type AgentArtifactV1 } from "./contracts";
 
 /** 精确协议标签——仅匹配这些精确字符串 */
 export const ARTIFACT_OPEN_TAG = "<CAREERMATE_ARTIFACT>";
@@ -71,7 +71,7 @@ export function parseAgentArtifactEnvelope(text: string): ParsedAgentArtifactEnv
   // JSON 解析 + Zod 校验
   try {
     const parsed = JSON.parse(raw);
-    const result = agentArtifactV1Schema.safeParse(parsed);
+    const result = validatedAgentArtifactV1Schema.safeParse(parsed);
     if (!result.success) {
       return {
         displayText,

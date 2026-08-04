@@ -60,10 +60,11 @@ function setupService() {
   const mockPrisma: any = {
     careerPlan: {
       findFirst: vi.fn(),
+      findUnique: vi.fn(),
       findMany: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
-      updateMany: vi.fn(),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }), // CAS 默认成功
     },
   };
   mockPrisma.$transaction = vi.fn(
@@ -127,7 +128,9 @@ describe("ReplanService", () => {
       const { svc, mock } = setupService();
       const oldPlan = planRow({ id: "plan-old", version: 2, status: "active" });
       const pending = planRow({ id: "plan-new", version: 3, status: "pending" });
-      mock.careerPlan.findFirst.mockResolvedValueOnce(pending);
+      // CAS claim 成功
+      mock.careerPlan.updateMany.mockResolvedValue({ count: 1 });
+      mock.careerPlan.findUnique.mockResolvedValueOnce(pending);
       mock.careerPlan.findMany.mockResolvedValue([oldPlan]);
       mock.careerPlan.update.mockResolvedValue(
         planRow({ ...pending, status: "active", version: 3 }),
@@ -143,7 +146,8 @@ describe("ReplanService", () => {
       const oldPlan = planRow({ id: "plan-old", version: 2, status: "active" });
       const newPlan = planRow({ id: "plan-new", version: 2, status: "pending" });
 
-      mock.careerPlan.findFirst.mockResolvedValueOnce(newPlan); // 查找待确认计划
+      mock.careerPlan.updateMany.mockResolvedValue({ count: 1 }); // CAS claim 成功
+      mock.careerPlan.findUnique.mockResolvedValueOnce(newPlan); // 获取版本信息
       mock.careerPlan.findMany.mockResolvedValue([oldPlan]); // 查找旧active
       mock.careerPlan.update.mockImplementation((args: any) => {
         if (args.where.id === "plan-old") return Promise.resolve(planRow({ ...oldPlan, status: "archived" }));
@@ -167,7 +171,8 @@ describe("ReplanService", () => {
       const { svc, mock } = setupService();
       const pending = planRow({ id: "plan-c", status: "pending" });
 
-      mock.careerPlan.findFirst.mockResolvedValueOnce(pending);
+      mock.careerPlan.updateMany.mockResolvedValue({ count: 1 }); // CAS claim 成功
+      mock.careerPlan.findUnique.mockResolvedValueOnce(pending); // 获取版本信息
       // Prisma findMany({ where: { status: "active" } }) 只返回 active 的
       mock.careerPlan.findMany.mockResolvedValue([planRow({ id: "plan-a", status: "active" })]);
       mock.careerPlan.update.mockImplementation((args: any) => {
@@ -189,6 +194,8 @@ describe("ReplanService", () => {
 
     it("跨用户隔离——不能确认他人计划", async () => {
       const { svc, mock } = setupService();
+      // CAS claim 失败（count=0，跨用户不匹配）
+      mock.careerPlan.updateMany.mockResolvedValue({ count: 0 });
       mock.careerPlan.findFirst.mockResolvedValue(null);
 
       await expect(
@@ -198,7 +205,8 @@ describe("ReplanService", () => {
 
     it("保留生成候选时已分配的版本号", async () => {
       const { svc, mock } = setupService();
-      mock.careerPlan.findFirst.mockResolvedValueOnce(
+      mock.careerPlan.updateMany.mockResolvedValue({ count: 1 }); // CAS claim 成功
+      mock.careerPlan.findUnique.mockResolvedValueOnce(
         planRow({ id: "plan-new", version: 5, status: "pending" })
       );
       mock.careerPlan.findMany.mockResolvedValue([]);

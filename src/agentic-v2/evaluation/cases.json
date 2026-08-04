@@ -1,10 +1,11 @@
 {
   "meta": {
     "name": "CareerMate Agentic V2 全链路评测数据集",
-    "schemaVersion": "1.0",
+    "schemaVersion": "2.0",
     "createdAt": "2026-07-22",
-    "totalCases": 45,
-    "description": "覆盖路由、证据融合、联网、候选确认、版本冲突、数据隔离、安全边界等场景"
+    "updatedAt": "2026-07-29",
+    "totalCases": 18,
+    "description": "当前架构 V2 评测：business_data snapshots、artifact 本地摄入、候选确认、版本冲突、用户隔离、夸克联网、七个工作流精确契约、simulationState 连续性。旧 MCP（context_token / profile.read / candidate.create / simulation_turn.append）用例已移至 legacy-cases.json。"
   },
   "cases": [
     {
@@ -12,10 +13,10 @@
       "scenario": "同一职业不同用户个性化",
       "category": "personalization",
       "input": {
-        "userA": { "targetRole": "data_analyst", "educationStage": "大三", "abilityScores": { "python": 65, "sql": 40 } },
-        "userB": { "targetRole": "data_analyst", "educationStage": "工作3年", "abilityScores": { "python": 90, "sql": 85 } }
+        "userA": { "targetRole": "data_analyst", "educationStage": "大三", "abilityScores": { "dataAnalysis": 40 } },
+        "userB": { "targetRole": "data_analyst", "educationStage": "工作3年", "abilityScores": { "dataAnalysis": 85 } }
       },
-      "expectedBehavior": "两个用户得到不同的画像评估和建议，userA 侧重入门学习路线，userB 侧重进阶提升",
+      "expectedBehavior": "两个用户得到不同的画像评估和建议",
       "verificationMethod": "对比两个用户的 artifact 中的能力评估和建议差异"
     },
     {
@@ -24,12 +25,12 @@
       "category": "evidence-fusion",
       "input": {
         "request": { "action": "career_plan" },
-        "profile": { "available": true, "version": 3, "data": { "abilityScores": { "python": 65 } } },
-        "history": { "available": true, "data": [{"planId": "p1", "status": "completed"}] },
-        "baseline": { "roleKey": "data_analyst", "evidence": [{"summary": "需SQL能力", "confidence": "high"}] },
-        "market": { "searched": true, "findings": [{"claim": "2026年需求增长15%"}], "confidence": "medium" }
+        "profile": { "available": true, "version": 3, "data": { "abilityScores": { "dataAnalysis": 65 } } },
+        "history": { "available": true, "data": [{ "planId": "p1", "status": "completed" }] },
+        "baseline": { "roleKey": "data_analyst", "evidence": [{ "summary": "需SQL能力", "confidence": "high" }] },
+        "market": { "searched": true, "findings": [{ "claim": "2026年需求增长15%" }], "confidence": "medium" }
       },
-      "expectedBehavior": "Artifact 的 evidence 数组包含来自四条路由的证据，每条标记来源",
+      "expectedBehavior": "Artifact 的 evidence 数组包含来自四路的证据，每条标记来源",
       "verificationMethod": "检查 artifact.evidence 至少有 4 个不同 source 值的条目"
     },
     {
@@ -40,7 +41,7 @@
         "profile": { "available": false, "version": null, "data": null },
         "history": { "available": false, "data": null },
         "baseline": { "roleKey": "ai_product_manager", "evidence": [] },
-        "market": { "searched": true, "findings": [{"claim": "AI产品经理需求增长"}], "confidence": "medium" }
+        "market": { "searched": true, "findings": [{ "claim": "AI产品经理需求增长" }], "confidence": "medium" }
       },
       "expectedBehavior": "正常返回规划建议，不因缺少画像而报错，warnings 中提示缺少用户画像数据",
       "verificationMethod": "检查 artifact.status 不是 error，warnings 包含画像缺失提示"
@@ -50,460 +51,141 @@
       "scenario": "已知职业结合联网证据",
       "category": "search-integration",
       "input": {
-        "request": { "action": "career_exploration", "roleKey": "data_analyst" },
-        "market": { "searched": true, "findings": [{"claim": "数据分析师2026年薪资中位数12K"}], "sources": [{"url": "https://example.com/salary-2026"}] }
+        "request": { "action": "career_plan" },
+        "profile": { "available": true, "data": { "targetRole": "data_analyst" } },
+        "market": { "searched": true, "findings": [{ "claim": "SQL仍是基础要求" }] }
       },
-      "expectedBehavior": "输出融合了知识库模板和联网市场证据，不单独依赖模板",
-      "verificationMethod": "检查 artifact 同时引用 careerBaseline 和 marketEvidence 来源"
+      "expectedBehavior": "生成计划时引用市场发现作为依据",
+      "verificationMethod": "artifact.sources 包含 market 相关条目"
     },
     {
       "caseId": "E005",
-      "scenario": "未知职业触发职业情报研究",
-      "category": "unknown-role",
-      "input": {
-        "request": { "action": "career_exploration", "roleKey": "blockchain_architect" },
-        "profile": { "available": true, "data": { "targetRole": "blockchain_architect" } },
-        "baseline": { "roleKey": "unknown", "templateVersion": "unknown", "evidence": [] }
-      },
-      "expectedBehavior": "触发 marketEvidence.searched=true，发起联网搜索区块链架构师信息，artifact 标记为 career_template_draft",
-      "verificationMethod": "检查 marketEvidence.searched=true，artifact.taskType 为 career_template_draft"
-    },
-    {
-      "caseId": "E006",
-      "scenario": "简单实时问题由主Agent直接搜索",
-      "category": "agent-routing",
-      "input": {
-        "request": { "action": "general_query", "message": "最近数据分析师薪资怎么样" }
-      },
-      "expectedBehavior": "主 Agent 直接调用夸克搜索 MCP 回答，不委派子智能体",
-      "verificationMethod": "检查无子智能体调用记录，marketEvidence.searched=true"
-    },
-    {
-      "caseId": "E007",
-      "scenario": "复杂研究委派职业情报研究员",
-      "category": "agent-routing",
-      "input": {
-        "request": {
-          "action": "comprehensive_research",
-          "message": "对比分析 2026年AI产品经理、数据分析师、AIGC内容运营三个职业的入门门槛、薪资和发展前景"
-        }
-      },
-      "expectedBehavior": "委派职业情报研究员V2子智能体进行多维度研究，返回 ResearchReportV1",
-      "verificationMethod": "检查返回结果符合 researchReportV1Schema，包含三个职业的对比数据"
-    },
-    {
-      "caseId": "E008",
-      "scenario": "知识库和联网结果冲突",
-      "category": "conflict-resolution",
-      "input": {
-        "baseline": { "roleKey": "data_analyst", "evidence": [{"summary": "数据分析师需硕士学历", "confidence": "high"}] },
-        "market": { "searched": true, "findings": [{"claim": "2026年60%数据分析师岗位接受本科学历"}], "conflicts": [{"description": "学历要求不一致"}] }
-      },
-      "expectedBehavior": "evidence 中标记冲突，marketEvidence.conflicts 非空，artifact.warnings 提示冲突",
-      "verificationMethod": "检查 artifact.evidence 中存在 conflicts 非空条目，artifact.warnings 包含冲突提示"
-    },
-    {
-      "caseId": "E009",
-      "scenario": "联网失败降级",
-      "category": "error-handling",
-      "input": {
-        "request": { "action": "career_plan" },
-        "market": { "searched": true, "error": "搜索服务超时", "findings": [], "confidence": "low" }
-      },
-      "expectedBehavior": "基于已有画像+历史+基线继续提供建议，artifact.warnings 提示联网失败，不中断返回",
-      "verificationMethod": "检查 artifact.status 不是 error，warnings 包含搜索失败提示"
-    },
-    {
-      "caseId": "E010",
-      "scenario": "合理跳过联网—查看已有数据",
-      "category": "skip-search",
-      "input": {
-        "request": { "action": "view_profile" },
-        "market": { "searched": false, "skipReason": "查看已确认的用户画像数据，无需联网", "collectedAt": null, "findings": [] }
-      },
-      "expectedBehavior": "marketEvidence.searched=false，skipReason 非空且合理，正常返回画像数据",
-      "verificationMethod": "检查 skipReason 非空，marketEvidence.confidence 为 low"
-    },
-    {
-      "caseId": "E011",
-      "scenario": "合理跳过联网—接受既有候选",
-      "category": "skip-search",
-      "input": {
-        "request": { "action": "accept_candidate", "candidateId": "cand-001" },
-        "market": { "searched": false, "skipReason": "用户接受既有候选，不需联网验证" }
-      },
-      "expectedBehavior": "不调用搜索工具，直接处理候选确认流程，返回确认结果",
-      "verificationMethod": "marketEvidence.searched=false，skipReason 存在"
-    },
-    {
-      "caseId": "E012",
-      "scenario": "合理跳过联网—继续模拟训练",
-      "category": "skip-search",
-      "input": {
-        "request": { "action": "continue_simulation", "sessionId": "sim-001" },
-        "market": { "searched": false, "skipReason": "继续同一场模拟训练，不需联网" }
-      },
-      "expectedBehavior": "不调用搜索工具，基于已有训练状态继续模拟对话流程",
-      "verificationMethod": "marketEvidence.searched=false"
-    },
-    {
-      "caseId": "E013",
-      "scenario": "评分证据与不确定性",
-      "category": "scoring",
-      "input": {
-        "request": { "action": "profile_assessment" },
-        "profile": { "data": { "abilityScores": { "python": 65 } } },
-        "baseline": { "roleKey": "data_analyst", "evidence": [{"summary": "Python 入门要求60分", "confidence": "high"}] }
-      },
-      "expectedBehavior": "每项能力评分附带 confidence 和 source，artifact 中 low-confidence 评估标记在 warnings",
-      "verificationMethod": "检查能力评估的 evidence 条目都包含 confidence 字段"
-    },
-    {
-      "caseId": "E014",
       "scenario": "候选确认流程",
       "category": "candidate-confirmation",
       "input": {
-        "request": { "action": "create_career_plan" },
-        "artifact": { "taskType": "career_plan", "status": "pending_confirmation", "requiresUserConfirmation": true }
-      },
-      "expectedBehavior": "调用 candidate.create 保存候选，状态 pending_confirmation，不写入正式 plan 表",
+        "artifact": { "taskType": "career_plan", "status": "pending_confirmation", "requiresUserConfirmation": true, "data": { "plan": { "schemaVersion": 2, "title": "计划", "targetRole": { "key": "data_analyst", "label": "分析师" }, "summary": "", "horizon": { "value": 3, "unit": "year" }, "phases": [{ "id": "p1", "title": "阶段", "objective": "", "duration": { "value": 1, "unit": "month" }, "skills": [], "actions": [{ "id": "a1", "title": "任务", "description": "", "type": "learning", "status": "not_started", "resources": [] }], "outputs": [], "evaluationCriteria": [], "risks": [] }], "immediateActions": [], "assumptions": [], "riskNotes": [], "evidenceRefs": [] } } } },
+      "expectedBehavior": "AI 输出 CAREERMATE_ARTIFACT 信封，后端解析后创建 AgentArtifactCandidate（status=pending），不写入正式 plan 表",
       "verificationMethod": "检查仅写入 AgentArtifactCandidate 表，正式 Plan 表无新记录"
     },
     {
-      "caseId": "E015",
-      "scenario": "未确认不写正式数据库",
-      "category": "candidate-confirmation",
+      "caseId": "E006",
+      "scenario": "版本冲突——用户修改画像后旧候选失效",
+      "category": "version-conflict",
       "input": {
-        "request": { "action": "assessment_done" },
-        "artifact": { "taskType": "profile_assessment", "status": "pending_confirmation" }
+        "profileVersionBefore": 3,
+        "candidateBaseVersion": 2,
+        "profileVersionAfter": 4
       },
-      "expectedBehavior": "仅保存候选记录，不更新用户画像表（Profile version 不变）",
-      "verificationMethod": "检查 agent_artifact_candidate 表有新记录，UserProfile.version 不变"
+      "expectedBehavior": "接受 baseVersion=2 的候选时返回 BASE_VERSION_CONFLICT（409）",
+      "verificationMethod": "手动修改画像递增 version 后，接受旧候选返回 409"
+    },
+    {
+      "caseId": "E007",
+      "scenario": "用户隔离",
+      "category": "isolation",
+      "input": {
+        "userA": { "id": "user-a", "artifact": { "taskType": "profile_assessment", "status": "pending_confirmation" } },
+        "userB": { "id": "user-b" }
+      },
+      "expectedBehavior": "userB 不能查看、操作 userA 的候选",
+      "verificationMethod": "userB GET/POST userA 的 candidateId 返回 404"
+    },
+    {
+      "caseId": "E008",
+      "scenario": "夸克联网——职业薪资查询",
+      "category": "search",
+      "input": {
+        "request": { "action": "career_exploration", "keyword": "数据分析师 2026 薪资" },
+        "market": { "searched": true, "skipReason": null }
+      },
+      "expectedBehavior": "夸克搜索返回当前市场数据，不包含用户个人画像信息",
+      "verificationMethod": "检查搜索查询不包含 PII，结果标记来源和日期"
+    },
+    {
+      "caseId": "E009",
+      "scenario": "搜索与知识库冲突处理",
+      "category": "conflict-handling",
+      "input": {
+        "baseline": { "roleKey": "data_analyst", "evidence": [{ "summary": "SQL 是必修技能", "confidence": "high" }] },
+        "market": { "searched": true, "findings": [{ "claim": "AI 辅助 SQL 正在替代手写 SQL", "confidence": "medium" }] }
+      },
+      "expectedBehavior": "发现冲突时在 warnings 中标注，不自行裁决",
+      "verificationMethod": "artifact.warnings 包含冲突提示，sources 中同时保留两者"
+    },
+    {
+      "caseId": "E010",
+      "scenario": "simulationState 连续性",
+      "category": "simulation",
+      "input": {
+        "interaction": { "surface": "simulation", "targetRef": "session-1" },
+        "businessData": { "simulationState": { "sessionId": "session-1", "scenarioKey": "cross_role_communication", "status": "active", "round": 2, "transcript": [{ "role": "user", "content": "我来说明需求" }] } }
+      },
+      "expectedBehavior": "AI 基于 simulationState 的轮次和历史生成第 3 轮追问，不重复已问问题",
+      "verificationMethod": "检查 artifact.data.round === 3 且 nextQuestion 不与 transcript 重复"
+    },
+    {
+      "caseId": "E011",
+      "scenario": "profile_assessment 精确契约",
+      "category": "workflow-contract",
+      "input": { "taskType": "profile_assessment", "status": "pending_confirmation" },
+      "expectedBehavior": "data 必须包含 patch、abilityEvidence 或 scores 至少之一，符合 profileAssessmentDataSchema",
+      "verificationMethod": "检查 validatedAgentArtifactV1Schema 拒绝空 data"
+    },
+    {
+      "caseId": "E012",
+      "scenario": "simulation_report 精确契约",
+      "category": "workflow-contract",
+      "input": { "taskType": "simulation_report", "status": "pending_confirmation" },
+      "expectedBehavior": "data.abilityEvidence 至少 1 条，每条含 abilityKey/summary/sourceType/confidence",
+      "verificationMethod": "检查 validatedAgentArtifactV1Schema 通过合法 fixture、拒绝非法 fixture"
+    },
+    {
+      "caseId": "E013",
+      "scenario": "career_plan 精确契约",
+      "category": "workflow-contract",
+      "input": { "taskType": "career_plan", "status": "pending_confirmation" },
+      "expectedBehavior": "data.plan 必须符合 aiCareerPlanV2Schema（含 schemaVersion:2）",
+      "verificationMethod": "检查接受后 Plan V2 UI 能通过 phases 渲染阶段卡片"
+    },
+    {
+      "caseId": "E014",
+      "scenario": "learning_route 可确认版本化候选",
+      "category": "workflow-contract",
+      "input": { "taskType": "learning_route", "status": "pending_confirmation" },
+      "expectedBehavior": "创建可确认的学习路线候选（AgentArtifactCandidate），并携带 baseRouteVersion 防止陈旧路线覆盖",
+      "verificationMethod": "检查 ingestion 创建 learning_route 候选，接受后生成递增版本的 LearningRoute"
+    },
+    {
+      "caseId": "E015",
+      "scenario": "memory_item 精确契约",
+      "category": "workflow-contract",
+      "input": { "taskType": "memory_item", "status": "pending_confirmation" },
+      "expectedBehavior": "data 必须含 content(max2000)+kind，可选 reason/sensitivity",
+      "verificationMethod": "超长 content 被 validatedAgentArtifactV1Schema 拒绝"
     },
     {
       "caseId": "E016",
-      "scenario": "baseVersion 冲突",
-      "category": "version-conflict",
-      "input": {
-        "request": { "action": "update_profile" },
-        "artifact": { "baseVersion": 3 },
-        "profile": { "version": 5 }
-      },
-      "expectedBehavior": "后端检测 baseVersion(3) != currentVersion(5)，返回 CANDIDATE_BASE_VERSION_REQUIRED 错误",
-      "verificationMethod": "检查 MCP 工具返回 BASE_VERSION_REQUIRED 错误码"
+      "scenario": "career_template_draft 精确契约",
+      "category": "workflow-contract",
+      "input": { "taskType": "career_template_draft", "status": "pending_confirmation" },
+      "expectedBehavior": "data 必须含 roleKey(min1)+roleName(min1)",
+      "verificationMethod": "空字符串 roleKey 被拒绝"
     },
     {
       "caseId": "E017",
-      "scenario": "模拟训练连续性—轮次递增",
-      "category": "simulation",
-      "input": {
-        "request": { "action": "simulation_turn", "sessionId": "sim-001", "expectedTurnCount": 2 },
-        "simulation": { "turnCount": 2, "status": "active" }
-      },
-      "expectedBehavior": "simulation_turn.append 成功，turnCount 变为 3",
-      "verificationMethod": "验证 returned turnCount=3, status=active"
+      "scenario": "simulation_turn 精确契约",
+      "category": "workflow-contract",
+      "input": { "taskType": "simulation_turn", "status": "success" },
+      "expectedBehavior": "data 必须含 sessionId/scenarioKey/round/nextQuestion/isComplete:false",
+      "verificationMethod": "缺少 isComplete:false → 被 validatedAgentArtifactV1Schema 拒绝"
     },
     {
       "caseId": "E018",
-      "scenario": "模拟训练连续性—轮次冲突",
-      "category": "simulation",
-      "input": {
-        "request": { "action": "simulation_turn", "sessionId": "sim-001", "expectedTurnCount": 2 },
-        "simulation": { "turnCount": 3 }
-      },
-      "expectedBehavior": "返回 SIMULATION_TURN_CONFLICT 错误",
-      "verificationMethod": "检查返回 409 状态码，提示轮次已变化"
-    },
-    {
-      "caseId": "E019",
-      "scenario": "模拟训练不重复第一题",
-      "category": "simulation",
-      "input": {
-        "request": { "action": "start_simulation", "scenario": "tech_interview" },
-        "simulation": { "turnCount": 0 }
-      },
-      "expectedBehavior": "第一轮提问不重复题库第一题，根据用户画像个性化生成",
-      "verificationMethod": "对比两次新的模拟训练第一题，内容应有差异"
-    },
-    {
-      "caseId": "E020",
-      "scenario": "长期记忆跨会话召回",
-      "category": "memory",
-      "input": {
-        "sessionA": { "action": "set_preference", "preference": "偏好简洁回复风格" },
-        "sessionB": { "action": "career_plan", "conversationId": "different-session" }
-      },
-      "expectedBehavior": "sessionB 中能读取 sessionA 中记忆的偏好，回复风格为简洁",
-      "verificationMethod": "检查 sessionB 的 context 中包含用户偏好记忆"
-    },
-    {
-      "caseId": "E021",
-      "scenario": "不同用户数据隔离",
-      "category": "data-isolation",
-      "input": {
-        "userA": { "sub": "user-a", "action": "profile.read" },
-        "userB": { "sub": "user-b", "action": "profile.read" }
-      },
-      "expectedBehavior": "用户A的令牌无法读取用户B的数据，用户B也无法读取用户A的数据",
-      "verificationMethod": "userA 的 context_token 调用 profile.read 只返回 userA 的数据"
-    },
-    {
-      "caseId": "E022",
-      "scenario": "无登录态的百宝箱Web不访问私人数据",
-      "category": "auth-boundary",
-      "input": {
-        "context_token": null,
-        "request": { "action": "profile.read" }
-      },
-      "expectedBehavior": "缺少 context_token，返回 CONTEXT_TOKEN_INVALID 错误",
-      "verificationMethod": "检查返回 401 状态码，不泄露任何用户数据"
-    },
-    {
-      "caseId": "E023",
-      "scenario": "无登录态的百宝箱Web仅做公共咨询",
-      "category": "auth-boundary",
-      "input": {
-        "context_token": null,
-        "request": { "action": "general_query", "message": "数据分析师需要什么技能" }
-      },
-      "expectedBehavior": "Agent 可以调用夸克搜索回答公共问题，但不调用 profile.read 等需认证的工具",
-      "verificationMethod": "检查没有调用需要 scope 认证的 MCP 工具"
-    },
-    {
-      "caseId": "E024",
-      "scenario": "重复最终回答检测",
-      "category": "quality",
-      "input": {
-        "request": { "action": "career_plan" }
-      },
-      "expectedBehavior": "工作流结束节点只通过变量消息返回 artifact，主 Agent 不重复工作流的完整输出",
-      "verificationMethod": "检查回复中不含与 artifact 完全重复的长文本"
-    },
-    {
-      "caseId": "E025",
-      "scenario": "简历敏感信息不得发送给搜索服务",
-      "category": "privacy",
-      "input": {
-        "request": { "action": "resume_review" },
-        "resume": "张先生，手机[已脱敏]，邮箱[已脱敏]，工作经历..."
-      },
-      "expectedBehavior": "调用夸克搜索时，搜索 query 不包含手机号、邮箱、姓名",
-      "verificationMethod": "检查搜索 MCP 调用的 query 参数中不含 PII"
-    },
-    {
-      "caseId": "E026",
-      "scenario": "新增职业不修改主Prompt或工作流",
-      "category": "extensibility",
-      "input": {
-        "request": { "action": "career_exploration", "roleKey": "blockchain_architect" }
-      },
-      "expectedBehavior": "主 Agent 通过 career_templates.query 未找到模板，触发联网搜索并生成 career_template_draft 候选，主 Prompt 无需修改",
-      "verificationMethod": "检查 candidateType 为 career_template_draft，无需修改任何 Prompt 模板"
-    },
-    {
-      "caseId": "E027",
-      "scenario": "工具无权限—Scope不足",
-      "category": "authorization",
-      "input": {
-        "context_token": { "scopes": ["profile:read"] },
-        "request": { "tool": "candidate.create" }
-      },
-      "expectedBehavior": "返回 INSUFFICIENT_SCOPE 错误（需要 candidates:create scope）",
-      "verificationMethod": "检查返回 403 状态码，错误码 INSUFFICIENT_SCOPE"
-    },
-    {
-      "caseId": "E028",
-      "scenario": "令牌过期",
-      "category": "authorization",
-      "input": {
-        "context_token": { "exp": "2020-01-01T00:00:00.000Z" },
-        "request": { "tool": "profile.read" }
-      },
-      "expectedBehavior": "返回 CONTEXT_TOKEN_EXPIRED 错误（401）",
-      "verificationMethod": "检查返回 401，错误码 CONTEXT_TOKEN_EXPIRED"
-    },
-    {
-      "caseId": "E029",
-      "scenario": "令牌无效—伪造签名",
-      "category": "authorization",
-      "input": {
-        "context_token": "FAKE_TOKEN_STRING",
-        "request": { "tool": "profile.read" }
-      },
-      "expectedBehavior": "返回 CONTEXT_TOKEN_INVALID 错误（401）",
-      "verificationMethod": "检查返回 401，错误码 CONTEXT_TOKEN_INVALID"
-    },
-    {
-      "caseId": "E030",
-      "scenario": "工具失败—内部错误不泄露详情",
-      "category": "error-handling",
-      "input": {
-        "request": { "tool": "profile.read", "causing": "database_connection_error" }
-      },
-      "expectedBehavior": "返回 INTERNAL_ERROR（500），消息仅说'暂时不可用'，不泄露数据库连接字符串或堆栈",
-      "verificationMethod": "检查错误消息不含 SQL 语句、文件路径或堆栈跟踪"
-    },
-    {
-      "caseId": "E031",
-      "scenario": "JSON Schema 失败—不创建候选",
-      "category": "error-handling",
-      "input": {
-        "request": { "action": "career_plan" },
-        "workflowOutput": "这不是合法的 JSON，而是自由文本"
-      },
-      "expectedBehavior": "工作流 JSON Schema 校验失败，结束节点输出可读错误文本，但不创建候选记录",
-      "verificationMethod": "检查 agent_artifact_candidate 表中无新记录"
-    },
-    {
-      "caseId": "E032",
-      "scenario": "JSON Schema 失败—可显示文本",
-      "category": "error-handling",
-      "input": {
-        "request": { "action": "career_plan" },
-        "workflowOutput": { "taskType": "INVALID_TYPE", "status": "unknown" }
-      },
-      "expectedBehavior": "结束节点返回 'success' 但 artifact 不可用，主 Agent 返回可读文本解释失败",
-      "verificationMethod": "检查回复包含可读的解释文本，不含原始 JSON 错误"
-    },
-    {
-      "caseId": "E033",
-      "scenario": "高影响任务进行伦理审查",
-      "category": "ethics-review",
-      "input": {
-        "request": { "action": "career_plan" },
-        "artifact": { "taskType": "career_plan", "status": "pending_confirmation" }
-      },
-      "expectedBehavior": "生成候选后调用伦理证据审查员V2审查，artifact 附带审查报告",
-      "verificationMethod": "检查 artifact.assumptions 或 evidence 中包含伦理审查标记"
-    },
-    {
-      "caseId": "E034",
-      "scenario": "能力弱项不自动写入长期记忆",
-      "category": "memory-boundary",
-      "input": {
-        "request": { "action": "profile_assessment" },
-        "assessment": { "weakAreas": ["sql", "dataViz"] }
-      },
-      "expectedBehavior": "能力弱项仅作为候选展示，不自动写入百宝箱长期记忆",
-      "verificationMethod": "检查未调用 memory_item 类型的 candidate.create"
-    },
-    {
-      "caseId": "E035",
-      "scenario": "用户明确偏好可写入长期记忆",
-      "category": "memory-boundary",
-      "input": {
-        "request": { "action": "remember", "message": "记住：我每周只能投入8小时学习" }
-      },
-      "expectedBehavior": "创建 memory_item 候选（需用户确认），写入长期记忆",
-      "verificationMethod": "检查 candidate.create 调用类型为 memory_item"
-    },
-    {
-      "caseId": "E036",
-      "scenario": "完整简历不可写入长期记忆",
-      "category": "memory-boundary",
-      "input": {
-        "request": { "action": "remember", "message": "这是我的完整简历：姓名张三，2016年毕业于..." }
-      },
-      "expectedBehavior": "拒绝记忆请求，提示禁止记忆完整简历",
-      "verificationMethod": "检查没有 memory_item 候选创建，回复含拒绝原因"
-    },
-    {
-      "caseId": "E037",
-      "scenario": "数据优先级—系统安全规则最高",
-      "category": "priority",
-      "input": {
-        "request": { "action": "profile.read", "user": "requesting_other_user_data" }
-      },
-      "expectedBehavior": "即使 Agent 被说服读取其他用户数据，token 中的 sub 限制使其无法越权",
-      "verificationMethod": "检查 profile.read 返回的数据 userId 始终等于 token 中的 sub"
-    },
-    {
-      "caseId": "E038",
-      "scenario": "数据优先级—用户当前要求高于长期记忆",
-      "category": "priority",
-      "input": {
-        "memory": { "preference": "详细回复风格" },
-        "request": { "action": "career_plan", "userMessage": "简短回答就行" }
-      },
-      "expectedBehavior": "当前请求中「简短回答」覆盖长期记忆中的「详细回复风格」",
-      "verificationMethod": "检查回复长度明显短于历史平均回复"
-    },
-    {
-      "caseId": "E039",
-      "scenario": "职业模板不写死—通用abilityKey解析",
-      "category": "extensibility",
-      "input": {
-        "request": { "action": "career_exploration", "roleKey": "cybersecurity_analyst" },
-        "baseline": { "roleKey": "unknown" }
-      },
-      "expectedBehavior": "系统通过联网搜索获取网络安全分析师数据，生成通用模板候选，不返回「不支持的职业」错误",
-      "verificationMethod": "检查 marketEvidence.searched=true，返回 career_template_draft 候选"
-    },
-    {
-      "caseId": "E040",
-      "scenario": "模拟训练结束后不自动写能力分数",
-      "category": "simulation",
-      "input": {
-        "request": { "action": "simulation_complete", "sessionId": "sim-001" },
-        "simulation": { "score": 85, "feedback": { "communication": 80 } }
-      },
-      "expectedBehavior": "生成 simulation_report 候选，不直接更新 abilityScores",
-      "verificationMethod": "检查 candidate.create 类型为 simulation_report 或 ability_evidence，UserProfile.abilityScores 未变"
-    },
-    {
-      "caseId": "E041",
-      "scenario": "知识库检索无结果时回退搜索引擎",
-      "category": "fallback",
-      "input": {
-        "request": { "action": "learning_route", "roleKey": "quantum_computing_researcher" },
-        "baseline": { "roleKey": "unknown", "evidence": [] },
-        "market": { "searched": true }
-      },
-      "expectedBehavior": "career_templates.query 和 learning_resources.query 返回空时，Agent 使用夸克搜索补救",
-      "verificationMethod": "检查至少调用了一次夸克搜索 MCP"
-    },
-    {
-      "caseId": "E042",
-      "scenario": "连续进度事件不重复计数",
-      "category": "data-integrity",
-      "input": {
-        "request": { "action": "record_progress", "taskId": "t1", "requestId": "r1" },
-        "secondCall": { "requestId": "r1", "sameTask": true }
-      },
-      "expectedBehavior": "幂等：同一 requestId 多次调用不产生重复 progress log",
-      "verificationMethod": "检查 operation_execution 表中同 request_id 只有一条记录"
-    },
-    {
-      "caseId": "E043",
-      "scenario": "用户多会话不能看到其他会话的未确认候选",
-      "category": "data-isolation",
-      "input": {
-        "sessionA": { "candidates": [{"id": "c1", "status": "pending_confirmation"}] },
-        "sessionB": { "request": "list_candidates" }
-      },
-      "expectedBehavior": "不同 session/conversation_id 的未确认候选互相不可见",
-      "verificationMethod": "sessionB 的候选人列表不包含 sessionA 的 pending 候选"
-    },
-    {
-      "caseId": "E044",
-      "scenario": "批量大小限制",
-      "category": "security",
-      "input": {
-        "request": { "tool": "career_templates.query", "limit": 1000 }
-      },
-      "expectedBehavior": "limit 参数被限制在最大值 20，返回最多 20 条",
-      "verificationMethod": "检查返回结果不超过 20 条"
-    },
-    {
-      "caseId": "E045",
-      "scenario": "夸克搜索MCP优先于内置搜索引擎",
-      "category": "search-config",
-      "input": {
-        "request": { "action": "general_query", "message": "今天最新的AI职业新闻" },
-        "config": { "search_engine": false }
-      },
-      "expectedBehavior": "使用夸克搜索 MCP 获取实时信息，不使用百宝箱内置搜索",
-      "verificationMethod": "检查调用的是夸克搜索 MCP 工具，search_engine 配置为 false"
+      "scenario": "career_exploration 精确契约",
+      "category": "workflow-contract",
+      "input": { "taskType": "career_exploration", "status": "success" },
+      "expectedBehavior": "data.options 至少 1 个，每个含 roleName",
+      "verificationMethod": "空 options 数组被拒绝"
     }
   ]
 }

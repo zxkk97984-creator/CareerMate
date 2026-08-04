@@ -15,6 +15,8 @@ export async function GET() {
       chatConversations: { include: { messages: true } },
       abilityEvidence: true,
       explorationReports: true,
+      artifactCandidates: true,
+      learningRoutes: { orderBy: { version: "desc" } },
     },
   });
   if (!user) return fail("NOT_FOUND", "账号不存在", 404);
@@ -29,8 +31,16 @@ export async function GET() {
     chatConversations,
     abilityEvidence,
     explorationReports,
+    artifactCandidates,
+    learningRoutes,
     ...safeUser
   } = user;
+
+  // 加载 OperationExecution（无直接 User 关系，通过 userId 查询）
+  const operationExecutions = await getPrisma().operationExecution.findMany({
+    where: { userId: current.id },
+  });
+
   return ok(buildPrivacyExport({
     user: safeUser,
     profile,
@@ -43,5 +53,8 @@ export async function GET() {
     conversations: chatConversations,
     abilityEvidence,
     explorationReports,
+    artifactCandidates,
+    learningRoutes,
+    operationExecutions,
   }));
 }

@@ -14,9 +14,14 @@ export async function DELETE(request: Request) {
   if (!parsed.success || !isClearConfirmation(parsed.data.confirmation)) return fail("CONFIRMATION_MISMATCH", "确认词不正确", 400);
   const prisma = getPrisma();
   await prisma.$transaction(async (tx) => {
+    // 删除或永久失效所有待确认候选，防止旧卡片重新写回已清空内容
+    await tx.agentArtifactCandidate.deleteMany({ where: { userId: user.id } });
+    await tx.operationExecution.deleteMany({ where: { userId: user.id } });
     await tx.simulationSession.deleteMany({ where: { userId: user.id } });
     await tx.profileUpdateCandidate.deleteMany({ where: { userId: user.id } });
     await tx.abilityEvidence.deleteMany({ where: { userId: user.id } });
+    // learningRoute 必须在 careerPlan 之前删除（外键依赖）
+    await tx.learningRoute.deleteMany({ where: { userId: user.id } });
     await tx.careerPlan.deleteMany({ where: { userId: user.id } });
     await tx.careerExplorationReport.deleteMany({ where: { userId: user.id } });
     await tx.chatConversation.deleteMany({ where: { userId: user.id } });

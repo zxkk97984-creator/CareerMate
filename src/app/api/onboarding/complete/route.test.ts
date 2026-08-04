@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   logCreate: vi.fn(),
   profileFindUnique: vi.fn(),
   profileUpdate: vi.fn(),
+  profileUpdateMany: vi.fn().mockResolvedValue({ count: 1 }),
   requireCurrentUser: vi.fn(),
   transaction: vi.fn(),
 }));
@@ -81,7 +82,7 @@ beforeEach(() => {
     onboardingCompleted: true,
   });
   mocks.transaction.mockImplementation(async (callback) => callback({
-    userProfile: { update: mocks.profileUpdate },
+    userProfile: { update: mocks.profileUpdate, updateMany: mocks.profileUpdateMany, findUnique: mocks.profileFindUnique },
     onboardingConversation: {
       update: mocks.conversationUpdate,
       updateMany: mocks.conversationUpdateMany,
@@ -135,10 +136,11 @@ describe("POST /api/onboarding/complete", () => {
     });
     await POST(request({ conversationId: "conversation-1", draft: { targetRole: "aigc_operator" } }));
 
-    expect(mocks.profileUpdate).toHaveBeenCalledWith({
+    // 验证使用了存储的草稿（data_analyst）而非客户端传入的（aigc_operator）
+    expect(mocks.profileUpdate).toHaveBeenCalledWith(expect.objectContaining({
       where: { userId: "user-1" },
-      data: expect.objectContaining({ targetRole: "data_analyst", onboardingCompleted: true }),
-    });
+      data: expect.objectContaining({ targetRole: "data_analyst" }),
+    }));
   });
 
   it("transactionally updates the profile, completes the conversation, and creates one progress log", async () => {
@@ -147,19 +149,22 @@ describe("POST /api/onboarding/complete", () => {
 
     expect(response.status).toBe(200);
     expect(payload).toMatchObject({ ok: true, data: { profile: { onboardingCompleted: true }, alreadyCompleted: false } });
-    expect(mocks.profileUpdate).toHaveBeenCalledWith({
+    // mutateUserProfile 通过 update 写入画像字段 + 版本递增
+    expect(mocks.profileUpdate).toHaveBeenCalledWith(expect.objectContaining({
       where: { userId: "user-1" },
-      data: {
+      data: expect.objectContaining({
         educationStage: "junior",
         major: "统计学",
         targetRole: "data_analyst",
         targetRoleLabel: "数据分析师",
         weeklyAvailableHours: 8,
-        learningPreference: JSON.stringify(["project"]),
-        experienceSummary: "做过课程数据项目",
-        constraints: JSON.stringify(["暂无特殊限制"]),
-        onboardingCompleted: true,
-      },
+        version: { increment: 1 },
+      }),
+    }));
+    // 单独设置 onboardingCompleted
+    expect(mocks.profileUpdate).toHaveBeenCalledWith({
+      where: { userId: "user-1" },
+      data: { onboardingCompleted: true },
     });
     expect(mocks.conversationUpdateMany).toHaveBeenCalledWith({
       where: { id: "conversation-1", userId: "user-1", status: "active" },

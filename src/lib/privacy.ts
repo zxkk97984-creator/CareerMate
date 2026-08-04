@@ -16,6 +16,9 @@ type PrivacySource = {
   conversations: unknown[];
   abilityEvidence: unknown[];
   explorationReports: unknown[];
+  artifactCandidates?: unknown[];
+  learningRoutes?: unknown[];
+  operationExecutions?: unknown[];
   authSessions?: unknown[];
 };
 
@@ -35,5 +38,8 @@ export function buildPrivacyExport(source: PrivacySource) {
     chatConversations: source.conversations,
     abilityEvidence: source.abilityEvidence,
     careerExplorationReports: source.explorationReports,
+    agentArtifactCandidates: source.artifactCandidates ?? [],
+    learningRoutes: source.learningRoutes ?? [],
+    operationExecutions: source.operationExecutions ?? [],
   };
 }

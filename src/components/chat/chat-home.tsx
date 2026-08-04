@@ -43,16 +43,23 @@ export function ChatHomePage({ displayName, openChatEntry = true }: ChatHomePage
 
   useEffect(() => { loadConversations(); }, [loadConversations]);
 
-  // 加载待确认候选数量
+  // 加载待确认候选数量（含旧画像候选和 V2 候选）
   useEffect(() => {
-    fetch("/api/profile/candidates")
-      .then(r => r.json())
-      .then(b => {
-        if (b.ok) {
-          const items = (b.data as { items?: Array<{ status: string }> })?.items ?? [];
-          const pending = items.filter((c) => c.status === "pending");
-          setPendingCandidateCount(pending.length);
+    Promise.all([
+      fetch("/api/profile/candidates").then(r => r.json()),
+      fetch("/api/agentic-v2/candidates?status=pending").then(r => r.json()),
+    ])
+      .then(([legacy, v2]) => {
+        let pending = 0;
+        if (legacy.ok) {
+          const items = (legacy.data as { items?: Array<{ status: string }> })?.items ?? [];
+          pending += items.filter((c) => c.status === "pending").length;
         }
+        if (v2.ok) {
+          const v2Items = (v2.data as { items?: Array<unknown> })?.items ?? [];
+          pending += v2Items.length;
+        }
+        setPendingCandidateCount(pending);
       })
       .catch(() => {});
   }, []);

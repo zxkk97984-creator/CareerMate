@@ -161,6 +161,15 @@ export function createCandidateService(): CandidateService {
           throw new CandidateServiceError("候选值不合法", "INVALID_VALUE", 400);
         }
 
+        // 统一 stale 检查：所有写入分支执行前先校验 baseProfileVersion
+        if (candidate.baseProfileVersion !== null && candidate.baseProfileVersion !== profile.version) {
+          throw new CandidateServiceError(
+            "画像版本已变更，该候选可能已过期，请刷新后重新确认",
+            "PROFILE_VERSION_STALE",
+            409,
+          );
+        }
+
         // patch 模式：展开为原子字段逐字段安全合并
         if (targetField === "patch") {
           const patchObj = parsed as Record<string, unknown>;
@@ -226,14 +235,6 @@ export function createCandidateService(): CandidateService {
             if (typeof obj.label === "string") updateData.targetRoleLabel = obj.label;
           } else {
             updateData[targetField] = Array.isArray(validated) ? toJson(validated) : validated;
-          }
-          // baseProfileVersion stale 检查：候选创建时的画像版本与当前不一致则拒绝
-          if (candidate.baseProfileVersion !== null && candidate.baseProfileVersion !== profile.version) {
-            throw new CandidateServiceError(
-              "画像版本已变更，该候选可能已过期，请刷新后重新确认",
-              "PROFILE_VERSION_STALE",
-              409,
-            );
           }
           updateData.version = { increment: 1 };
           await transaction.userProfile.update({

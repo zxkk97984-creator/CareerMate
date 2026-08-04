@@ -65,12 +65,15 @@ export function SimulationView({ simulations, refresh, setNotice }: { simulation
     if (!active) return;
     setBusy(true); setError(""); setNotice("正在生成训练评分和画像候选...");
     try {
-      const response = await request<{ session: SimulationSession }>(`/api/simulations/${active.id}/complete`, { method: "POST" });
+      // 响应包含顶层 candidateId + session
+      const response = await request<{ session: SimulationSession; candidateId?: string | null }>(`/api/simulations/${active.id}/complete`, { method: "POST" });
       if (!response.ok) throw new Error(response.error?.message ?? "训练评分失败");
       setActive(response.data.session);
+      // 统一从 API 返回的顶层 candidateId（V2 AgentArtifactCandidate ID）读取
+      const cid = response.data.candidateId ?? response.data.session.candidateId;
       if (response.data.session.score === null) {
         setNotice("训练已完成，但本次未产生正式评分；如需评分，请开始一轮新训练。");
-      } else if (response.data.session.candidateId) {
+      } else if (cid) {
         setNotice("训练已完成，画像更新候选等待确认。");
       } else {
         setNotice("训练已完成，本次未生成画像更新候选。");

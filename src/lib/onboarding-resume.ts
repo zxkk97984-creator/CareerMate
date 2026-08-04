@@ -3,7 +3,7 @@ import {
   calculateOnboardingCompleteness,
   onboardingDraftSchema,
   type OnboardingDraft,
-} from "@/lib/onboarding";
+} from "@/lib/onboarding-utils";
 import { parseJson } from "@/lib/json";
 import { parseOnboardingTranscript } from "@/lib/onboarding-transcript";
 import type { AiMode } from "@/lib/types";

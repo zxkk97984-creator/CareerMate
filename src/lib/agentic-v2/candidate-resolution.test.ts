@@ -6,7 +6,20 @@ const validPlanArtifact = {
   taskType: "career_plan" as const,
   status: "pending_confirmation" as const,
   summary: "三年计划候选",
-  data: { targetRole: "data_analyst", phases: [], summary: "分析岗三年计划", immediateActions: [], years: [], quarters: [], months: [], currentMonthIndex: 1, assumptions: [], riskNotes: [] },
+  data: {
+    plan: {
+      schemaVersion: 2,
+      title: "数据分析师计划",
+      targetRole: { key: "data_analyst", label: "数据分析师" },
+      summary: "分析岗三年计划",
+      horizon: { value: 3, unit: "year" },
+      phases: [{ id: "p1", title: "基础期", objective: "入门", duration: { value: 6, unit: "month" }, skills: [], actions: [{ id: "a1", title: "学SQL", description: "基础", type: "learning", status: "not_started", resources: [] }], outputs: [], evaluationCriteria: [], risks: [] }],
+      immediateActions: [],
+      assumptions: [],
+      riskNotes: [],
+      evidenceRefs: [],
+    },
+  },
   evidence: [],
   sources: [],
   assumptions: [],
@@ -51,6 +64,11 @@ function makeTx(overrides: Record<string, unknown> = {}) {
     abilityEvidence: { create: vi.fn() },
     memoryItem: { create: vi.fn() },
     roleDraft: { create: vi.fn() },
+    learningRoute: {
+      findFirst: vi.fn().mockResolvedValue(null),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      create: vi.fn().mockResolvedValue({ id: "lr-1" }),
+    },
     ...overrides,
   };
   return { ...def, $transaction: vi.fn().mockImplementation((fn: any) => fn(def)) };
@@ -112,7 +130,7 @@ describe("候选解析服务 (严格 Zod)", () => {
         { userId: "u1", candidateId: "c1", decision: "accept" },
         { db: tx as any },
       ),
-    ).rejects.toMatchObject({ code: "INVALID_CANDIDATE_DATA", status: 400 });
+    ).rejects.toMatchObject({ code: "CANDIDATE_CORRUPT", status: 500 });
   });
 
   it("解析时再次校验 candidateType 与 taskType 的兼容关系", async () => {
@@ -220,7 +238,7 @@ describe("候选解析服务 (严格 Zod)", () => {
     });
     await expect(
       resolveAgentArtifactCandidate({ userId: "u1", candidateId: "c1", decision: "accept" }, { db: tx as any }),
-    ).rejects.toMatchObject({ code: "INVALID_CANDIDATE_DATA", status: 400 });
+    ).rejects.toMatchObject({ code: "CANDIDATE_CORRUPT", status: 500 });
   });
 
   it("RoleDraft 必须提供 roleKey 和 roleName", async () => {
@@ -234,7 +252,7 @@ describe("候选解析服务 (严格 Zod)", () => {
     });
     await expect(
       resolveAgentArtifactCandidate({ userId: "u1", candidateId: "c1", decision: "accept" }, { db: tx as any }),
-    ).rejects.toMatchObject({ code: "INVALID_CANDIDATE_DATA", status: 400 });
+    ).rejects.toMatchObject({ code: "CANDIDATE_CORRUPT", status: 500 });
   });
 
   it("updateMany count=0 时双重投影被阻止", async () => {

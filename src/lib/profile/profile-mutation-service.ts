@@ -29,10 +29,103 @@ export interface ProfileMutationInput {
 export interface ProfileMutationService {
   /** 判断 patch 应自动写入、pending candidate 还是 no-op */
   decide(input: ProfileMutationInput): Promise<MutationDecision>;
-  /** 自动应用 patch（仅在 auto_apply 时调用） */
-  applyPatch(userId: string, patch: ProfilePatch): Promise<{ version: number }>;
+  /** 自动应用 patch（仅在 auto_apply 时调用）。支持 expectedVersion CAS */
+  applyPatch(userId: string, patch: ProfilePatch, expectedVersion?: number): Promise<{ version: number }>;
   /** 创建 pending candidate */
   createCandidate(input: ProfileMutationInput): Promise<{ candidateId: string }>;
+}
+
+/**
+ * 统一画像修改服务 mutateUserProfile。
+ * 所有画像写入路径——手动 PATCH、onboarding complete、旧画像候选、V2 候选——全部通过此服务。
+ *
+ * @param tx - 可选的外部 Prisma transaction client；传入时复用已有事务，不传则使用全局 Prisma
+ */
+export async function mutateUserProfile(
+  userId: string,
+  patch: ProfilePatch,
+  expectedVersion?: number,
+  tx?: PrismaTx,
+): Promise<{ version: number }> {
+  // 运行时校验 ProfilePatch
+  const { profilePatchSchema } = await import("./profile-patch");
+  if (!profilePatchSchema.safeParse(patch).success) {
+    throw new Error("ProfilePatch schema validation failed");
+  }
+
+  const db = tx ?? getPrisma();
+  const data = buildProfileUpdateData(patch);
+
+  // 空 patch 不递增 version（避免仅 memoryEnabled 变更时构造空画像 patch）
+  if (Object.keys(data).length === 0) {
+    const current = await db.userProfile.findUnique({ where: { userId }, select: { version: true } });
+    return { version: current?.version ?? 1 };
+  }
+
+  if (expectedVersion !== undefined && expectedVersion !== null) {
+    // CAS：使用 updateMany WHERE version 原子检查
+    const result = await db.userProfile.updateMany({
+      where: { userId, version: expectedVersion },
+      data: { ...data, version: { increment: 1 } },
+    });
+    if (result.count !== 1) {
+      const current = await db.userProfile.findUnique({
+        where: { userId },
+        select: { version: true },
+      });
+      throw new ProfileVersionConflictError(
+        expectedVersion,
+        current?.version ?? 0,
+      );
+    }
+    const updated = await db.userProfile.findUnique({
+      where: { userId },
+      select: { version: true },
+    });
+    return { version: updated!.version };
+  }
+
+  // 无 CAS：直接更新
+  const updated = await db.userProfile.update({
+    where: { userId },
+    data: { ...data, version: { increment: 1 } },
+  });
+  return { version: updated.version };
+}
+
+/** 轻量级 Prisma transaction client 类型——匹配 mutateUserProfile 的最小需求 */
+export type PrismaTx = {
+  userProfile: {
+    update(args: { where: { userId: string }; data: Record<string, unknown> }): Promise<{ version: number }>;
+    updateMany(args: { where: { userId: string; version?: number }; data: Record<string, unknown> }): Promise<{ count: number }>;
+    findUnique(args: { where: { userId: string }; select: { version: true } }): Promise<{ version: number } | null>;
+  };
+};
+
+export class ProfileVersionConflictError extends Error {
+  constructor(
+    public readonly expected: number,
+    public readonly current: number,
+  ) {
+    super(`画像版本冲突：期望 ${expected}，实际 ${current}`);
+    this.name = "ProfileVersionConflictError";
+  }
+}
+
+function buildProfileUpdateData(patch: ProfilePatch): Record<string, unknown> {
+  const data: Record<string, unknown> = {};
+  if (patch.educationStage !== undefined) data.educationStage = patch.educationStage;
+  if (patch.major !== undefined) data.major = patch.major;
+  if (patch.targetRole !== undefined) {
+    data.targetRole = patch.targetRole?.key ?? null;
+    data.targetRoleLabel = patch.targetRole?.label ?? null;
+  }
+  if (patch.weeklyAvailableHours !== undefined) data.weeklyAvailableHours = patch.weeklyAvailableHours;
+  if (patch.learningPreference !== undefined) data.learningPreference = JSON.stringify(patch.learningPreference);
+  if (patch.experienceSummary !== undefined) data.experienceSummary = patch.experienceSummary;
+  if (patch.constraints !== undefined) data.constraints = JSON.stringify(patch.constraints);
+  if (patch.interestTags !== undefined) data.interestTags = JSON.stringify(patch.interestTags);
+  return data;
 }
 
 export function createProfileMutationService(): ProfileMutationService {
@@ -137,27 +230,8 @@ export function createProfileMutationService(): ProfileMutationService {
       return { action: "pending_candidate", reason: "existing_field_change_requires_confirmation" };
     },
 
-    async applyPatch(userId, patch) {
-      const data: Record<string, unknown> = {};
-
-      if (patch.educationStage !== undefined) data.educationStage = patch.educationStage;
-      if (patch.major !== undefined) data.major = patch.major;
-      if (patch.targetRole !== undefined) {
-        data.targetRole = patch.targetRole?.key ?? null;
-        data.targetRoleLabel = patch.targetRole?.label ?? null;
-      }
-      if (patch.weeklyAvailableHours !== undefined) data.weeklyAvailableHours = patch.weeklyAvailableHours;
-      if (patch.learningPreference !== undefined) data.learningPreference = JSON.stringify(patch.learningPreference);
-      if (patch.experienceSummary !== undefined) data.experienceSummary = patch.experienceSummary;
-      if (patch.constraints !== undefined) data.constraints = JSON.stringify(patch.constraints);
-      if (patch.interestTags !== undefined) data.interestTags = JSON.stringify(patch.interestTags);
-
-      const updated = await db.userProfile.update({
-        where: { userId },
-        data: { ...data, version: { increment: 1 } },
-      });
-
-      return { version: updated.version };
+    async applyPatch(userId, patch, expectedVersion?) {
+      return mutateUserProfile(userId, patch, expectedVersion);
     },
 
     async createCandidate(input) {

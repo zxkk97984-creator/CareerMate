@@ -8,6 +8,7 @@ const decisionSchema = z.object({
 }).strict();
 
 // ── POST /api/plans/:planId/decision ──────────────────
+// 原子 CAS：仅 status=pending 时接受/拒绝，并发操作只有一个成功
 
 export async function POST(
   request: Request,
@@ -23,45 +24,62 @@ export async function POST(
 
   const db = getPrisma();
 
-  // 查找 pending 计划
-  const pending = await db.careerPlan.findFirst({
-    where: { id: planId, userId: user.id, status: "pending" },
-  });
-  if (!pending) return fail("NOT_FOUND", "计划不存在或状态不是待确认", 404);
-
   if (input.data.action === "accept") {
-    await db.$transaction(async (tx) => {
-      // 归档该用户所有旧的 active 计划（任意时刻最多一个 active）
-      await tx.careerPlan.updateMany({
-        where: { userId: user.id, status: "active" },
-        data: { status: "archived" },
-      });
+    try {
+      await db.$transaction(async (tx) => {
+        // 原子 claim：仅 status=pending 时才可接受
+        const claimed = await tx.careerPlan.updateMany({
+          where: { id: planId, userId: user.id, status: "pending" },
+          data: { status: "activating" },
+        });
+        if (claimed.count !== 1) {
+          throw new PlanDecisionConflictError("计划已被处理，无法重复操作");
+        }
 
-      // 激活 pending
-      await tx.careerPlan.update({
-        where: { id: planId },
-        data: {
-          status: "active",
-          activatedAt: new Date(),
-        },
-      });
+        // 归档该用户所有旧的 active 计划
+        await tx.careerPlan.updateMany({
+          where: { userId: user.id, status: "active" },
+          data: { status: "archived" },
+        });
 
-      // 令相关会话 contextVersion 失效，强制刷新上下文
-      await tx.chatConversation.updateMany({
-        where: { userId: user.id, status: { not: "deleted" } },
-        data: { contextVersion: { increment: 1 } },
+        // 激活 pending
+        await tx.careerPlan.update({
+          where: { id: planId },
+          data: { status: "active", activatedAt: new Date() },
+        });
+
+        // 令相关会话 contextVersion 失效
+        await tx.chatConversation.updateMany({
+          where: { userId: user.id, status: { not: "deleted" } },
+          data: { contextVersion: { increment: 1 } },
+        });
       });
-    });
+    } catch (err) {
+      if (err instanceof PlanDecisionConflictError) {
+        return fail("PLAN_ALREADY_RESOLVED", err.message, 409);
+      }
+      throw err;
+    }
 
     const updated = await db.careerPlan.findUnique({ where: { id: planId } });
     return ok({ new: { id: planId, status: updated?.status ?? "active" } });
   }
 
-  // reject
-  await db.careerPlan.update({
-    where: { id: planId },
+  // reject：原子 CAS，仅 status=pending 时可拒绝
+  const rejected = await db.careerPlan.updateMany({
+    where: { id: planId, userId: user.id, status: "pending" },
     data: { status: "rejected" },
   });
+  if (rejected.count !== 1) {
+    return fail("PLAN_ALREADY_RESOLVED", "计划已被处理，无法重复操作", 409);
+  }
 
   return ok({ rejected: true, planId });
+}
+
+class PlanDecisionConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PlanDecisionConflictError";
+  }
 }
