@@ -9,7 +9,7 @@ CareerMate 是一个基于蚂蚁百宝箱 Agentic 应用、Next.js 与 Prisma �
 - 开放式职业咨询与可追溯的多会话对话
 - 基于个人事实和能力证据的职业画像候选
 - 面向任意职业的探索、比较与方向验证
-- 个性化 3–5 年职业规划、近期行动和学习任务
+- 个性化 3–5 年职业规划，以及独立、可版本化的学习路线
 - 多轮职场情境模拟、评分与能力证据沉淀
 - 简历与作品集事实提取、优化和风险检查
 - 结合计划、进度、训练和市场变化的持续复盘
@@ -89,6 +89,21 @@ AI 提案
 
 无标签 JSON、多个信封、损坏的 JSON、无效 Schema 或版本冲突只能作为可读文本展示，不能创建正式候选，更不能写入正式数据。
 
+### 已落地的数据闭环
+
+- `AgentArtifactCandidate` 保存待确认候选，并支持按状态和候选类型查询。
+- 画像补丁、职业计划、学习路线等产物只有在用户接受后才会进入正式数据。
+- `LearningRoute` 是独立于 `CareerPlan` 的版本化模型；新版本生效时归档旧版本，并以用户与版本号的唯一约束避免重复写入。
+- 职业计划的接受与拒绝使用带用户条件的原子更新，避免重复操作和跨用户访问。
+
+| 接口 | 作用 |
+|---|---|
+| `GET /api/agentic-v2/candidates` | 查询当前用户的候选列表，可按状态或类型过滤 |
+| `GET /api/agentic-v2/candidates/:candidateId` | 查询候选详情 |
+| `POST /api/agentic-v2/candidates/:candidateId/decision` | 接受或拒绝候选 |
+| `GET /api/learning-routes/current` | 读取当前用户最新的有效学习路线 |
+| `POST /api/plans/:planId/decision` | 接受或拒绝待确认职业计划 |
+
 ## 长期记忆
 
 CareerMate 采用分层记忆：
@@ -116,20 +131,35 @@ CareerMate 采用分层记忆：
 前置条件：
 
 - Node.js 20.9+
-- npm；Windows 环境建议使用 `.cmd` 命令
+- npm
 
 ```bash
 git clone <repository-url>
 cd CareerMate
-npm.cmd install
-copy .env.example .env.local
-npm.cmd run prisma:generate
-npm.cmd run db:migrate:deploy
-npm.cmd run seed
-npm.cmd run dev
+npm install
+npm run prisma:generate
+npm run db:migrate:deploy
+npm run seed
+npm run dev
 ```
 
+运行以上命令前，先创建本地环境文件：
+
+```bat
+:: Windows cmd.exe
+copy .env.example .env
+```
+
+```bash
+# macOS / Linux
+cp .env.example .env
+```
+
+Windows 如果遇到 PowerShell 执行策略限制，可将示例中的 `npm` 替换为 `npm.cmd`。
+
 启动后访问 `http://localhost:3000`。种子脚本只提供虚构的本地测试数据；请在本地环境中查看或自行创建测试账户，不要公开共享账户凭据。
+
+`npm run db:migrate:deploy` 会从空库顺序执行仓库内的 Prisma 迁移，其中包括 `LearningRoute` 表及其用户版本唯一索引。已有本地数据库在迁移前建议先备份 `prisma/dev.db`。
 
 ## Mock 与真实百宝箱模式
 
@@ -140,7 +170,7 @@ TBOX_MODE="mock"
 CAREERMATE_AGENTIC_V2="false"
 ```
 
-接入已发布并通过验证的 V2 主 Agent 时，在未提交的 `.env.local` 或部署平台环境变量中配置：
+接入已发布并通过验证的 V2 主 Agent 时，在不会提交的 `.env` 或部署平台环境变量中配置：
 
 ```env
 TBOX_MODE="api"
@@ -154,7 +184,7 @@ STATEFUL_CHAT_TURNS="true"
 TBOX_SEARCH_ENGINE="false"
 ```
 
-`TBOX_API_KEY` 只能存在于服务端环境变量中，禁止添加 `NEXT_PUBLIC_` 前缀，也不要提交 `.env.local`。切换真实模式前，应先在测试环境固定并验收 `agent_id` 与 `agent_version`。
+`TBOX_API_KEY` 只能存在于服务端环境变量中，禁止添加 `NEXT_PUBLIC_` 前缀，也不要提交 `.env`。切换真实模式前，应先在测试环境固定并验收 `agent_id` 与 `agent_version`。
 
 ## 常用命令
 
@@ -188,6 +218,7 @@ src/
 │   └── api/
 │       ├── agentic-v2/       # 候选查询、接受与拒绝接口
 │       ├── chat/             # 对话、消息与 SSE
+│       ├── learning-routes/  # 当前有效学习路线查询
 │       ├── mcp/              # 保留的 MCP 兼容与未来 V2 基础设施
 │       ├── plans/            # 职业计划业务接口
 │       └── profile/          # 画像与证据业务接口
@@ -195,6 +226,7 @@ src/
 └── lib/
     ├── agentic-v2/           # 契约、信封解析、候选生命周期与正式投影
     ├── chat/                 # 脱敏快照、会话状态、流式处理与持久化
+    ├── onboarding-utils.ts   # 客户端安全的 onboarding Schema 与完整度计算
     ├── tbox/                 # 百宝箱客户端、SSE 与响应归一化
     └── ...
 
