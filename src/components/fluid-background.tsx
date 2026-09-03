@@ -12,7 +12,7 @@ import { useMotionSafe } from "@/lib/motion/motion-safe";
  *    (位移+缩放+旋转,yoyo 循环);外壳按深度分层视差响应鼠标——"丰富"的主体
  * 2. 粒子星座:canvas 80 点(移动端 36),开场即全屏散布,缓慢漂移、
  *    近距连线、亮星闪烁;粒子间 36px 内相互排斥防止缩团;
- *    光标 160px 清场:范围内粒子隐藏且被斥开,像拨开星野
+ *    光标 220px 内粒子绕光标环形流转(切向环绕+向平衡环径向靠拢)
  * 3. 流星:每 9-15 秒一颗珊瑚色流星带渐隐尾迹划过,呼应职业轨迹主题
  * 4. 透镜光晕 700px(双色:蓝芯+珊瑚缘):quickTo 0.6s 缓跟光标
  * 5. 光标辉点 64px:0.22s 紧贴
@@ -60,7 +60,8 @@ export function FluidBackground({ variant = "full" }: { variant?: "full" | "calm
     const COUNT = variant === "calm" ? (isMobile ? 18 : 40) : isMobile ? 36 : 80;
     const LINK_DIST = 130;
     const REPEL_DIST = 36;
-    const CLEAR_DIST = 160;
+    const SWIRL_DIST = 220;
+    const SWIRL_RING = 90;
     const TRAIL_LIFE = 1200;
     const TRAIL_MAX = 16;
 
@@ -152,11 +153,7 @@ export function FluidBackground({ variant = "full" }: { variant?: "full" | "calm
             b.vx -= (dx / d) * f;
             b.vy -= (dy / d) * f;
           }
-          // 连线:任一端点在光标清场范围内则不画
-          const inClear =
-            (a.x - mx) * (a.x - mx) + (a.y - my) * (a.y - my) < CLEAR_DIST * CLEAR_DIST ||
-            (b.x - mx) * (b.x - mx) + (b.y - my) * (b.y - my) < CLEAR_DIST * CLEAR_DIST;
-          if (!inClear && d2 < LINK_DIST * LINK_DIST) {
+          if (d2 < LINK_DIST * LINK_DIST) {
             const d = Math.sqrt(d2);
             c2d.strokeStyle = `oklch(56% 0.154 250 / ${(1 - d / LINK_DIST) * 0.2})`;
             c2d.lineWidth = 0.6;
@@ -207,15 +204,19 @@ export function FluidBackground({ variant = "full" }: { variant?: "full" | "calm
 
       // 粒子
       for (const p of particles) {
-        // 鼠标清场:160px 内粒子被斥开,离开范围后恢复漂移
+        // 鼠标流转:220px 内粒子绕光标环形流转
+        // (切向分量驱动环绕,径向分量向平衡环 90px 靠拢,防止塌缩与逃逸)
         const dx = p.x - mx;
         const dy = p.y - my;
         const d2 = dx * dx + dy * dy;
-        const hidden = d2 < CLEAR_DIST * CLEAR_DIST;
-        if (hidden && d2 > 1) {
+        if (d2 > 1 && d2 < SWIRL_DIST * SWIRL_DIST) {
           const d = Math.sqrt(d2);
-          p.vx += (dx / d) * 0.08;
-          p.vy += (dy / d) * 0.08;
+          const t = 1 - d / SWIRL_DIST;
+          const radial = (d - SWIRL_RING) / SWIRL_RING;
+          p.vx += (-dy / d) * 0.05 * t;
+          p.vy += (dx / d) * 0.05 * t;
+          p.vx -= (dx / d) * 0.02 * radial * t;
+          p.vy -= (dy / d) * 0.02 * radial * t;
         }
         p.vx *= 0.985;
         p.vy *= 0.985;
@@ -225,8 +226,6 @@ export function FluidBackground({ variant = "full" }: { variant?: "full" | "calm
         else if (p.x > W + 20) p.x = -20;
         if (p.y < -20) p.y = H + 20;
         else if (p.y > H + 20) p.y = -20;
-        // 清场范围内不绘制(隐藏)
-        if (hidden) continue;
         p.tw += 0.02;
         const alpha = p.bright ? 0.45 + 0.35 * Math.sin(p.tw) : 0.3;
         // 色相流转:基础色相 ±10° 缓慢摆动
