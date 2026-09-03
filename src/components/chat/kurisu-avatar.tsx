@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import gsap from "gsap";
+import { useMotionSafe } from "@/lib/motion/motion-safe";
 
 interface KurisuAvatarProps {
   streaming?: boolean;
@@ -14,10 +16,34 @@ export function KurisuAvatar({ streaming = false, phase = "idle" }: KurisuAvatar
   const [modelReady, setModelReady] = useState(false);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevPhaseRef = useRef<"idle" | "waiting" | "speaking">("idle");
+  const containerRef = useRef<HTMLDivElement>(null);
+  const motionSafe = useMotionSafe();
 
   useEffect(() => () => {
     if (pollTimerRef.current) clearInterval(pollTimerRef.current);
   }, []);
+
+  // 呼吸浮动:仅 idle/waiting 时轻浮;speaking 时容器不动(Live2D 自带说话动作)
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || !motionSafe || phase === "speaking") return;
+    const float = gsap.to(el, { y: -6, duration: 2.6, ease: "sine.inOut", yoyo: true, repeat: -1 });
+    return () => {
+      float.kill();
+      gsap.set(el, { y: 0 });
+    };
+  }, [phase, motionSafe]);
+
+  // waiting(思考)时的轻微倾斜
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || !motionSafe || phase !== "waiting") return;
+    const tilt = gsap.to(el, { rotation: 1.5, duration: 0.8, ease: "sine.inOut", yoyo: true, repeat: 3 });
+    return () => {
+      tilt.kill();
+      gsap.set(el, { rotation: 0 });
+    };
+  }, [phase, motionSafe]);
 
   useEffect(() => {
     if (!modelReady) return;
@@ -53,7 +79,7 @@ export function KurisuAvatar({ streaming = false, phase = "idle" }: KurisuAvatar
   }, [phase, modelReady, streaming]);
 
   return (
-    <div className="kurisu-avatar" aria-hidden="true">
+    <div ref={containerRef} className="kurisu-avatar" aria-hidden="true">
       <iframe
         ref={iframeRef}
         className="kurisu-avatar-frame"
