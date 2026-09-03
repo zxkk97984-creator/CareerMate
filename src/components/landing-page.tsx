@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { LandingMotion } from "@/components/landing-motion";
 import { InteractiveBackground } from "@/components/interactive-background";
 import {
   ArrowRight,
@@ -60,6 +61,7 @@ export function LandingPage() {
       </nav>
 
       {/* Hero */}
+      <LandingMotion>
       <section className="landing-new-hero">
         <div className="landing-new-hero-copy">
           <div className="landing-new-badge">
@@ -116,6 +118,7 @@ export function LandingPage() {
 
         </div>
       </section>
+      </LandingMotion>
 
       {/* 功能卡片 */}
       <section className="landing-new-section" id="features">
