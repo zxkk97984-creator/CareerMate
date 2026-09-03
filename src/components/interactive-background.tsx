@@ -2,14 +2,17 @@
 
 import { useEffect, useRef } from "react";
 import gsap from "gsap";
+import { useMotionSafe } from "@/lib/motion/motion-safe";
 
 /** 随鼠标指针平滑移动的动态背景层：柔光 + 网格视差（GSAP 驱动） */
 export function InteractiveBackground() {
   const ref = useRef<HTMLDivElement>(null);
+  const motionSafe = useMotionSafe();
 
   useEffect(() => {
     const el = ref.current;
-    if (!el) return;
+    // 动效关闭时保持静态,不挂 mousemove、不建 tween
+    if (!el || !motionSafe) return;
 
     const state = { x: 0, y: 0 };
     let tween: gsap.core.Tween | null = null;
@@ -36,7 +39,7 @@ export function InteractiveBackground() {
       window.removeEventListener("mousemove", onMove);
       tween?.kill();
     };
-  }, []);
+  }, [motionSafe]);
 
   return (
     <div ref={ref} className="interactive-bg" aria-hidden="true">
