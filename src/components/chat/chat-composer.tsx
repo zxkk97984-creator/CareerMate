@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import gsap from "gsap";
 import { Send, Square } from "lucide-react";
+import { useMotionSafe } from "@/lib/motion/motion-safe";
 
 interface ChatComposerProps {
   onSend: (text: string) => void;
@@ -12,17 +14,23 @@ interface ChatComposerProps {
 export function ChatComposer({ onSend, disabled }: ChatComposerProps) {
   const [text, setText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const sendBtnRef = useRef<HTMLButtonElement>(null);
+  const motionSafe = useMotionSafe();
 
   const handleSend = useCallback(() => {
     const trimmed = text.trim();
     if (!trimmed || trimmed.length > 8000) return;
     onSend(trimmed);
+    const btn = sendBtnRef.current;
+    if (btn && motionSafe) {
+      gsap.fromTo(btn, { scale: 1 }, { scale: 1.03, duration: 0.15, ease: "power2.out", yoyo: true, repeat: 1 });
+    }
     setText("");
     // 重置高度
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
-  }, [text, onSend]);
+  }, [text, onSend, motionSafe]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -42,6 +50,18 @@ export function ChatComposer({ onSend, disabled }: ChatComposerProps) {
     }
   }, []);
 
+  const pressSend = useCallback(() => {
+    const el = sendBtnRef.current;
+    if (!el || !motionSafe) return;
+    gsap.to(el, { scale: 0.96, duration: 0.18, ease: "power2.out" });
+  }, [motionSafe]);
+
+  const releaseSend = useCallback(() => {
+    const el = sendBtnRef.current;
+    if (!el || !motionSafe) return;
+    gsap.to(el, { scale: 1, duration: 0.22, ease: "back.out(1.4)" });
+  }, [motionSafe]);
+
   return (
     <div className="chat-composer">
       <div className="composer-wrapper">
@@ -58,8 +78,12 @@ export function ChatComposer({ onSend, disabled }: ChatComposerProps) {
           aria-label="输入消息"
         />
         <button
+          ref={sendBtnRef}
           className="send-btn"
           onClick={handleSend}
+          onPointerDown={pressSend}
+          onPointerUp={releaseSend}
+          onPointerLeave={releaseSend}
           disabled={!text.trim() || disabled || text.trim().length > 8000}
           aria-label={disabled ? "停止生成" : "发送消息"}
         >
