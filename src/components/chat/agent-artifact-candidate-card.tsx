@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { CheckCircle, XCircle, ChevronDown, ChevronUp } from "lucide-react";
+import { playSettle } from "@/lib/motion/settle";
 
 interface AgentArtifactCandidateCardProps {
   candidateId: string;
@@ -58,6 +59,7 @@ export function AgentArtifactCandidateCard({
   const [detail, setDetail] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(false);
   const [deciding, setDeciding] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   const isPending = status === "pending";
   const typeLabel = CANDIDATE_TYPE_LABELS[candidateType] ?? candidateType;
@@ -105,6 +107,7 @@ export function AgentArtifactCandidateCard({
         return;
       }
       setStatus(body.data.status);
+      playSettle(rootRef.current);
     } catch {
       setError("网络错误，请重试");
     } finally {
@@ -115,7 +118,7 @@ export function AgentArtifactCandidateCard({
   const art = detail?.artifact as Record<string, unknown> | undefined;
 
   return (
-    <div className="agent-candidate-card border border-[var(--cm-border)] rounded-xl p-4 my-2 bg-[var(--cm-surface)] shadow-[var(--cm-shadow-card)]">
+    <div ref={rootRef} className="agent-candidate-card border border-[var(--cm-border)] rounded-xl p-4 my-2 bg-[var(--cm-surface)] shadow-[var(--cm-shadow-card)]">
       <div className="flex items-center gap-2 flex-wrap mb-2">
         <span className="px-2 py-0.5 text-xs rounded-full bg-[var(--cm-tint-brand)] text-[var(--cm-brand-ink)]">{typeLabel}</span>
         <span className="px-2 py-0.5 text-xs rounded-full bg-[var(--cm-surface-soft)] text-[var(--cm-text-muted)]">{taskLabel}</span>

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { playSettle } from "@/lib/motion/settle";
 import { ArrowRight, Calendar, Target, Layers, RefreshCw, Plus, Minus } from "lucide-react";
 
 // ── Types ────────────────────────────────────────────────
@@ -70,6 +71,11 @@ export function PlanSummaryCard({
   const [loading, setLoading] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState("");
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (confirmed) playSettle(rootRef.current);
+  }, [confirmed]);
 
   const isV2 = (plan.schemaVersion ?? 1) >= 2;
   const v2 = useMemo(() => isV2 ? parsePlanV2(plan.content ?? null) : null, [isV2, plan.content]);
@@ -111,6 +117,7 @@ export function PlanSummaryCard({
 
   return (
     <div
+      ref={rootRef}
       className={`rounded-xl border p-4 text-sm ${
         isPending
           ? "border-[var(--cm-warning)] bg-[var(--cm-warning-bg)]"

@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import { playExitFade } from "@/lib/motion/settle";
 
 // ── 类型 ────────────────────────────────────────
 
@@ -37,15 +38,20 @@ export function MemoryProposalCard({
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(content);
   const [currentStatus, setCurrentStatus] = useState(status);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   const handleAccept = useCallback(() => {
-    setCurrentStatus("confirmed");
-    onAccept(memoryId);
+    playExitFade(rootRef.current, () => {
+      setCurrentStatus("confirmed");
+      onAccept(memoryId);
+    });
   }, [memoryId, onAccept]);
 
   const handleReject = useCallback(() => {
-    setCurrentStatus("rejected");
-    onReject(memoryId);
+    playExitFade(rootRef.current, () => {
+      setCurrentStatus("rejected");
+      onReject(memoryId);
+    });
   }, [memoryId, onReject]);
 
   const handleSaveEdit = useCallback(() => {
@@ -60,6 +66,7 @@ export function MemoryProposalCard({
 
   return (
     <div
+      ref={rootRef}
       data-testid="memory-proposal-card"
       data-memory-id={memoryId}
       data-kind={kind}

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { playSettle } from "@/lib/motion/settle";
 import { FileText, CheckCircle } from "lucide-react";
 import type { ExplorationSource } from "@/lib/careers/exploration-schema";
 
@@ -28,6 +29,11 @@ export function ExplorationReportCard({
   const isSubmitted = report.status === "submitted";
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isSubmitted) playSettle(rootRef.current);
+  }, [isSubmitted]);
 
   async function submit() {
     if (!onSubmit || submitting) return;
@@ -44,6 +50,7 @@ export function ExplorationReportCard({
 
   return (
     <div
+      ref={rootRef}
       className="rounded-xl border border-[var(--cm-border)] bg-[var(--cm-surface)] p-4 text-sm"
       role="region"
       aria-label={`${report.roleName} 职业探索报告`}

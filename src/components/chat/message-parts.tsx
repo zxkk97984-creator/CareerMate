@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { ChatMessagePart } from "@/lib/chat/persistence";
+import { Reveal } from "@/components/ui/reveal";
 import { AlertCircle, UserCheck, Map, Compass, Link2, BookOpenCheck, Globe2, Sparkles } from "lucide-react";
 import { ProfileCandidateCard } from "./profile-candidate-card";
 import { PlanSummaryCard } from "./plan-summary-card";
@@ -359,20 +360,36 @@ export function MessageParts({ parts, onQuickAction }: MessagePartsProps) {
           case "citations":
             return <CitationList key={index} items={part as ChatMessagePart & { type: "citations" }} />;
           case "profile_candidate_ref":
-            return <ProfileCandidateRef key={index} candidateId={(part as ChatMessagePart & { type: "profile_candidate_ref" }).candidateId} />;
+            return (
+              <Reveal variant="card" delay={index * 0.06}>
+                <ProfileCandidateRef key={index} candidateId={(part as ChatMessagePart & { type: "profile_candidate_ref" }).candidateId} />
+              </Reveal>
+            );
           case "plan_ref": {
             const p = part as ChatMessagePart & { type: "plan_ref" };
-            return <PlanRef key={index} planId={p.planId} version={p.version} />;
+            return (
+              <Reveal variant="card" delay={index * 0.06}>
+                <PlanRef key={index} planId={p.planId} version={p.version} />
+              </Reveal>
+            );
           }
           case "exploration_report_ref":
-            return <ExplorationReportRef key={index} reportId={(part as ChatMessagePart & { type: "exploration_report_ref" }).reportId} />;
+            return (
+              <Reveal variant="card" delay={index * 0.06}>
+                <ExplorationReportRef key={index} reportId={(part as ChatMessagePart & { type: "exploration_report_ref" }).reportId} />
+              </Reveal>
+            );
           case "error": {
             const e = part as ChatMessagePart & { type: "error" };
             return <ErrorPart key={index} code={e.code} message={e.message} />;
           }
           case "memory_ref": {
             const m = part as ChatMessagePart & { type: "memory_ref" };
-            return <MemoryRef key={index} memoryId={m.memoryId} />;
+            return (
+              <Reveal variant="card" delay={index * 0.06}>
+                <MemoryRef key={index} memoryId={m.memoryId} />
+              </Reveal>
+            );
           }
           case "quick_actions": {
             const q = part as ChatMessagePart & { type: "quick_actions" };
@@ -392,13 +409,15 @@ export function MessageParts({ parts, onQuickAction }: MessagePartsProps) {
           case "agent_artifact_candidate_ref": {
             const a = part as ChatMessagePart & { type: "agent_artifact_candidate_ref" };
             return (
-              <AgentArtifactCandidateCard
-                key={index}
-                candidateId={a.candidateId}
-                candidateType={a.candidateType}
-                taskType={a.taskType}
-                summary={a.summary}
-              />
+              <Reveal variant="card" delay={index * 0.06}>
+                <AgentArtifactCandidateCard
+                  key={index}
+                  candidateId={a.candidateId}
+                  candidateType={a.candidateType}
+                  taskType={a.taskType}
+                  summary={a.summary}
+                />
+              </Reveal>
             );
           }
           case "text":

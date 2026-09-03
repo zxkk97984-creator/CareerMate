@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { playSettle } from "@/lib/motion/settle";
 import { abilityLabels, type AbilityKey } from "@/lib/types";
 
 // ── 字段中文映射 ────────────────────────────────────────
@@ -60,6 +61,11 @@ export function ProfileCandidateCard({
   );
   const [editError, setEditError] = useState("");
   const [actionError, setActionError] = useState("");
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (status !== "pending") playSettle(rootRef.current);
+  }, [status]);
 
   const fieldName = fieldLabels[candidate.field] ?? candidate.field;
 
@@ -108,125 +114,125 @@ export function ProfileCandidateCard({
     void handleAction("edit", value);
   }
 
-  // 已处理状态：简洁展示
-  if (status !== "pending") {
-    return (
-      <div
-        className={`rounded-xl border p-4 text-sm ${
-          status === "accepted"
-            ? "border-[var(--cm-border)] bg-[var(--cm-success-bg)]"
-            : "border-[var(--cm-border)] bg-[var(--cm-surface-soft)]"
-        }`}
-        role="region"
-        aria-label={`${fieldName}候选更新`}
-      >
-        <div className="flex items-center gap-2">
-          <span className="font-medium text-[var(--cm-text-strong)]">{fieldName}</span>
-          <span className="text-xs text-[var(--cm-text-muted)]">
-            {status === "accepted" ? "✅ 已确认" : "❌ 已忽略"}
-          </span>
-        </div>
-        <span className="text-xs text-[var(--cm-text-muted)]">{formatValue(displayValue)}</span>
-      </div>
-    );
-  }
-
-  // 待确认状态：完整信息 + 操作按钮
   return (
-    <div
-      className="rounded-xl border border-[var(--cm-border-strong)] bg-[var(--cm-surface)] p-4 text-sm"
-      role="region"
-      aria-label={`${fieldName}候选更新`}
-    >
-      {/* 字段名 + 置信度 */}
-      <div className="flex items-center justify-between mb-2">
-        <span className="font-semibold text-[var(--cm-text-strong)]">{fieldName}</span>
-        <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--cm-tint-brand)] text-[var(--cm-brand-ink)]">
-          置信度 {Math.round(candidate.confidence * 100)}%
-        </span>
-      </div>
-
-      {/* 旧值 → 新值 */}
-      <div className="flex items-center gap-2 text-xs text-[var(--cm-text-muted)] mb-2">
-        <span className="line-through">{formatValue(candidate.oldValue)}</span>
-        <span>→</span>
-        <span className="font-medium text-[var(--cm-text-strong)]">
-          {formatValue(candidate.newValue)}
-        </span>
-      </div>
-
-      {/* 原文依据 */}
-      {candidate.evidenceExcerpt && (
-        <blockquote className="text-xs text-[var(--cm-text-muted)] border-l-2 border-[var(--cm-border-strong)] pl-2 mb-2">
-          &ldquo;{candidate.evidenceExcerpt}&rdquo;
-        </blockquote>
-      )}
-
-      {/* 依据说明 */}
-      <p className="text-xs text-[var(--cm-text-muted)] mb-2">{candidate.reason}</p>
-
-      {/* 计划影响 */}
-      {candidate.impactSummary && (
-        <p className="text-xs text-[var(--cm-info)] mb-3">
-          📋 {candidate.impactSummary}
-        </p>
-      )}
-
-      {/* 操作按钮 */}
-      {editing && (
-        <div className="mb-3">
-          <input
-            value={editValue}
-            onChange={(event) => setEditValue(event.target.value)}
-            className="w-full rounded-lg border border-[var(--cm-border-strong)] bg-[var(--cm-surface)] px-3 py-2 text-xs text-[var(--cm-text-strong)] outline-none focus:border-[var(--cm-brand)]"
-            aria-label={`修改${fieldName}`}
-          />
-          {editError && <p className="mt-1 text-xs text-[var(--cm-danger)]">{editError}</p>}
-        </div>
-      )}
-      <div className="flex gap-2" role="group" aria-label="候选操作">
-        <button
-          onClick={() => handleAction("accept")}
-          disabled={loading}
-          className="px-3 py-1.5 text-xs rounded-lg bg-[var(--cm-gradient-brand)] text-white hover:brightness-95 disabled:opacity-50 transition-colors"
+    <div ref={rootRef}>
+      {status !== "pending" ? (
+        // 已处理状态：简洁展示
+        <div
+          className={`rounded-xl border p-4 text-sm ${
+            status === "accepted"
+              ? "border-[var(--cm-border)] bg-[var(--cm-success-bg)]"
+              : "border-[var(--cm-border)] bg-[var(--cm-surface-soft)]"
+          }`}
+          role="region"
+          aria-label={`${fieldName}候选更新`}
         >
-          确认
-        </button>
-        {editing ? (
-          <>
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-[var(--cm-text-strong)]">{fieldName}</span>
+            <span className="text-xs text-[var(--cm-text-muted)]">
+              {status === "accepted" ? "✅ 已确认" : "❌ 已忽略"}
+            </span>
+          </div>
+          <span className="text-xs text-[var(--cm-text-muted)]">{formatValue(displayValue)}</span>
+        </div>
+      ) : (
+        // 待确认状态：完整信息 + 操作按钮
+        <div
+          className="rounded-xl border border-[var(--cm-border-strong)] bg-[var(--cm-surface)] p-4 text-sm"
+          role="region"
+          aria-label={`${fieldName}候选更新`}
+        >
+          {/* 字段名 + 置信度 */}
+          <div className="flex items-center justify-between mb-2">
+            <span className="font-semibold text-[var(--cm-text-strong)]">{fieldName}</span>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--cm-tint-brand)] text-[var(--cm-brand-ink)]">
+              置信度 {Math.round(candidate.confidence * 100)}%
+            </span>
+          </div>
+
+          {/* 旧值 → 新值 */}
+          <div className="flex items-center gap-2 text-xs text-[var(--cm-text-muted)] mb-2">
+            <span className="line-through">{formatValue(candidate.oldValue)}</span>
+            <span>→</span>
+            <span className="font-medium text-[var(--cm-text-strong)]">
+              {formatValue(candidate.newValue)}
+            </span>
+          </div>
+
+          {/* 原文依据 */}
+          {candidate.evidenceExcerpt && (
+            <blockquote className="text-xs text-[var(--cm-text-muted)] border-l-2 border-[var(--cm-border-strong)] pl-2 mb-2">
+              &ldquo;{candidate.evidenceExcerpt}&rdquo;
+            </blockquote>
+          )}
+
+          {/* 依据说明 */}
+          <p className="text-xs text-[var(--cm-text-muted)] mb-2">{candidate.reason}</p>
+
+          {/* 计划影响 */}
+          {candidate.impactSummary && (
+            <p className="text-xs text-[var(--cm-info)] mb-3">
+              📋 {candidate.impactSummary}
+            </p>
+          )}
+
+          {/* 操作按钮 */}
+          {editing && (
+            <div className="mb-3">
+              <input
+                value={editValue}
+                onChange={(event) => setEditValue(event.target.value)}
+                className="w-full rounded-lg border border-[var(--cm-border-strong)] bg-[var(--cm-surface)] px-3 py-2 text-xs text-[var(--cm-text-strong)] outline-none focus:border-[var(--cm-brand)]"
+                aria-label={`修改${fieldName}`}
+              />
+              {editError && <p className="mt-1 text-xs text-[var(--cm-danger)]">{editError}</p>}
+            </div>
+          )}
+          <div className="flex gap-2" role="group" aria-label="候选操作">
             <button
-              onClick={submitEdit}
+              onClick={() => handleAction("accept")}
               disabled={loading}
-              className="px-3 py-1.5 text-xs rounded-lg bg-[var(--cm-info)] text-white hover:brightness-95 disabled:opacity-50 transition-colors"
+              className="px-3 py-1.5 text-xs rounded-lg bg-[var(--cm-gradient-brand)] text-white hover:brightness-95 disabled:opacity-50 transition-colors"
             >
-              确认修改
+              确认
             </button>
+            {editing ? (
+              <>
+                <button
+                  onClick={submitEdit}
+                  disabled={loading}
+                  className="px-3 py-1.5 text-xs rounded-lg bg-[var(--cm-info)] text-white hover:brightness-95 disabled:opacity-50 transition-colors"
+                >
+                  确认修改
+                </button>
+                <button
+                  onClick={() => setEditing(false)}
+                  disabled={loading}
+                  className="px-3 py-1.5 text-xs rounded-lg bg-[var(--cm-surface-soft)] text-[var(--cm-text-muted)] hover:bg-[var(--cm-surface-sunken)] disabled:opacity-50 transition-colors"
+                >
+                  取消
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => setEditing(true)}
+                disabled={loading}
+                className="px-3 py-1.5 text-xs rounded-lg bg-[var(--cm-tint-brand)] text-[var(--cm-brand-ink)] hover:brightness-95 disabled:opacity-50 transition-colors"
+              >
+                修改
+              </button>
+            )}
             <button
-              onClick={() => setEditing(false)}
+              onClick={() => handleAction("reject")}
               disabled={loading}
               className="px-3 py-1.5 text-xs rounded-lg bg-[var(--cm-surface-soft)] text-[var(--cm-text-muted)] hover:bg-[var(--cm-surface-sunken)] disabled:opacity-50 transition-colors"
             >
-              取消
+              忽略
             </button>
-          </>
-        ) : (
-          <button
-            onClick={() => setEditing(true)}
-            disabled={loading}
-            className="px-3 py-1.5 text-xs rounded-lg bg-[var(--cm-tint-brand)] text-[var(--cm-brand-ink)] hover:brightness-95 disabled:opacity-50 transition-colors"
-          >
-            修改
-          </button>
-        )}
-        <button
-          onClick={() => handleAction("reject")}
-          disabled={loading}
-          className="px-3 py-1.5 text-xs rounded-lg bg-[var(--cm-surface-soft)] text-[var(--cm-text-muted)] hover:bg-[var(--cm-surface-sunken)] disabled:opacity-50 transition-colors"
-        >
-          忽略
-        </button>
-      </div>
-      {actionError ? <p className="mt-2 text-xs text-[var(--cm-danger)]" role="alert">{actionError}</p> : null}
+          </div>
+          {actionError ? <p className="mt-2 text-xs text-[var(--cm-danger)]" role="alert">{actionError}</p> : null}
+        </div>
+      )}
     </div>
   );
 }
