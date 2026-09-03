@@ -10,9 +10,9 @@ import { useMotionSafe } from "@/lib/motion/motion-safe";
  * 层级(由深到浅):
  * 1. 五光斑极光:天蓝/青/珊瑚三色阶大柔光斑,不同尺寸,22-36s 反向 morph
  *    (位移+缩放+旋转,yoyo 循环);外壳按深度分层视差响应鼠标——"丰富"的主体
- * 2. 粒子星座:canvas 80 点(移动端 36),开场从画面中心 bloom 绽放,
- *    缓慢漂移、近距连线、亮星闪烁;粒子间 36px 内相互排斥防止缩团;
- *    鼠标 260px 内引力吸引并环绕光标,220px 内被"点亮"(变亮变大)
+ * 2. 粒子星座:canvas 80 点(移动端 36),开场即全屏散布,缓慢漂移、
+ *    近距连线、亮星闪烁;粒子间 36px 内相互排斥防止缩团;
+ *    光标 160px 清场:范围内粒子隐藏且被斥开,像拨开星野
  * 3. 流星:每 9-15 秒一颗珊瑚色流星带渐隐尾迹划过,呼应职业轨迹主题
  * 4. 透镜光晕 700px(双色:蓝芯+珊瑚缘):quickTo 0.6s 缓跟光标
  * 5. 光标辉点 64px:0.22s 紧贴
@@ -60,7 +60,7 @@ export function FluidBackground({ variant = "full" }: { variant?: "full" | "calm
     const COUNT = variant === "calm" ? (isMobile ? 18 : 40) : isMobile ? 36 : 80;
     const LINK_DIST = 130;
     const REPEL_DIST = 36;
-    const LIGHT_DIST = 220;
+    const CLEAR_DIST = 160;
     const TRAIL_LIFE = 1200;
     const TRAIL_MAX = 16;
 
@@ -74,12 +74,12 @@ export function FluidBackground({ variant = "full" }: { variant?: "full" | "calm
       bright: boolean;
       hueBase: number;
     }
-    // 开场 bloom:粒子从画面中心小团绽放,靠粒子间斥力自然散开
+    // 开场即全屏散布,不做中心聚集
     const particles: Particle[] = Array.from({ length: COUNT }, () => ({
-      x: W / 2 + (Math.random() - 0.5) * 160,
-      y: H / 2 + (Math.random() - 0.5) * 160,
-      vx: (Math.random() - 0.5) * 0.12,
-      vy: (Math.random() - 0.5) * 0.12,
+      x: Math.random() * W,
+      y: Math.random() * H,
+      vx: (Math.random() - 0.5) * 0.24,
+      vy: (Math.random() - 0.5) * 0.24,
       r: 0.6 + Math.random() * 1.6,
       tw: Math.random() * Math.PI * 2,
       bright: Math.random() < 0.18,
@@ -115,7 +115,6 @@ export function FluidBackground({ variant = "full" }: { variant?: "full" | "calm
 
     let mx = -1e4;
     let my = -1e4;
-    const ATTRACT_DIST = 260;
     let raf = 0;
     let visible = true;
     let paused = document.hidden;
@@ -153,7 +152,11 @@ export function FluidBackground({ variant = "full" }: { variant?: "full" | "calm
             b.vx -= (dx / d) * f;
             b.vy -= (dy / d) * f;
           }
-          if (d2 < LINK_DIST * LINK_DIST) {
+          // 连线:任一端点在光标清场范围内则不画
+          const inClear =
+            (a.x - mx) * (a.x - mx) + (a.y - my) * (a.y - my) < CLEAR_DIST * CLEAR_DIST ||
+            (b.x - mx) * (b.x - mx) + (b.y - my) * (b.y - my) < CLEAR_DIST * CLEAR_DIST;
+          if (!inClear && d2 < LINK_DIST * LINK_DIST) {
             const d = Math.sqrt(d2);
             c2d.strokeStyle = `oklch(56% 0.154 250 / ${(1 - d / LINK_DIST) * 0.2})`;
             c2d.lineWidth = 0.6;
@@ -204,16 +207,15 @@ export function FluidBackground({ variant = "full" }: { variant?: "full" | "calm
 
       // 粒子
       for (const p of particles) {
-        // 鼠标引力:260px 内粒子被吸向光标,叠加轻微切向分量形成环绕
-        const dx = mx - p.x;
-        const dy = my - p.y;
+        // 鼠标清场:160px 内粒子被斥开,离开范围后恢复漂移
+        const dx = p.x - mx;
+        const dy = p.y - my;
         const d2 = dx * dx + dy * dy;
-        if (d2 > 1 && d2 < ATTRACT_DIST * ATTRACT_DIST) {
+        const hidden = d2 < CLEAR_DIST * CLEAR_DIST;
+        if (hidden && d2 > 1) {
           const d = Math.sqrt(d2);
-          p.vx += (dx / d) * 0.02;
-          p.vy += (dy / d) * 0.02;
-          p.vx += (-dy / d) * 0.01;
-          p.vy += (dx / d) * 0.01;
+          p.vx += (dx / d) * 0.08;
+          p.vy += (dy / d) * 0.08;
         }
         p.vx *= 0.985;
         p.vy *= 0.985;
@@ -223,18 +225,17 @@ export function FluidBackground({ variant = "full" }: { variant?: "full" | "calm
         else if (p.x > W + 20) p.x = -20;
         if (p.y < -20) p.y = H + 20;
         else if (p.y > H + 20) p.y = -20;
+        // 清场范围内不绘制(隐藏)
+        if (hidden) continue;
         p.tw += 0.02;
-        // 光标点亮:220px 内粒子变亮变大,像被透镜照到
-        const lightBoost = Math.max(0, 1 - Math.sqrt(d2) / LIGHT_DIST);
-        const alpha =
-          (p.bright ? 0.45 + 0.35 * Math.sin(p.tw) : 0.3) * (1 + lightBoost * 1.1);
+        const alpha = p.bright ? 0.45 + 0.35 * Math.sin(p.tw) : 0.3;
         // 色相流转:基础色相 ±10° 缓慢摆动
         const hue = p.hueBase + Math.sin(performance.now() * 0.00008 + p.tw * 2) * 10;
         c2d.fillStyle = p.bright
           ? `oklch(66% 0.165 ${hue} / ${alpha})`
           : `oklch(56% 0.154 ${hue} / ${alpha})`;
         c2d.beginPath();
-        c2d.arc(p.x, p.y, p.r * (1 + lightBoost * 0.6), 0, Math.PI * 2);
+        c2d.arc(p.x, p.y, p.r, 0, Math.PI * 2);
         c2d.fill();
       }
 
