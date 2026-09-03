@@ -77,3 +77,4 @@ src/agentic-v2/skills/*.zip
 # Scratch scripts
 work/
 .env.bak-*
+.superpowers/
