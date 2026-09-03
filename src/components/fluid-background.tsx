@@ -10,7 +10,7 @@ import { useMotionSafe } from "@/lib/motion/motion-safe";
  * 层级(由深到浅):
  * 1. 五光斑极光:天蓝/青/珊瑚三色阶大柔光斑,不同尺寸,22-36s 反向 morph
  *    (位移+缩放+旋转,yoyo 循环);外壳按深度分层视差响应鼠标——"丰富"的主体
- * 2. 粒子星座:canvas 80 点(移动端 36),开场即全屏散布,缓慢漂移、
+ * 2. 粒子星座:canvas 110 点(移动端 50),开场即全屏散布,缓慢漂移、
  *    近距连线、亮星闪烁;粒子间 36px 内相互排斥防止缩团;
  *    光标 220px 内粒子绕光标环形流转(切向环绕+向平衡环径向靠拢)
  * 3. 流星:每 9-15 秒一颗珊瑚色流星带渐隐尾迹划过,呼应职业轨迹主题
@@ -57,7 +57,7 @@ export function FluidBackground({ variant = "full" }: { variant?: "full" | "calm
     window.addEventListener("resize", resize);
 
     const isMobile = window.matchMedia("(max-width: 768px)").matches;
-    const COUNT = variant === "calm" ? (isMobile ? 18 : 40) : isMobile ? 36 : 80;
+    const COUNT = variant === "calm" ? (isMobile ? 24 : 55) : isMobile ? 50 : 110;
     const LINK_DIST = 130;
     const REPEL_DIST = 36;
     const SWIRL_DIST = 220;
