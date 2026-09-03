@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { InteractiveBackground } from "@/components/interactive-background";
+import { FluidBackground } from "@/components/fluid-background";
 import { BriefcaseBusiness, Eye, EyeOff, Lock, Map, MessagesSquare, UserRound } from "lucide-react";
 
 type Mode = "login" | "register";
@@ -90,7 +90,7 @@ export function LoginForm() {
 
   return (
     <main className="login-page">
-      <InteractiveBackground />
+      <FluidBackground />
       <div className="login-grid" data-od-id="login-layout">
         {/* ── 卡片上方品牌区 ─────────────────────────── */}
         <div className="login-head">

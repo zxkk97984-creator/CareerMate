@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { LandingMotion } from "@/components/landing-motion";
-import { InteractiveBackground } from "@/components/interactive-background";
+import { FluidBackground } from "@/components/fluid-background";
 import {
   ArrowRight,
   BriefcaseBusiness,
@@ -39,7 +39,7 @@ const steps = [
 export function LandingPage() {
   return (
     <main className="landing-new">
-      <InteractiveBackground />
+      <FluidBackground />
       {/* 背景装饰：斜向方块 */}
       <span className="landing-shape landing-shape-1" aria-hidden="true" />
 
