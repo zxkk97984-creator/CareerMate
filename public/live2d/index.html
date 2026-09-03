@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="light" />
+<meta name="theme-color" content="#f8f8fb" />
+<title>Kurisu | CareerMate</title>
+<meta name="description" content="CareerMate 的 AI 陪伴形象 Kurisu Live2D 查看台，可在聊天中实时对话，也可独立拖拽与触发动作。" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23000'/%3E%3Ccircle cx='16' cy='16' r='6' fill='%23fff'/%3E%3C/svg%3E" />
+<style>
+  /* ============================================================
+     CareerMate v14「克制现代」— Kurisu Live2D 宿主页
+     嵌入模式（聊天 iframe）：透明背景，仅模型与最小状态提示
+     独立模式（查看/调试）：中性画布 + 品牌眉标 + 操作提示
+     ============================================================ */
+  :root {
+    --cm-canvas: oklch(98.4% 0.004 250);
+    --cm-surface: oklch(100% 0 0);
+    --cm-text-strong: oklch(22% 0.016 262);
+    --cm-text-muted: oklch(46.5% 0.016 262);
+    --cm-text-subtle: oklch(58% 0.014 262);
+    --cm-border: oklch(22% 0.016 262 / 0.09);
+    --cm-border-strong: oklch(22% 0.016 262 / 0.16);
+    --cm-brand: oklch(52% 0.185 262);
+    --cm-brand-hover: oklch(46.5% 0.175 262);
+    --cm-tint-brand: oklch(52% 0.185 262 / 0.08);
+    --cm-font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+      "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC",
+      ui-sans-serif, system-ui, sans-serif;
+    --cm-font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+    --cm-ease: cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    background: transparent;              /* 嵌入模式：透明 */
+  }
+
+  body.is-standalone {
+    background: var(--cm-canvas);
+  }
+
+  body {
+    font-family: var(--cm-font-sans);
+    color: var(--cm-text-strong);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  canvas { display: block; opacity: 0; transition: opacity 0.45s var(--cm-ease); }
+  body[data-state="ready"] canvas { opacity: 1; }
+
+  /* ── 状态层（加载 / 错误）────────────────────── */
+  #cm-status {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  .st-screen {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    text-align: center;
+    max-width: 260px;
+    padding: 0 20px;
+  }
+
+  body[data-state="loading"] .st-loading,
+  body[data-state="error"] .st-error { display: flex; }
+
+  body[data-state="ready"] #cm-status { display: none; }
+
+  /* 加载点：主色呼吸 */
+  .st-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--cm-brand);
+    animation: cm-breath 1.4s var(--cm-ease) infinite;
+  }
+
+  /* 错误态：圆点转为静态、褪色，避免与加载态混淆 */
+  body[data-state="error"] .st-dot {
+    animation: none;
+    opacity: 0.45;
+    background: var(--cm-text-muted);
+  }
+
+  @keyframes cm-breath {
+    0%, 100% { opacity: 0.35; transform: scale(0.85); }
+    50% { opacity: 1; transform: scale(1); }
+  }
+
+  .st-caption {
+    margin: 0;
+    font-size: 12.5px;
+    line-height: 1.5;
+    letter-spacing: 0.01em;
+    color: var(--cm-text-muted);
+  }
+
+  .st-error-title {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--cm-text-strong);
+  }
+
+  .st-error-sub {
+    margin: 0;
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: var(--cm-text-muted);
+  }
+
+  .st-retry {
+    margin-top: 4px;
+    min-height: 44px;
+    padding: 0 18px;
+    border: 1px solid var(--cm-border-strong);
+    border-radius: 12px;
+    background: var(--cm-surface);
+    color: var(--cm-text-strong);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    pointer-events: auto;
+    cursor: pointer;
+    transition:
+      transform 0.18s var(--cm-ease),
+      box-shadow 0.18s var(--cm-ease),
+      background 0.15s ease;
+  }
+
+  .st-retry:hover {
+    background: var(--cm-tint-brand);
+    border-color: oklch(52% 0.185 262 / 0.45);
+    transform: translateY(-1px);
+  }
+
+  .st-retry:active { transform: scale(0.98); }
+
+  .st-retry:focus-visible {
+    outline: 2px solid var(--cm-brand);
+    outline-offset: 2px;
+  }
+
+  /* ── 独立模式：底部眉标 / 操作提示 ────────────── */
+  .cm-chrome {
+    display: none;
+    position: fixed;
+    left: 18px;
+    right: 18px;
+    bottom: 14px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    z-index: 5;
+  }
+
+  body.is-standalone[data-state="ready"] .cm-chrome { display: flex; }
+
+  .cm-hint {
+    margin: 0;
+    font-family: var(--cm-font-mono);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    color: var(--cm-text-muted);
+    white-space: nowrap;
+  }
+
+  .cm-credit {
+    margin: 0;
+    font-family: var(--cm-font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: oklch(46.5% 0.175 262);
+  }
+
+  /* 嵌入模式：状态文字收敛为最小提示 */
+  body.is-embedded .st-caption { display: none; }
+  body.is-embedded .st-error-title { display: none; }
+  body.is-embedded .st-error-sub { display: none; }
+  body.is-embedded .st-retry { display: none; }
+  body.is-embedded .st-error .st-dot,
+  body.is-embedded .st-loading .st-dot { background: var(--cm-text-subtle); }
+
+  /* 窄屏：隐藏右侧操作提示 */
+  @media (max-width: 420px) {
+    .cm-hint { display: none; }
+    .cm-chrome { justify-content: flex-start; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    canvas { transition: none; }
+    .st-dot { animation: none; opacity: 1; transform: scale(1); }
+    .st-retry { transition: none; }
+  }
+</style>
+<script src="../lib/live2dcubismcore.min.js"></script>
+<script src="../lib/live2d.min.js"></script>
+<script src="../lib/pixi.min.js"></script>
+<script src="../lib/pixi-live2d-display.min.js"></script>
+</head>
+<body data-state="loading">
+<canvas id="canvas"></canvas>
+
+<!-- 状态层：加载 / 错误 -->
+<div id="cm-status" data-od-id="kurisu-status" role="status" aria-live="polite">
+  <div class="st-screen st-loading" aria-hidden="true">
+    <span class="st-dot"></span>
+    <p class="st-caption">正在唤醒 Kurisu…</p>
+  </div>
+  <div class="st-screen st-error" role="alert">
+    <span class="st-dot"></span>
+    <p class="st-error-title">模型加载失败</p>
+    <p class="st-error-sub">请确认 amadeusV1 资源完整后重试</p>
+    <button type="button" class="st-retry" id="cm-retry">重新加载</button>
+  </div>
+</div>
+
+<!-- 独立模式底部信息 -->
+<div class="cm-chrome" data-od-id="kurisu-chrome" aria-hidden="true">
+  <p class="cm-credit">Kurisu / CareerMate</p>
+  <p class="cm-hint">拖动调整 · 按 0 复位表情</p>
+</div>
+
+<script>
+
+function _debug(msg) { console.log(msg); }
+
+// 嵌入（聊天 iframe）或独立打开？
+var IS_EMBEDDED = (function () {
+  try { return window.self !== window.top; } catch (e) { return true; }
+})();
+document.body.classList.add(IS_EMBEDDED ? 'is-embedded' : 'is-standalone');
+
+// ---- 状态机：loading / ready / error ----
+function setState(state) {
+  document.body.setAttribute('data-state', state);
+}
+
+let bridge = null;
+let model = null;
+let app = null;
+let isTalking = false;
+
+// ---- QWebChannel ----
+if (typeof QWebChannel !== 'undefined' && typeof qt !== 'undefined' && qt.webChannelTransport) {
+  new QWebChannel(qt.webChannelTransport, function(channel) {
+    bridge = channel.objects.bridge;
+    // Bridge ready — report current pose to Python
+    setTimeout(function() { _reportPose(); }, 500);
+  });
+}
+
+// ===================================================================
+// MOTION SYSTEM — Amadeus approach: fetch JSON + interpolate curves
+// ===================================================================
+
+// Target values (written by motions/expressions/TTS)
+var talkPhase = 0;
+var paramTargets = {
+  breath_amp:    0.15,
+  arm_physics:   0,
+  hair_physics:  0,
+  arm_think:     0,     // Param6: arms crossed/raised
+  thinking_expr: 0,     // Param8
+  arm_physics2:  0,     // Param7
+  eye_smile:     0,
+  blush:         0,
+  eye_open:      1.0,
+  mouth_form:    0,
+  mouth_open:    0,
+  eye_ball_x:    0,
+  eye_ball_y:    0,
+  lash_wiggle:   0,     // Param
+  lash_wiggle2:  0,     // Param2
+  iris_scale:    1.0,   // Param3
+};
+
+// Current values (smoothly interpolated toward targets)
+var paramValues = {};
+for (var k in paramTargets) paramValues[k] = paramTargets[k];
+
+// ---- Motion playback state ----
+var activeMotion = null;
+var motionStartTime = 0;
+var motionRAF = null;
+var motionLoop = false;
+var motionCompleteCallback = null;
+var _idleLoopActive = false;
+var _activeExpression = null;  // { name, curves } — applied each frame until cleared
+
+// ---- Motion cache ----
+var MotionCache = {};
+var MOTION_CACHE_VERSION = Date.now();
+
+// ---- Load motion JSON from file ----
+async function loadMotion(name) {
+  if (MotionCache[name] && MotionCache[name].v === MOTION_CACHE_VERSION) {
+    return MotionCache[name].d;
+  }
+  // Try motions/ first, then expressions/
+  var paths = [
+    'motions/' + name + '.motion3.json?t=' + MOTION_CACHE_VERSION,
+    'expressions/' + name + '.motion3.json?t=' + MOTION_CACHE_VERSION
+  ];
+  for (var p = 0; p < paths.length; p++) {
+    try {
+      var res = await fetch(paths[p]);
+      if (!res.ok) continue;
+      var data = await res.json();
+      MotionCache[name] = { d: data, v: MOTION_CACHE_VERSION };
+      _debug('Loaded: ' + name + ' from ' + paths[p].split('?')[0] + ' (' + (data.Meta?.Duration||'?') + 's)');
+      return data;
+    } catch(e) {}
+  }
+  _debug('FAIL: loadMotion ' + name);
+  return null;
+}
+
+// ---- Curve interpolation ----
+function interpolateMotionSegment(segments, time) {
+  if (!segments || segments.length < 4) return 0;
+  var i = 0;
+  // Find the segment that contains `time`
+  while (i + 6 < segments.length && segments[i + 3] <= time) i += 3;
+  var t0 = segments[i], v0 = segments[i + 1], type = segments[i + 2];
+  if (i + 6 >= segments.length) return v0;
+  var t1 = segments[i + 3], v1 = segments[i + 4];
+  var dt = t1 - t0;
+  if (dt <= 0) return v0;
+  var t = Math.min(1, Math.max(0, (time - t0) / dt));
+  if (type === 0) return v0 + (v1 - v0) * t;       // linear
+  if (type === 2) return v0;                         // step
+  if (type === 1 && i + 8 < segments.length) {       // bezier cubic
+    var cp1y = segments[i + 4], cp2y = segments[i + 7];
+    var a = 1 - t;
+    return a*a*a*v0 + 3*a*a*t*cp1y + 3*a*t*t*cp2y + t*t*t*v1;
+  }
+  return v0;
+}
+
+// ---- Apply one frame of motion data → paramTargets / core ----
+function applyMotionFrame(motionData, time) {
+  if (!motionData) return;
+  var core = model && model.internalModel && model.internalModel.coreModel;
+  var curves = motionData.Curves || [];
+  for (var c = 0; c < curves.length; c++) {
+    var curve = curves[c];
+    var val = interpolateMotionSegment(curve.Segments, time);
+    var id = curve.Id;
+    switch (id) {
+      // Expression/emotion params → paramTargets (lerped by unified RAF)
+      case 'ParamBreath':      paramTargets.breath_amp    = Math.abs(val); break;
+      case 'Param4':           paramTargets.arm_physics   = val; break;
+      case 'Param5':           paramTargets.hair_physics  = val; break;
+      case 'Param6':           paramTargets.arm_think     = val; break;
+      case 'Param7':           paramTargets.arm_physics2  = val; break;
+      case 'Param8':           paramTargets.thinking_expr = val; break;
+      case 'ParamEyeRSmile':   paramTargets.eye_smile     = val; break;
+      case 'Param9':           paramTargets.blush         = val; break;
+      case 'ParamEyeROpen':    paramTargets.eye_open      = val; break;
+      case 'ParamEyeLOpen':    paramTargets.eye_open      = val; break; // mirror to right eye
+      case 'ParamMouthForm':   paramTargets.mouth_form    = val; break;
+      case 'ParamMouthOpenY':  if (!isTalking) paramTargets.mouth_open = val; break;
+      case 'ParamEyeBallX':    paramTargets.eye_ball_x    = val; break;
+      case 'ParamEyeBallY':    paramTargets.eye_ball_y    = val; break;
+      case 'Param':            paramTargets.lash_wiggle   = val; break;
+      case 'Param2':           paramTargets.lash_wiggle2  = val; break;
+      case 'Param3':           paramTargets.iris_scale    = val; break;
+      // Body bone params (ParamAngle*, ParamBody*, ParamArm*, etc.)
+      // → write DIRECTLY to core, bypassing the paramTargets lerp system
+      default:
+        if (core) {
+          try { core.setParameterValueById(id, val); } catch(e) {}
+        }
+        break;
+    }
+  }
+}
+
+// ---- Start frame-by-frame motion playback ----
+// Expression-type motions (duration <= 0.5s): apply once & hold values
+// Normal motions (duration > 0.5s): animate frame-by-frame
+function startMotionPlayback(motionData, isExpression) {
+  if (motionRAF) cancelAnimationFrame(motionRAF);
+  activeMotion = motionData;
+  motionStartTime = performance.now() / 1000;
+  var duration = motionData.Meta?.Duration || 4;
+
+  // Expression mode: apply values once at t=0 and hold (don't animate)
+  // _activeExpression will re-apply values each frame via unified RAF
+  if (isExpression || duration <= 0.5) {
+    applyMotionFrame(motionData, 0);
+    activeMotion = null;
+    return;
+  }
+
+  // Regular motion: clear any active expression so it doesn't fight the motion
+  _activeExpression = null;
+
+  function animate() {
+    var elapsed = performance.now() / 1000 - motionStartTime;
+    var loopDur = duration;
+    var t = motionLoop ? elapsed % loopDur : elapsed;
+
+    if (!motionLoop && t >= duration) {
+      _debug('Motion done');
+      activeMotion = null;
+      // Reset body params to idle posture
+      paramTargets.arm_think = 0;
+      paramTargets.arm_physics = 0;
+      paramTargets.arm_physics2 = 0;
+      paramTargets.thinking_expr = 0;
+      paramTargets.eye_smile = 0;
+      paramTargets.blush = 0;
+      paramTargets.eye_open = 1.0;
+      paramTargets.mouth_form = 0;
+      paramTargets.eye_ball_x = 0;
+      paramTargets.eye_ball_y = 0;
+      paramTargets.lash_wiggle = 0;
+      paramTargets.lash_wiggle2 = 0;
+      paramTargets.iris_scale = 1.0;
+      if (motionCompleteCallback) { var cb = motionCompleteCallback; motionCompleteCallback = null; cb(); }
+      return;
+    }
+
+    applyMotionFrame(activeMotion, t);
+    motionRAF = requestAnimationFrame(animate);
+  }
+
+  animate();
+}
+
+// ---- Clear expression — reset all expression params to default ----
+function clearExpression() {
+  _activeExpression = null;
+  paramTargets.arm_think = 0;
+  paramTargets.arm_physics = 0;
+  paramTargets.arm_physics2 = 0;
+  paramTargets.thinking_expr = 0;
+  paramTargets.eye_smile = 0;
+  paramTargets.blush = 0;
+  paramTargets.eye_open = 1.0;
+  paramTargets.mouth_form = 0;
+  paramTargets.eye_ball_x = 0;
+  paramTargets.eye_ball_y = 0;
+  paramTargets.lash_wiggle = 0;
+  paramTargets.lash_wiggle2 = 0;
+  paramTargets.iris_scale = 1.0;
+  _debug('Expression cleared → restart idle');
+  _idleLoopActive = true;
+  motionLoop = true;
+  playMotionByName('idle');
+}
+
+// ---- Play motion by name ----
+async function playMotionByName(name) {
+  if (!model || !model.internalModel || !model.internalModel.coreModel) {
+    _debug('Model not ready');
+    return;
+  }
+  var motionData = await loadMotion(name);
+  if (!motionData) return;
+  motionLoop = (name === 'idle');
+
+  var duration = motionData.Meta?.Duration || 4;
+  var isExpr = duration <= 0.5; // short duration = expression (apply & hold)
+  _debug('Play: ' + name + (isExpr?' [EXPR]':'') + ' loop=' + motionLoop + ' dur=' + duration + 's');
+
+  // Boost shake_dizzy and thinking expression
+  if (name === 'shake_dizzy' || name === 'thinking') {
+    motionData = JSON.parse(JSON.stringify(motionData));
+    var curves = motionData.Curves || [];
+    for (var i = 0; i < curves.length; i++) {
+      var cid = curves[i].Id;
+      var boost = 1.0;
+      if (name === 'shake_dizzy') {
+        boost = (cid === 'ParamBreath') ? 1.6 :
+                (cid.indexOf('ParamAngle') === 0 || cid.indexOf('ParamBody') === 0) ? 1.5 : 1.0;
+      } else if (name === 'thinking') {
+        // Make thinking pose more dramatic
+        if (cid === 'Param6') boost = 2.0;       // arm cross/chin-rest: 4→8
+        else if (cid === 'Param8') boost = 1.5;   // thinking expr: 10→15
+        else if (cid === 'Param4') boost = 1.5;   // arm physics: 2→3
+      }
+      if (boost !== 1.0) {
+        var segs = curves[i].Segments;
+        for (var j = 1; j < segs.length; j += 3) segs[j] *= boost;
+      }
+    }
+  }
+
+  startMotionPlayback(motionData, isExpr);
+  return motionData;
+}
+
+// ---- Idle loop ----
+var _idleTimer = null;
+function startIdleLoop() {
+  if (_idleLoopActive) return;
+  _idleLoopActive = true;
+  motionLoop = true;
+  playMotionByName('idle');
+}
+function stopIdleLoop() {
+  _idleLoopActive = false;
+  motionLoop = false;
+  if (motionRAF) { cancelAnimationFrame(motionRAF); motionRAF = null; }
+  activeMotion = null;
+  if (_idleTimer) { clearTimeout(_idleTimer); _idleTimer = null; }
+}
+
+// ===================================================================
+// API called from Python
+// ===================================================================
+
+function kurisuPlayMotion(name) {
+  _debug('kurisuPlayMotion: ' + name);
+  if (name === 'idle') {
+    motionLoop = true;
+    _idleLoopActive = true;
+    playMotionByName('idle');
+    return;
+  }
+
+  // Stop current idle/motion
+  stopIdleLoop();
+  motionLoop = false;
+
+  // Set callback for anim-type motions to restart idle when done
+  motionCompleteCallback = function() {
+    _debug('Motion finished → restart idle');
+    motionCompleteCallback = null;
+    _idleLoopActive = true;
+    motionLoop = true;
+    playMotionByName('idle');
+  };
+
+  // Start motion
+  playMotionByName(name).then(function(motionData) {
+    if (!motionData) {
+      // Failed to load → restart idle immediately
+      _debug('Motion load FAILED → restart idle');
+      motionCompleteCallback = null;
+      _idleLoopActive = true;
+      motionLoop = true;
+      playMotionByName('idle');
+      return;
+    }
+    // Expression-type (duration <= 0.5s): values applied & held.
+    // Store as _activeExpression so unified RAF re-applies each frame
+    // (Prevents paramTargets from being overwritten by idle/breathing)
+    var duration = motionData.Meta?.Duration || 4;
+    if (duration <= 0.5) {
+      _debug('Expression active: ' + name + ' (press 0 to clear)');
+      motionCompleteCallback = null;
+      _idleLoopActive = false;
+      // Store as active expression — unified RAF re-applies it every frame
+      _activeExpression = { name: name, curves: motionData.Curves };
+    }
+    // For anim-type: motionCompleteCallback handles idle restart on completion
+  });
+}
+
+function kurisuResize(s) { if (model) model.scale.set(s); }
+function kurisuSetPosition(x, y) { if (model) { model.x = x; model.y = y; } }
+
+function kurisuSetTalking(active) {
+  isTalking = active;
+  if (active) {
+    _activeExpression = null; // clear any expression (thinking etc.)
+    stopIdleLoop();
+    talkPhase = 0;
+    paramTargets.arm_think = 1.8;
+    paramTargets.mouth_open = 0.6;
+  } else {
+    talkPhase = 0;
+    paramTargets.arm_think = 0;
+    paramTargets.mouth_open = 0;
+    startIdleLoop();
+  }
+}
+
+function kurisuSetMouth(v) {
+  if (isTalking) paramTargets.mouth_open = v;
+}
+
+// TTS config (can be changed via Python bridge)
+var _ttsConfig = {
+  voiceName: '',      // empty = auto-select best Chinese female
+  rate: 1.1,
+  pitch: 1.05,
+};
+
+function kurisuSetVoice(name) {
+  _ttsConfig.voiceName = name;
+  console.log('[TTS] Voice set to:', name || 'auto');
+}
+
+function kurisuSetTtsRate(rate) { _ttsConfig.rate = parseFloat(rate); }
+function kurisuSetTtsPitch(pitch) { _ttsConfig.pitch = parseFloat(pitch); }
+
+function kurisuListVoices() {
+  var voices = speechSynthesis.getVoices();
+  var list = [];
+  for (var i = 0; i < voices.length; i++) {
+    list.push(voices[i].name + '|' + voices[i].lang + '|' + (voices[i].default?'1':'0'));
+  }
+  return JSON.stringify(list);
+}
+
+function kurisuSpeak(text) {
+  if (!('speechSynthesis' in window)) return;
+  speechSynthesis.cancel();
+  var u = new SpeechSynthesisUtterance(text);
+  u.lang = 'zh-CN';
+  u.rate = _ttsConfig.rate;
+  u.pitch = _ttsConfig.pitch;
+
+  var voices = speechSynthesis.getVoices();
+
+  // If user selected a specific voice, use it
+  if (_ttsConfig.voiceName) {
+    for (var i = 0; i < voices.length; i++) {
+      if (voices[i].name === _ttsConfig.voiceName) {
+        u.voice = voices[i]; break;
+      }
+    }
+  }
+
+  // Auto-select: prefer Chinese female
+  if (!u.voice) {
+    // Priority: zh-CN Female > zh Female > any zh
+    for (var i = 0; i < voices.length; i++) {
+      var v = voices[i];
+      if (v.lang === 'zh-CN' && (v.name.includes('Female') || v.name.includes('Huihui') || v.name.includes('Xiaoxiao'))) {
+        u.voice = v; break;
+      }
+    }
+  }
+  if (!u.voice) {
+    for (var j = 0; j < voices.length; j++) {
+      if (voices[j].lang.startsWith('zh') && voices[j].name.includes('Female')) {
+        u.voice = voices[j]; break;
+      }
+    }
+  }
+  if (!u.voice) {
+    for (var k = 0; k < voices.length; k++) {
+      if (voices[k].lang.startsWith('zh')) { u.voice = voices[k]; break; }
+    }
+  }
+  speechSynthesis.speak(u);
+}
+
+function kurisuStopSpeak() {
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
+}
+
+function kurisuResetIdle() {
+  isTalking = false;
+  paramTargets.arm_think = 0;
+  paramTargets.mouth_open = 0;
+  startIdleLoop();
+}
+
+// ===================================================================
+// INIT
+// ===================================================================
+
+var _lastPose = null;
+
+// 加载看门狗：25 秒仍未就绪 → 错误态（避免加载指示无限循环）
+var _loadWatchdog = setTimeout(function () {
+  if (document.body.getAttribute('data-state') !== 'ready') {
+    _debug('Load watchdog fired');
+    setState('error');
+  }
+}, 25000);
+
+
+(async function main() {
+  app = new PIXI.Application({
+    view: document.getElementById('canvas'),
+    autoStart: true,
+    resizeTo: window,
+    backgroundAlpha: 0,
+  });
+
+  try {
+    model = await PIXI.live2d.Live2DModel.from('amadeusV1.model3.json');
+  } catch (err) {
+    _debug('Model load FAILED:', err);
+    clearTimeout(_loadWatchdog);
+    setState('error');
+    return;
+  }
+  app.stage.addChild(model);
+  model.anchor.set(0.5, 0.5);
+
+  // 嵌入模式：使用既有默认位姿（不读独立模式的拖动存档）
+  if (IS_EMBEDDED) {
+    model.scale.set(0.08); model.x = 64; model.y = 125;
+  } else {
+    // 独立模式：优先恢复已保存位姿，否则按视口适配居中
+    var saved = false;
+    try {
+      var raw = localStorage.getItem('kurisu-pose');
+      if (raw) {
+        var p = JSON.parse(raw);
+        model.scale.set(p.s); model.x = p.x; model.y = p.y;
+        saved = true;
+      }
+    } catch (e) {}
+    if (!saved) {
+      var vw = window.innerWidth, vh = window.innerHeight;
+      var nw = model.width || 2048, nh = model.height || 2048;
+      var fit = 0.85 * Math.min(vw / nw, vh / nh);
+      model.scale.set(Math.min(0.35, Math.max(0.05, fit)));
+      model.x = vw / 2;
+      model.y = vh * 0.46;
+      // 无存档时跟随窗口大小重新居中
+      window.addEventListener('resize', function () {
+        if (model) { model.x = window.innerWidth / 2; model.y = window.innerHeight * 0.46; }
+      });
+    }
+
+  }
+
+  // Report current pose to Python (called when bridge is ready or pose changes)
+  function _reportPose() {
+    if (!model || IS_EMBEDDED) return;
+    var cur = JSON.stringify({s:model.scale.x, x:Math.round(model.x), y:Math.round(model.y)});
+    if (cur !== _lastPose) {
+      _lastPose = cur;
+      localStorage.setItem('kurisu-pose', cur);
+      if (bridge && bridge.on_pose_changed) {
+        bridge.on_pose_changed(model.scale.x, Math.round(model.x), Math.round(model.y));
+      }
+    }
+  }
+
+  // Save pose periodically and on change
+  if (!IS_EMBEDDED) setInterval(_reportPose, 2000);
+
+  // ---- Hook internalModel.update() — write paramValues after physics ----
+  var im = model.internalModel;
+  var _origUpdate = im.update.bind(im);
+  im.update = function(now, mode) {
+    _origUpdate(now, mode);
+    var core = im.coreModel;
+    if (!core) return;
+    var sp = function(id, val) { try { core.setParameterValueById(id, val); } catch(e){} };
+    sp('ParamBreath',      paramValues.breath_amp);
+    sp('Param4',           paramValues.arm_physics);
+    sp('Param5',           paramValues.hair_physics);
+    sp('Param6',           paramValues.arm_think);
+    sp('Param7',           paramValues.arm_physics2);
+    sp('Param8',           paramValues.thinking_expr);
+    sp('ParamEyeRSmile',   paramValues.eye_smile);
+    sp('Param9',           paramValues.blush);
+    sp('ParamEyeROpen',    paramValues.eye_open);
+    sp('ParamMouthForm',   paramValues.mouth_form);
+    sp('ParamMouthOpenY',  paramValues.mouth_open);
+    sp('ParamEyeBallX',    paramValues.eye_ball_x);
+    sp('ParamEyeBallY',    paramValues.eye_ball_y);
+    sp('Param',            paramValues.lash_wiggle);
+    sp('Param2',           paramValues.lash_wiggle2);
+    sp('Param3',           paramValues.iris_scale);
+  };
+
+  _debug('Model loaded. Hook installed.');
+
+  // ---- Main unified animation RAF (lerp targets→values + blink + breathing) ----
+  var LERP_SPEED = 0.08;
+  var FAST_LERP = 0.30;
+  var breathPhase = 0;
+  var lastTime = performance.now();
+
+  // Blink state machine
+  var nextBlinkTime = 2000 + Math.random() * 3000;
+  var BLINK_CLOSE = 100, BLINK_HOLD = 80, BLINK_OPEN = 150;
+  var blinkPhase = 'idle';
+  var blinkTimer = 0;
+
+  function tick(now) {
+    var dt = Math.min((now - lastTime) / 1000, 0.1);
+    lastTime = now;
+
+    // Blink state machine
+    nextBlinkTime -= dt * 1000;
+    switch (blinkPhase) {
+      case 'idle':
+        if (nextBlinkTime <= 0) { blinkPhase = 'closing'; blinkTimer = BLINK_CLOSE; }
+        break;
+      case 'closing':
+        blinkTimer -= dt * 1000;
+        if (blinkTimer <= 0) { blinkPhase = 'held'; blinkTimer = BLINK_HOLD; }
+        break;
+      case 'held':
+        blinkTimer -= dt * 1000;
+        if (blinkTimer <= 0) { blinkPhase = 'opening'; blinkTimer = BLINK_OPEN; }
+        break;
+      case 'opening':
+        blinkTimer -= dt * 1000;
+        if (blinkTimer <= 0) { blinkPhase = 'idle'; nextBlinkTime = 2500 + Math.random() * 3500; }
+        break;
+    }
+
+    // Re-apply active expression every frame (persists over breathing)
+    if (_activeExpression) {
+      var curves = _activeExpression.curves;
+      for (var ci = 0; ci < curves.length; ci++) {
+        var cid = curves[ci].Id;
+        var cval = curves[ci].Segments[1]; // first keyframe value
+        switch (cid) {
+          case 'Param4':  paramTargets.arm_physics   = cval; break;
+          case 'Param6':  paramTargets.arm_think     = cval; break;
+          case 'Param7':  paramTargets.arm_physics2  = cval; break;
+          case 'Param8':  paramTargets.thinking_expr = cval; break;
+          case 'ParamEyeRSmile': paramTargets.eye_smile = cval; break;
+          case 'Param9':  paramTargets.blush         = cval; break;
+          case 'ParamEyeROpen': paramTargets.eye_open = cval; break;
+          case 'ParamEyeLOpen': paramTargets.eye_open = cval; break;
+          case 'ParamMouthForm': paramTargets.mouth_form = cval; break;
+          case 'ParamEyeBallX': paramTargets.eye_ball_x = cval; break;
+          case 'ParamEyeBallY': paramTargets.eye_ball_y = cval; break;
+          case 'Param':   paramTargets.lash_wiggle  = cval; break;
+          case 'Param2':  paramTargets.lash_wiggle2 = cval; break;
+          case 'Param3':  paramTargets.iris_scale   = cval; break;
+        }
+      }
+    }
+
+    // Breathing (only when not in motion)
+    if (!activeMotion) {
+      breathPhase += dt * Math.PI * 1.5;
+      paramTargets.breath_amp = 0.12 + 0.08 * Math.sin(breathPhase);
+    }
+
+    // Talking: automatically animate mouth open/close
+    if (isTalking) {
+      talkPhase += dt * 12;
+      paramTargets.mouth_open = 0.18 + 0.42 * Math.abs(Math.sin(talkPhase));
+    }
+
+    // Lerp all params toward targets
+    var lerp = function(v, t) { return v + (t - v) * LERP_SPEED; };
+    var fastLerp = function(v, t) { return v + (t - v) * FAST_LERP; };
+
+    paramValues.breath_amp   = lerp(paramValues.breath_amp,    paramTargets.breath_amp);
+    paramValues.arm_physics  = lerp(paramValues.arm_physics,   paramTargets.arm_physics);
+    paramValues.hair_physics = lerp(paramValues.hair_physics,  paramTargets.hair_physics);
+    paramValues.arm_think    = lerp(paramValues.arm_think,     paramTargets.arm_think);
+    paramValues.thinking_expr= lerp(paramValues.thinking_expr, paramTargets.thinking_expr);
+    paramValues.arm_physics2 = lerp(paramValues.arm_physics2,  paramTargets.arm_physics2);
+    paramValues.eye_smile    = fastLerp(paramValues.eye_smile, paramTargets.eye_smile);
+    paramValues.blush        = lerp(paramValues.blush,         paramTargets.blush);
+    paramValues.mouth_form   = lerp(paramValues.mouth_form,    paramTargets.mouth_form);
+    paramValues.mouth_open   = lerp(paramValues.mouth_open,    paramTargets.mouth_open);
+    paramValues.lash_wiggle  = lerp(paramValues.lash_wiggle,   paramTargets.lash_wiggle);
+    paramValues.lash_wiggle2 = lerp(paramValues.lash_wiggle2,  paramTargets.lash_wiggle2);
+    paramValues.iris_scale   = lerp(paramValues.iris_scale,    paramTargets.iris_scale);
+
+    // Eye open: blink overrides
+    var eo = fastLerp(paramValues.eye_open, paramTargets.eye_open);
+    if (blinkPhase === 'closing') eo *= Math.max(0, blinkTimer / BLINK_CLOSE);
+    else if (blinkPhase === 'held') eo = 0;
+    else if (blinkPhase === 'opening') eo *= 1 - Math.max(0, blinkTimer / BLINK_OPEN);
+    paramValues.eye_open = eo;
+
+    // Eye ball: lerp (no tracking for desktop pet, just the target)
+    paramValues.eye_ball_x = fastLerp(paramValues.eye_ball_x, paramTargets.eye_ball_x);
+    paramValues.eye_ball_y = fastLerp(paramValues.eye_ball_y, paramTargets.eye_ball_y);
+
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+
+  // ---- Start idle loop ----
+  startIdleLoop();
+
+  // 就绪：停止看门狗，切换到 ready 态（画布淡入）
+  clearTimeout(_loadWatchdog);
+  setState('ready');
+
+  // Report initial pose to Python
+  setTimeout(function() { _reportPose(); }, 1000);
+
+  if (bridge) bridge.on_model_ready();
+  window.__kurisuReady = true;
+  if (window.parent && window.parent !== window) {
+    window.parent.postMessage({ type: 'kurisu:ready' }, '*');
+  }
+  _debug('Ready. Idle loop started.');
+})();
+
+// ---- Retry ----
+document.getElementById('cm-retry').addEventListener('click', function () {
+  window.location.reload();
+});
+
+// ---- Keyboard shortcuts ----
+document.addEventListener('keydown', function(e) {
+  if (!model) return;
+  switch(e.key) {
+    case 'ArrowUp': model.y -= 2; e.preventDefault(); break;
+    case 'ArrowDown': model.y += 2; e.preventDefault(); break;
+    case 'ArrowLeft': model.x -= 2; e.preventDefault(); break;
+    case 'ArrowRight': model.x += 2; e.preventDefault(); break;
+    case '+': case '=': model.scale.set(model.scale.x + 0.005); e.preventDefault(); break;
+    case '-': model.scale.set(Math.max(0.05, model.scale.x - 0.005)); e.preventDefault(); break;
+    case 't': kurisuSetTalking(!isTalking); e.preventDefault(); break;
+    case '1': kurisuPlayMotion('mtn_01'); e.preventDefault(); break;
+    case '2': kurisuPlayMotion('mtn_02'); e.preventDefault(); break;
+    case '3': kurisuPlayMotion('mtn_03'); e.preventDefault(); break;
+    case '4': kurisuPlayMotion('arm_shy_cross'); e.preventDefault(); break;
+    case '5': kurisuPlayMotion('shake_dizzy'); e.preventDefault(); break;
+    case '6': kurisuPlayMotion('touch_head'); e.preventDefault(); break;
+    case '7': kurisuPlayMotion('thinking'); e.preventDefault(); break;  // hand on chin
+    case '0': clearExpression(); e.preventDefault(); break;  // reset expression
+    case 'i': playMotionByName('idle'); e.preventDefault(); break;
+  }
+});
+
+// ---- Click/Drag ----
+(function(){
+  var d = false, sx = 0, sy = 0, lx = 0, ly = 0;
+  var c = document.getElementById('canvas');
+  window.addEventListener('mousedown', function(e) {
+    var r = c.getBoundingClientRect();
+    if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
+      d = true; sx = e.screenX; sy = e.screenY; lx = e.screenX; ly = e.screenY;
+      document.body.style.cursor = 'grabbing';
+    }
+  }, true);
+  window.addEventListener('mousemove', function(e) {
+    if (!d) return;
+    var dx = e.screenX - lx, dy = e.screenY - ly;
+    lx = e.screenX; ly = e.screenY;
+    if (dx !== 0 || dy !== 0) _debug('drag: ' + Math.round(dx) + ',' + Math.round(dy));
+    e.preventDefault();
+  }, true);
+  window.addEventListener('mouseup', function(e) {
+    if (!d) return;
+    if (Math.abs(e.screenX - sx) + Math.abs(e.screenY - sy) < 3 && bridge) {
+      try { bridge.on_model_clicked(e.clientX, e.clientY); } catch(err) {}
+    }
+    d = false; document.body.style.cursor = '';
+  }, true);
+})();
+</script>
+</body>
+</html>

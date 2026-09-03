@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><style>body{background:#0a0a0f;color:#0f0;font-family:monospace;padding:20px;}</style></head>
+<body>
+<pre id="log"></pre>
+<script>
+var log = document.getElementById('log');
+function L(msg) { log.textContent += msg + '\n'; console.log(msg); }
+</script>
+
+<!-- Test 1: repo's pixi.min.js -->
+<script src="../lib/pixi.min.js"></script>
+<script>L('1. pixi.min.js: PIXI v' + (typeof PIXI!=='undefined' ? PIXI.VERSION : 'UNDEFINED'));</script>
+
+<!-- Test 2: repo's live2d.min.js -->
+<script src="../lib/live2d.min.js"></script>
+<script>L('2. live2d.min.js: PIXI.live2d=' + (typeof PIXI!=='undefined' && PIXI.live2d ? 'EXISTS' : 'UNDEFINED'));</script>
+
+<!-- Test 3: cubismcore -->
+<script src="../lib/live2dcubismcore.min.js"></script>
+<script>L('3. cubismcore: Live2DCubismCore=' + (typeof Live2DCubismCore!=='undefined' ? 'EXISTS' : 'UNDEFINED'));</script>
+
+<script>L('\n--- Now try loading model ---');
+if (typeof PIXI!=='undefined' && PIXI.live2d && PIXI.live2d.Live2DModel) {
+  L('Live2DModel found, attempting load...');
+  (async function(){
+    try {
+      var app = new PIXI.Application({width:400,height:300,backgroundColor:0x1a1a2e});
+      document.body.appendChild(app.view);
+      var m = await PIXI.live2d.Live2DModel.from('amadeusV1.model3.json');
+      app.stage.addChild(m);
+      m.scale.set(0.2);
+      L('SUCCESS! Model loaded.');
+    } catch(e) { L('ERROR: '+e.message); }
+  })();
+} else {
+  L('Live2DModel not available.');
+  if (typeof PIXI!=='undefined') {
+    L('PIXI keys: ' + Object.keys(PIXI).filter(function(k){return k.toLowerCase().indexOf('live')>=0 || k.toLowerCase().indexOf('2d')>=0}).join(', '));
+  }
+}
+</script>
+</body>
+</html>

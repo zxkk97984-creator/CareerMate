@@ -1,0 +1,56 @@
+{
+	"Version": 3,
+	"FileReferences": {
+		"Moc": "amadeusV1.moc3",
+		"Textures": [
+			"amadeusV1.1024/texture_00.png"
+		],
+		"Physics": "amadeusV1.physics3.json",
+		"DisplayInfo": "amadeusV1.cdi3.json",
+		"Motions": {
+			"idle": [
+				{"File": "motions/idle.motion3.json"}
+			],
+			"tap": [
+				{"File": "motions/mtn_01.motion3.json"},
+				{"File": "motions/mtn_02.motion3.json"},
+				{"File": "motions/mtn_03.motion3.json"}
+			],
+			"custom": [
+				{"File": "motions/arm_shy_cross.motion3.json"},
+				{"File": "motions/pinch_face.motion3.json"},
+				{"File": "motions/shake_dizzy.motion3.json"},
+				{"File": "motions/touch_body.motion3.json"},
+				{"File": "motions/touch_head.motion3.json"}
+			],
+			"expression": [
+				{"File": "expressions/angry.motion3.json"},
+				{"File": "expressions/blushing.motion3.json"},
+				{"File": "expressions/cold.motion3.json"},
+				{"File": "expressions/excited.motion3.json"},
+				{"File": "expressions/happy.motion3.json"},
+				{"File": "expressions/natural.motion3.json"},
+				{"File": "expressions/neutral.motion3.json"},
+				{"File": "expressions/provocative.motion3.json"},
+				{"File": "expressions/sad.motion3.json"},
+				{"File": "expressions/shy.motion3.json"},
+				{"File": "expressions/surprised.motion3.json"},
+				{"File": "expressions/thinking.motion3.json"}
+			]
+		}
+	},
+	"Groups": [
+		{
+			"Target": "Parameter",
+			"Name": "EyeBlink",
+			"Ids": [
+				"ParamEyeROpen"
+			]
+		},
+		{
+			"Target": "Parameter",
+			"Name": "LipSync",
+			"Ids": []
+		}
+	]
+}

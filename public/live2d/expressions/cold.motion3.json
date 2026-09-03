@@ -1,0 +1,22 @@
+{
+	"Version": 3,
+	"Meta": { "Duration": 0.1, "FadeInTime": 0.3, "FadeOutTime": 0.3 },
+	"Curves": [
+		{ "Id": "ParamBreath",       "Segments": [0, 0.08, 0] },
+		{ "Id": "Param4",            "Segments": [0, -2,   0] },
+		{ "Id": "Param5",            "Segments": [0, 0,    0] },
+		{ "Id": "Param6",            "Segments": [0, -4,   0] },
+		{ "Id": "Param7",            "Segments": [0, -2,   0] },
+		{ "Id": "Param8",            "Segments": [0, 0,    0] },
+		{ "Id": "ParamEyeRSmile",    "Segments": [0, 0,    0] },
+		{ "Id": "ParamEyeROpen",     "Segments": [0, 0.6,  0] },
+		{ "Id": "Param9",            "Segments": [0, 0,    0] },
+		{ "Id": "ParamMouthForm",    "Segments": [0, 0.1,  0] },
+		{ "Id": "ParamMouthOpenY",   "Segments": [0, 0.2,  0] },
+		{ "Id": "ParamEyeBallX",     "Segments": [0, 0.2,  0] },
+		{ "Id": "ParamEyeBallY",     "Segments": [0, 0,    0] },
+		{ "Id": "Param",             "Segments": [0, 0,    0] },
+		{ "Id": "Param2",            "Segments": [0, 0,    0] },
+		{ "Id": "Param3",            "Segments": [0, 0.9,  0] }
+	]
+}

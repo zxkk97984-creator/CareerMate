@@ -1,0 +1,41 @@
+{
+  "evidenceBundle": {
+    "schemaVersion": "1.0",
+    "profileSnapshot": {
+      "available": "INVALID_BOOLEAN",
+      "version": "这不是数字",
+      "data": "应该是对象但这是字符串"
+    },
+    "historySnapshot": {
+      "available": true,
+      "data": [
+        { "broken": true },
+        "这不是对象而是一个普通字符串",
+        null,
+        42
+      ]
+    },
+    "careerBaseline": {
+      "roleKey": "",
+      "templateVersion": null,
+      "evidence": [
+        "字符串而非对象",
+        { "confidence": "超高中等偏低" },
+        { "summary": "" }
+      ]
+    },
+    "marketEvidence": {
+      "searched": true,
+      "collectedAt": "不是ISO日期",
+      "scope": null,
+      "findings": [
+        null,
+        {},
+        { "claim": 12345 }
+      ],
+      "sources": "应该是数组",
+      "conflicts": [{ "no_description": true }],
+      "confidence": "不知道"
+    }
+  }
+}

@@ -1,0 +1,145 @@
+import { getPrisma } from "@/lib/prisma";
+
+// ── 类型 ────────────────────────────────────────
+
+export interface MemoryProposalInput {
+  userId: string;
+  conversationId: string;
+  sourceMessageId: string;
+  content: string;
+  kind: "career_fact" | "preference" | "constraint" | "goal";
+  sourceKind: "explicit_remember" | "agent_proposal";
+  confidence: number;
+  reason: string;
+  sensitivity: "normal" | "sensitive";
+  /** 幂等标记——来自 AgentResponse.operation.id */
+  operationId?: string;
+}
+
+export type MemoryDecision =
+  | { action: "auto_confirm"; memoryId: string }
+  | { action: "pending"; memoryId: string }
+  | { action: "rejected"; reason: string };
+
+// ── 服务 ────────────────────────────────────────
+
+export interface MemoryProposalService {
+  processProposal(input: MemoryProposalInput): Promise<MemoryDecision>;
+  acceptProposal(memoryId: string, userId: string): Promise<void>;
+  rejectProposal(memoryId: string, userId: string): Promise<void>;
+  editProposal(memoryId: string, userId: string, content: string): Promise<void>;
+}
+
+export function createMemoryProposalService(): MemoryProposalService {
+  const db = getPrisma();
+
+  return {
+    async processProposal(input) {
+      const { userId, conversationId, sourceMessageId, content, kind, sourceKind, confidence, reason, sensitivity } = input;
+
+      // memoryEnabled=false 时零记忆写入
+      const profile = await db.userProfile.findUnique({ where: { userId }, select: { memoryEnabled: true } });
+      if (!profile?.memoryEnabled) {
+        return { action: "rejected", reason: "memory_disabled" };
+      }
+
+      // 内容校验
+      if (!content || content.trim().length < 3) {
+        return { action: "rejected", reason: "content_too_short" };
+      }
+
+      // 敏感内容 → pending
+      if (sensitivity === "sensitive") {
+        const memory = await db.memoryItem.create({
+          data: {
+            userId,
+            content: content.slice(0, 2000),
+            source: input.operationId ? `agent_proposal:${input.operationId}` : "agent_proposal",
+            sensitivity: "sensitive",
+            status: "pending",
+            kind,
+            scope: "career",
+            confidence,
+            reason,
+            sourceConversationId: conversationId,
+            sourceMessageId,
+          },
+        });
+        return { action: "pending", memoryId: memory.id };
+      }
+
+      // explicit_remember + normal + high confidence → auto confirm
+      if (sourceKind === "explicit_remember" && confidence >= 0.7) {
+        const memory = await db.memoryItem.create({
+          data: {
+            userId,
+            content: content.slice(0, 2000),
+            source: input.operationId ? `explicit_remember:${input.operationId}` : "explicit_remember",
+            sensitivity: "normal",
+            status: "confirmed",
+            kind,
+            scope: "career",
+            confidence,
+            reason,
+            sourceConversationId: conversationId,
+            sourceMessageId,
+          },
+        });
+        return { action: "auto_confirm", memoryId: memory.id };
+      }
+
+      // agent_proposal → pending
+      const memory = await db.memoryItem.create({
+        data: {
+          userId,
+          content: content.slice(0, 2000),
+          source: "agent_proposal",
+          sensitivity: "normal",
+          status: "pending",
+          kind,
+          scope: "career",
+          confidence,
+          reason,
+          sourceConversationId: conversationId,
+          sourceMessageId,
+        },
+      });
+      return { action: "pending", memoryId: memory.id };
+    },
+
+    async acceptProposal(memoryId, userId) {
+      const result = await db.memoryItem.updateMany({
+        where: { id: memoryId, userId, status: "pending" },
+        data: { status: "confirmed" },
+      });
+      if (result.count === 0) throw new MemoryProposalError("记忆不存在或已处理", "NOT_FOUND", 404);
+    },
+
+    async rejectProposal(memoryId, userId) {
+      const result = await db.memoryItem.updateMany({
+        where: { id: memoryId, userId, status: "pending" },
+        data: { status: "rejected" },
+      });
+      if (result.count === 0) throw new MemoryProposalError("记忆不存在或已处理", "NOT_FOUND", 404);
+    },
+
+    async editProposal(memoryId, userId, content) {
+      const result = await db.memoryItem.updateMany({
+        where: { id: memoryId, userId, status: "pending" },
+        data: { content: content.slice(0, 2000) },
+      });
+      if (result.count === 0) throw new MemoryProposalError("记忆不存在或已处理", "NOT_FOUND", 404);
+    },
+  };
+}
+
+export class MemoryProposalError extends Error {
+  constructor(
+    message: string,
+    public code: string,
+    public status: number,
+  ) {
+    super(message);
+    this.name = "MemoryProposalError";
+  }
+}

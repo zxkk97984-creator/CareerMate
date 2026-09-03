@@ -1,0 +1,432 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  displayName  String
+  passwordHash String
+  role         String   @default("user")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  profile                 UserProfile?
+  authSessions            AuthSession[]
+  onboardingConversations OnboardingConversation[]
+  plans                   CareerPlan[]
+  logs                    ProgressLog[]
+  memories                MemoryItem[]
+  simulations             SimulationSession[]
+  updateCandidates        ProfileUpdateCandidate[]
+  chatConversations       ChatConversation[]
+  abilityEvidence         AbilityEvidence[]
+  explorationReports      CareerExplorationReport[]
+  reviewedDrafts          RoleDraft[]               @relation("RoleDraftReviewer")
+  artifactCandidates      AgentArtifactCandidate[]
+  learningRoutes          LearningRoute[]
+}
+
+model UserProfile {
+  id                   String   @id @default(cuid())
+  userId               String   @unique
+  educationStage       String?
+  major                String?
+  targetRole           String?
+  targetRoleLabel      String?
+  weeklyAvailableHours Int?
+  learningPreference   String   @default("[]")
+  experienceSummary    String   @default("")
+  interestTags         String   @default("[]")
+  constraints          String   @default("[]")
+  abilityScores        String   @default("{}")
+  memoryEnabled        Boolean  @default(true)
+  onboardingCompleted  Boolean  @default(false)
+  version              Int      @default(1)
+  introStatus          String   @default("not_started")
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AuthSession {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model OnboardingConversation {
+  id                   String   @id @default(cuid())
+  userId               String
+  transcript           String   @default("[]")
+  draft                String   @default("{}")
+  completeness         Float    @default(0)
+  status               String   @default("active")
+  requestedMode        String   @default("mock")
+  actualMode           String   @default("mock")
+  remoteConversationId String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+}
+
+model CareerPlan {
+  id                String    @id @default(cuid())
+  userId            String
+  targetRole        String
+  version           Int       @default(1)
+  status            String    @default("active")
+  schemaVersion     Int       @default(1)
+  content           String    @default("{}")
+  targetRoleLabel   String?
+  parentPlanId      String?
+  activatedAt       DateTime?
+  years             String    @default("[]")
+  quarters          String    @default("[]")
+  months            String    @default("[]")
+  currentMonthIndex Int       @default(1)
+  assumptions       String    @default("[]")
+  riskNotes         String    @default("[]")
+  generationMeta    String    @default("{}")
+  sourceReportId    String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  user         User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceReport CareerExplorationReport? @relation(fields: [sourceReportId], references: [id], onDelete: SetNull)
+  learningRoutes LearningRoute[]
+
+  @@index([sourceReportId])
+  @@index([parentPlanId])
+}
+
+model LearningRoute {
+  id              String    @id @default(cuid())
+  userId          String
+  relatedPlanId   String?
+  version         Int       @default(1)
+  status          String    @default("active")
+  schemaVersion   Int       @default(1)
+  content         String    @default("{}")
+  basePlanVersion Int?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  relatedPlan CareerPlan? @relation(fields: [relatedPlanId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status])
+  @@index([relatedPlanId])
+  @@unique([userId, version])
+}
+
+model ProgressLog {
+  id            String   @id @default(cuid())
+  userId        String
+  eventType     String
+  title         String
+  summary       String   @default("")
+  relatedPlanId String?
+  relatedTaskId String?
+  metadata      String   @default("{}")
+  createdAt     DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model MemoryItem {
+  id                   String    @id @default(cuid())
+  userId               String
+  content              String
+  source               String
+  sensitivity          String    @default("normal")
+  status               String    @default("confirmed")
+  kind                 String    @default("career_fact")
+  scope                String    @default("career")
+  confidence           Float?
+  reason               String    @default("")
+  sourceConversationId String?
+  sourceMessageId      String?
+  expiresAt            DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model RoleTemplate {
+  id                   String   @id @default(cuid())
+  roleKey              String   @unique
+  roleName             String
+  category             String
+  targetAudience       String   @default("[]")
+  entryRequirements    String   @default("[]")
+  coreWork             String   @default("[]")
+  abilityWeights       String   @default("{}")
+  threeYearPath        String   @default("[]")
+  monthlyTemplates     String   @default("[]")
+  practiceProjects     String   @default("[]")
+  recommendedResources String   @default("[]")
+  simulationScenarios  String   @default("[]")
+  evaluationRules      String   @default("[]")
+  sources              String   @default("[]")
+  aliases              String   @default("[]")
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+
+model ResourceItem {
+  id             String   @id @default(cuid())
+  title          String
+  type           String
+  roleKey        String
+  abilityKey     String
+  stage          String
+  source         String
+  url            String?
+  estimatedHours Int?
+  description    String
+  createdAt      DateTime @default(now())
+}
+
+model SimulationSession {
+  id                   String   @id @default(cuid())
+  userId               String
+  scenarioKey          String
+  scenarioTitle        String
+  transcript           String   @default("[]")
+  score                Int?
+  feedback             String   @default("{}")
+  status               String   @default("completed")
+  turnCount            Int      @default(0)
+  requestedMode        String   @default("mock")
+  actualMode           String   @default("mock")
+  remoteConversationId String?
+  candidateId          String?  @unique
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  user      User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  candidate ProfileUpdateCandidate? @relation(fields: [candidateId], references: [id], onDelete: SetNull)
+}
+
+model ProfileUpdateCandidate {
+  id                   String    @id @default(cuid())
+  userId               String
+  source               String
+  field                String
+  oldValue             String    @default("null")
+  newValue             String    @default("null")
+  confidence           Float
+  requiresConfirmation Boolean   @default(true)
+  reason               String
+  sourceConversationId String?
+  evidenceExcerpt      String    @default("")
+  impactSummary        String    @default("")
+  abilityEvidenceId    String?   @unique
+  status               String    @default("pending")
+  patch                String    @default("{}")
+  baseProfileVersion   Int?
+  resolvedAt           DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  simulationSession  SimulationSession?
+  sourceConversation ChatConversation?  @relation(fields: [sourceConversationId], references: [id], onDelete: SetNull)
+  abilityEvidence    AbilityEvidence?   @relation(fields: [abilityEvidenceId], references: [id], onDelete: SetNull)
+
+  @@index([sourceConversationId])
+}
+
+model RoleDraft {
+  id             String   @id @default(cuid())
+  roleKey        String
+  roleName       String
+  category       String
+  content        String   @default("{}")
+  status         String   @default("pending")
+  reviewerId     String?
+  sourceReportId String?  @unique
+  reviewNote     String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  reviewer     User?                    @relation("RoleDraftReviewer", fields: [reviewerId], references: [id])
+  sourceReport CareerExplorationReport? @relation(fields: [sourceReportId], references: [id], onDelete: SetNull)
+}
+
+model ManualAiSample {
+  id         String   @id @default(cuid())
+  scenario   String   @unique
+  source     String
+  payload    String   @default("{}")
+  capturedAt DateTime @default(now())
+}
+
+model ChatConversation {
+  id                     String   @id @default(cuid())
+  userId                 String
+  title                  String
+  status                 String   @default("active")
+  remoteConversationId   String?
+  remoteAgentId          String?
+  remoteAgentVersion     String?
+  state                  String   @default("{}")
+  contextVersion         Int      @default(1)
+  activeTurnId           String?
+  activeTurnStartedAt    DateTime?
+  summary                String   @default("")
+  lastSummarizedMessageId String?
+  remoteContextVersion   Int?
+  lastMessageAt          DateTime @default(now())
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  user             User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages         ChatMessage[]
+  updateCandidates ProfileUpdateCandidate[]
+  reports          CareerExplorationReport[]
+  questionLedger   QuestionLedger[]
+  artifactCandidates AgentArtifactCandidate[]
+
+  @@index([userId, status, lastMessageAt])
+}
+
+model AgentArtifactCandidate {
+  id                   String    @id @default(cuid())
+  userId               String
+  idempotencyKey       String
+  candidateType        String
+  status               String    @default("pending")
+  artifact             String
+  baseVersion          Int?
+  sourceSessionId      String
+  sourceConversationId String?
+  resolvedAt           DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  user               User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceConversation ChatConversation? @relation(fields: [sourceConversationId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status, createdAt])
+  @@index([sourceConversationId])
+  @@unique([userId, sourceSessionId, idempotencyKey])
+}
+
+model ChatMessage {
+  id              String   @id @default(cuid())
+  conversationId  String
+  role            String
+  content         String   @default("")
+  parts           String   @default("[]")
+  status          String   @default("completed")
+  executionMeta   String   @default("{}")
+  contextMeta     String   @default("{}")
+  turnId          String?
+  clientRequestId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  conversation ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, clientRequestId, role])
+  @@index([conversationId, turnId])
+  @@index([conversationId, createdAt])
+}
+
+model OperationExecution {
+  id              String   @id @default(cuid())
+  userId          String
+  conversationId  String
+  clientRequestId String
+  operationId     String
+  opType          String
+  status          String   @default("pending")
+  result          String   @default("{}")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([userId, conversationId, clientRequestId, operationId])
+  @@index([userId, operationId])
+}
+
+model QuestionLedger {
+  id                    String   @id @default(cuid())
+  conversationId        String
+  normalizedQuestionKey String
+  profileVersion        Int
+  questionText          String
+  profileField          String?
+  status                String
+  answerSummary         String   @default("")
+  askedAt               DateTime @default(now())
+  answeredAt            DateTime?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  conversation ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, normalizedQuestionKey, profileVersion])
+  @@index([conversationId, status])
+}
+
+model AbilityEvidence {
+  id         String   @id @default(cuid())
+  userId     String
+  abilityKey String
+  summary    String
+  sourceType String
+  sourceRef  String?
+  confidence Float
+  status     String   @default("pending")
+  observedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user      User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  candidate ProfileUpdateCandidate?
+
+  @@index([userId, abilityKey, status])
+}
+
+model CareerExplorationReport {
+  id             String   @id @default(cuid())
+  userId         String
+  conversationId String?
+  roleName       String
+  roleKey        String?
+  status         String   @default("exploratory")
+  content        String   @default("{}")
+  sources        String   @default("[]")
+  executionMeta  String   @default("{}")
+  generatedAt    DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation ChatConversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  plans        CareerPlan[]
+  roleDraft    RoleDraft?
+
+  @@index([userId, status, generatedAt])
+  @@index([conversationId])
+}
