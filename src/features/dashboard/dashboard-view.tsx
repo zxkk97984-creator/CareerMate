@@ -8,10 +8,13 @@ import type { WorkspaceData } from "@/lib/workspace-types";
 import { fetchApi } from "@/lib/client-api";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import { Button } from "@/components/ui/button";
+import { CountUp } from "@/lib/motion/count-up";
+import { getMotionSafe } from "@/lib/motion/motion-safe";
+import { Reveal } from "@/components/ui/reveal";
 
 /* ── 指标卡 ── */
 
-function Metric({ title, value, unit, tone }: { title: string; value: string; unit?: string; tone: "brand" | "success" | "warning" | "danger" }) {
+function Metric({ title, value, unit, tone }: { title: string; value: number; unit?: string; tone: "brand" | "success" | "warning" | "danger" }) {
   const dot: Record<string, string> = {
     brand: "var(--cm-brand)", success: "var(--cm-success)", warning: "var(--cm-warning)", danger: "var(--cm-danger)",
   };
@@ -22,7 +25,11 @@ function Metric({ title, value, unit, tone }: { title: string; value: string; un
         {title}
       </div>
       <div style={{ marginTop: 14, display: "flex", alignItems: "baseline", gap: 6 }}>
-        <span className="cm-mono" style={{ fontSize: 30, fontWeight: 700, letterSpacing: "-0.03em", color: "var(--cm-text-strong)" }}>{value}</span>
+        <CountUp
+          className="cm-mono"
+          style={{ fontSize: 30, fontWeight: 700, letterSpacing: "-0.03em", color: "var(--cm-text-strong)" }}
+          value={value}
+        />
         {unit ? <span style={{ fontSize: 13, color: "var(--cm-text-subtle)" }}>{unit}</span> : null}
       </div>
     </div>
@@ -93,7 +100,8 @@ export function DashboardView({ data, refresh, setNotice }: DashboardViewProps) 
           <div style={{ position: "relative", zIndex: 1 }}>
             <span className="cm-eyebrow" style={{ marginBottom: 10 }}>岗位匹配度 · MATCH</span>
             <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-              <span className="cm-match-number">{data.match?.score ?? 0}<span style={{ fontSize: 26, color: "var(--cm-text-subtle)" }}>%</span></span>
+              <CountUp className="cm-match-number" value={data.match?.score ?? 0} />
+              <span style={{ fontSize: 26, color: "var(--cm-text-subtle)" }}>%</span>
             </div>
             <p style={{ margin: "14px 0 0", fontSize: 13.5, lineHeight: 1.7, color: "var(--cm-text-muted)", maxWidth: 460 }}>
               当前能力画像与目标岗位
@@ -114,60 +122,74 @@ export function DashboardView({ data, refresh, setNotice }: DashboardViewProps) 
         </section>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-          <Metric title="本月任务" value={`${currentMonth?.learningTasks?.length ?? 0}`} unit="项" tone="brand" />
-          <Metric title="待确认画像" value={`${pendingCandidateCount}`} unit="条" tone="warning" />
+          <Metric title="本月任务" value={currentMonth?.learningTasks?.length ?? 0} unit="项" tone="brand" />
+          <Metric title="待确认画像" value={pendingCandidateCount} unit="条" tone="warning" />
         </div>
       </div>
 
       {/* 第二行：左侧能力雷达图 + 右侧当前月重点任务 */}
       <div className="dash-row-2" data-od-id="dashboard-row-charts">
-        <SurfaceCard title="能力雷达图" description="主色为当前能力值" action={<Button variant="secondary" disabled={generating} onClick={generatePlan}>{generating ? "生成中..." : "重生成路径"}</Button>}>
-          <div style={{ height: 320 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <RadarChart data={radar} outerRadius="72%">
-                <PolarGrid stroke="var(--cm-accent)" strokeOpacity={0.35} />
-                <PolarAngleAxis dataKey="ability" tick={{ fontSize: 12, fill: "var(--cm-text-muted)" }} />
-                <Radar dataKey="score" name="当前能力" stroke="var(--cm-brand)" strokeWidth={2} fill="var(--cm-brand)" fillOpacity={0.18} label={{ fontSize: 12, fill: "var(--cm-text-muted)" }} />
-              </RadarChart>
-            </ResponsiveContainer>
-          </div>
-        </SurfaceCard>
+        <Reveal variant="card">
+          <SurfaceCard title="能力雷达图" description="主色为当前能力值" action={<Button variant="secondary" disabled={generating} onClick={generatePlan}>{generating ? "生成中..." : "重生成路径"}</Button>}>
+            <div style={{ height: 320 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <RadarChart data={radar} outerRadius="72%">
+                  <PolarGrid stroke="var(--cm-accent)" strokeOpacity={0.35} />
+                  <PolarAngleAxis dataKey="ability" tick={{ fontSize: 12, fill: "var(--cm-text-muted)" }} />
+                  <Radar
+                    dataKey="score"
+                    name="当前能力"
+                    stroke="var(--cm-brand)"
+                    strokeWidth={2}
+                    fill="var(--cm-brand)"
+                    fillOpacity={0.18}
+                    isAnimationActive={getMotionSafe()}
+                    animationDuration={600}
+                    label={{ fontSize: 12, fill: "var(--cm-text-muted)" }}
+                  />
+                </RadarChart>
+              </ResponsiveContainer>
+            </div>
+          </SurfaceCard>
+        </Reveal>
 
-        <SurfaceCard title="当前月重点">
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <div>
-              <div style={{ fontSize: 12.5, fontWeight: 500, color: "var(--cm-text-subtle)" }}>本月目标</div>
-              <div style={{ marginTop: 4, fontSize: 16, fontWeight: 600, lineHeight: 1.5, color: "var(--cm-text-strong)" }}>
-                {currentMonth?.goal ?? "还没有生成职业路径"}
+        <Reveal variant="card" delay={0.08}>
+          <SurfaceCard title="当前月重点">
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div>
+                <div style={{ fontSize: 12.5, fontWeight: 500, color: "var(--cm-text-subtle)" }}>本月目标</div>
+                <div style={{ marginTop: 4, fontSize: 16, fontWeight: 600, lineHeight: 1.5, color: "var(--cm-text-strong)" }}>
+                  {currentMonth?.goal ?? "还没有生成职业路径"}
+                </div>
+              </div>
+              <div style={{ display: "grid", gap: 4 }}>
+                {(currentMonth?.learningTasks ?? []).map((t: any) => {
+                  const tone = statusTone[t.status] ?? { bg: "var(--cm-canvas)", color: "var(--cm-text-muted)" };
+                  return (
+                    <div key={t.id} className="cm-task-row">
+                      <div className="cm-task-main">
+                        <div className="cm-task-title">{t.title}</div>
+                        <div className="cm-task-meta">第 {t.dueWeek ?? "-"} 周前完成</div>
+                      </div>
+                      <span className="cm-task-status" style={{ background: tone.bg, color: tone.color }}>
+                        {taskStatusLabels[t.status as TaskStatus] ?? t.status}
+                      </span>
+                      <div className="cm-task-track">
+                        <span
+                          className="cm-task-bar"
+                          style={{ width: statusProgress[t.status] ?? "15%", background: statusBarColor[t.status] ?? "var(--cm-surface-sunken)" }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+                {(currentMonth?.learningTasks?.length ?? 0) === 0 && (
+                  <p style={{ margin: 0, fontSize: 13.5, color: "var(--cm-text-muted)" }}>暂无任务，先生成职业路径。</p>
+                )}
               </div>
             </div>
-            <div style={{ display: "grid", gap: 4 }}>
-              {(currentMonth?.learningTasks ?? []).map((t: any) => {
-                const tone = statusTone[t.status] ?? { bg: "var(--cm-canvas)", color: "var(--cm-text-muted)" };
-                return (
-                  <div key={t.id} className="cm-task-row">
-                    <div className="cm-task-main">
-                      <div className="cm-task-title">{t.title}</div>
-                      <div className="cm-task-meta">第 {t.dueWeek ?? "-"} 周前完成</div>
-                    </div>
-                    <span className="cm-task-status" style={{ background: tone.bg, color: tone.color }}>
-                      {taskStatusLabels[t.status as TaskStatus] ?? t.status}
-                    </span>
-                    <div className="cm-task-track">
-                      <span
-                        className="cm-task-bar"
-                        style={{ width: statusProgress[t.status] ?? "15%", background: statusBarColor[t.status] ?? "var(--cm-surface-sunken)" }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-              {(currentMonth?.learningTasks?.length ?? 0) === 0 && (
-                <p style={{ margin: 0, fontSize: 13.5, color: "var(--cm-text-muted)" }}>暂无任务，先生成职业路径。</p>
-              )}
-            </div>
-          </div>
-        </SurfaceCard>
+          </SurfaceCard>
+        </Reveal>
       </div>
 
       {/* 第三行：匹配度说明 + 近期成长记录（简洁列表） */}
