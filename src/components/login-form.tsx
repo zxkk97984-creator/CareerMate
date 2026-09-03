@@ -90,7 +90,7 @@ export function LoginForm() {
 
   return (
     <main className="login-page">
-      <FluidBackground />
+      <FluidBackground variant="calm" />
       <div className="login-grid" data-od-id="login-layout">
         {/* ── 卡片上方品牌区 ─────────────────────────── */}
         <div className="login-head">

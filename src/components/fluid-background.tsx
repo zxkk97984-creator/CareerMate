@@ -18,10 +18,14 @@ import { useMotionSafe } from "@/lib/motion/motion-safe";
  * 5. 光标辉点 64px:0.22s 紧贴
  * 6. 胶片颗粒:消除渐变色带
  *
+ * 3. 光标光尾:移动时留下 1.2s 渐隐的柔光轨迹(full 变体)
+ * 4. 粒子色相:蓝色粒子与珊瑚亮星随时间 ±10° 缓慢流转
+ * 5. 登录页静谧变体(calm):粒子减半、无流星无光尾、光斑节奏放慢 1.6 倍
+ *
  * 性能:视口外(IntersectionObserver)与标签页隐藏时暂停 rAF;dpr 上限 2。
  * 降级:reduced-motion 全静止(粒子不绘制);触屏设备不挂光标跟随。
  */
-export function FluidBackground() {
+export function FluidBackground({ variant = "full" }: { variant?: "full" | "calm" }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const motionSafe = useMotionSafe();
 
@@ -53,10 +57,12 @@ export function FluidBackground() {
     window.addEventListener("resize", resize);
 
     const isMobile = window.matchMedia("(max-width: 768px)").matches;
-    const COUNT = isMobile ? 36 : 80;
+    const COUNT = variant === "calm" ? (isMobile ? 18 : 40) : isMobile ? 36 : 80;
     const LINK_DIST = 130;
     const REPEL_DIST = 36;
     const LIGHT_DIST = 220;
+    const TRAIL_LIFE = 1200;
+    const TRAIL_MAX = 16;
 
     interface Particle {
       x: number;
@@ -66,6 +72,7 @@ export function FluidBackground() {
       r: number;
       tw: number;
       bright: boolean;
+      hueBase: number;
     }
     // 开场 bloom:粒子从画面中心小团绽放,靠粒子间斥力自然散开
     const particles: Particle[] = Array.from({ length: COUNT }, () => ({
@@ -76,11 +83,22 @@ export function FluidBackground() {
       r: 0.6 + Math.random() * 1.6,
       tw: Math.random() * Math.PI * 2,
       bright: Math.random() < 0.18,
+      hueBase: Math.random() < 0.18 ? 40 : 250,
     }));
 
-    // 流星状态:每 9-15 秒一颗
+    // 光标光尾(full 变体):轨迹采样点,1.2s 渐隐
+    const trail: Array<{ x: number; y: number; t: number }> = [];
+    const sampleTrail = (x: number, y: number) => {
+      trail.push({ x, y, t: performance.now() });
+      if (trail.length > TRAIL_MAX) trail.shift();
+    };
+
+    // 流星状态:每 9-15 秒一颗(calm 变体无流星)
     let meteor: { x: number; y: number; vx: number; vy: number; life: number } | null = null;
-    let nextMeteorAt = performance.now() + 9000 + Math.random() * 6000;
+    let nextMeteorAt =
+      variant === "calm"
+        ? Number.POSITIVE_INFINITY
+        : performance.now() + 9000 + Math.random() * 6000;
     const spawnMeteor = () => {
       const fromLeft = Math.random() < 0.5;
       const speed = 8 + Math.random() * 5;
@@ -104,6 +122,20 @@ export function FluidBackground() {
 
     const frame = () => {
       c2d.clearRect(0, 0, W, H);
+
+      // 光标光尾:按年龄渐隐
+      if (variant === "full") {
+        const now = performance.now();
+        while (trail.length && now - trail[0].t > TRAIL_LIFE) trail.shift();
+        for (const p of trail) {
+          const age = (now - p.t) / TRAIL_LIFE;
+          const a = (1 - age) * 0.2;
+          c2d.fillStyle = `oklch(56% 0.154 250 / ${a})`;
+          c2d.beginPath();
+          c2d.arc(p.x, p.y, 2.5 * (1 - age * 0.5), 0, Math.PI * 2);
+          c2d.fill();
+        }
+      }
 
       // 配对:粒子间斥力(防缩团)+ 连线
       for (let i = 0; i < COUNT; i++) {
@@ -196,9 +228,11 @@ export function FluidBackground() {
         const lightBoost = Math.max(0, 1 - Math.sqrt(d2) / LIGHT_DIST);
         const alpha =
           (p.bright ? 0.45 + 0.35 * Math.sin(p.tw) : 0.3) * (1 + lightBoost * 1.1);
+        // 色相流转:基础色相 ±10° 缓慢摆动
+        const hue = p.hueBase + Math.sin(performance.now() * 0.00008 + p.tw * 2) * 10;
         c2d.fillStyle = p.bright
-          ? `oklch(66% 0.165 40 / ${alpha})`
-          : `oklch(56% 0.154 250 / ${alpha})`;
+          ? `oklch(66% 0.165 ${hue} / ${alpha})`
+          : `oklch(56% 0.154 ${hue} / ${alpha})`;
         c2d.beginPath();
         c2d.arc(p.x, p.y, p.r * (1 + lightBoost * 0.6), 0, Math.PI * 2);
         c2d.fill();
@@ -230,8 +264,10 @@ export function FluidBackground() {
     const ctx = gsap.context(() => {
       gsap.set([spot, dot], { xPercent: -50, yPercent: -50 });
 
+      // calm 变体放慢光斑节奏 1.6 倍
+      const pace = variant === "calm" ? 1.6 : 1;
       const morph = (selector: string, vars: gsap.TweenVars, duration: number) => {
-        gsap.to(selector, { ...vars, duration, ease: "sine.inOut", yoyo: true, repeat: -1 });
+        gsap.to(selector, { ...vars, duration: duration * pace, ease: "sine.inOut", yoyo: true, repeat: -1 });
       };
       morph(".fblob-1", { x: 90, y: -60, scale: 1.12, rotation: 8 }, 22);
       morph(".fblob-2", { x: -70, y: 50, scale: 1.08, rotation: -6 }, 30);
@@ -279,6 +315,7 @@ export function FluidBackground() {
         const dx = e.clientX / Math.max(1, window.innerWidth) - 0.5;
         const dy = e.clientY / Math.max(1, window.innerHeight) - 0.5;
         for (const move of shellMovers) move(dx, dy);
+        if (variant === "full") sampleTrail(e.clientX, e.clientY);
         mx = e.clientX;
         my = e.clientY;
       };
@@ -288,6 +325,7 @@ export function FluidBackground() {
       };
       const onLeave = () => {
         gsap.to([spot, dot], { opacity: 0, duration: 0.8, ease: "power2.out" });
+        trail.length = 0;
         mx = -1e4;
         my = -1e4;
       };
@@ -313,7 +351,7 @@ export function FluidBackground() {
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("resize", resize);
     };
-  }, [motionSafe]);
+  }, [motionSafe, variant]);
 
   return (
     <div ref={rootRef} className="fluid-bg" aria-hidden="true">

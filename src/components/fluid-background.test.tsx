@@ -17,4 +17,10 @@ describe("FluidBackground (SSR)", () => {
     const html = renderToStaticMarkup(<FluidBackground />);
     expect(html).toContain('aria-hidden="true"');
   });
+
+  it("supports the calm variant (login page)", () => {
+    const html = renderToStaticMarkup(<FluidBackground variant="calm" />);
+    expect(html).toContain("fluid-bg");
+    expect(html).toContain("fconstellation");
+  });
 });
