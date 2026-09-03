@@ -9,12 +9,14 @@ import { useMotionSafe } from "@/lib/motion/motion-safe";
  *
  * 层级(由深到浅):
  * 1. 五光斑极光:天蓝/青/珊瑚三色阶大柔光斑,不同尺寸,22-36s 反向 morph
- *    (位移+缩放+旋转,yoyo 循环)——"丰富"的主体
- * 2. 粒子星座:canvas 80 点(移动端 36),缓慢漂移、近距连线、亮星闪烁;
- *    粒子间 36px 内相互排斥防止缩团;鼠标 260px 内引力吸引并环绕光标,像星群跟随
- * 3. 透镜光晕 700px:quickTo 0.6s 缓跟光标
- * 4. 光标辉点 64px:0.22s 紧贴
- * 5. 胶片颗粒:消除渐变色带
+ *    (位移+缩放+旋转,yoyo 循环);外壳按深度分层视差响应鼠标——"丰富"的主体
+ * 2. 粒子星座:canvas 80 点(移动端 36),开场从画面中心 bloom 绽放,
+ *    缓慢漂移、近距连线、亮星闪烁;粒子间 36px 内相互排斥防止缩团;
+ *    鼠标 260px 内引力吸引并环绕光标,220px 内被"点亮"(变亮变大)
+ * 3. 流星:每 9-15 秒一颗珊瑚色流星带渐隐尾迹划过,呼应职业轨迹主题
+ * 4. 透镜光晕 700px(双色:蓝芯+珊瑚缘):quickTo 0.6s 缓跟光标
+ * 5. 光标辉点 64px:0.22s 紧贴
+ * 6. 胶片颗粒:消除渐变色带
  *
  * 性能:视口外(IntersectionObserver)与标签页隐藏时暂停 rAF;dpr 上限 2。
  * 降级:reduced-motion 全静止(粒子不绘制);触屏设备不挂光标跟随。
@@ -54,6 +56,7 @@ export function FluidBackground() {
     const COUNT = isMobile ? 36 : 80;
     const LINK_DIST = 130;
     const REPEL_DIST = 36;
+    const LIGHT_DIST = 220;
 
     interface Particle {
       x: number;
@@ -64,15 +67,33 @@ export function FluidBackground() {
       tw: number;
       bright: boolean;
     }
+    // 开场 bloom:粒子从画面中心小团绽放,靠粒子间斥力自然散开
     const particles: Particle[] = Array.from({ length: COUNT }, () => ({
-      x: Math.random() * W,
-      y: Math.random() * H,
-      vx: (Math.random() - 0.5) * 0.24,
-      vy: (Math.random() - 0.5) * 0.24,
+      x: W / 2 + (Math.random() - 0.5) * 160,
+      y: H / 2 + (Math.random() - 0.5) * 160,
+      vx: (Math.random() - 0.5) * 0.12,
+      vy: (Math.random() - 0.5) * 0.12,
       r: 0.6 + Math.random() * 1.6,
       tw: Math.random() * Math.PI * 2,
       bright: Math.random() < 0.18,
     }));
+
+    // 流星状态:每 9-15 秒一颗
+    let meteor: { x: number; y: number; vx: number; vy: number; life: number } | null = null;
+    let nextMeteorAt = performance.now() + 9000 + Math.random() * 6000;
+    const spawnMeteor = () => {
+      const fromLeft = Math.random() < 0.5;
+      const speed = 8 + Math.random() * 5;
+      const angle = Math.PI * (0.1 + Math.random() * 0.1);
+      const dir = fromLeft ? 1 : -1;
+      meteor = {
+        x: fromLeft ? -60 : W + 60,
+        y: Math.random() * H * 0.4,
+        vx: dir * Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 0,
+      };
+    };
 
     let mx = -1e4;
     let my = -1e4;
@@ -112,6 +133,43 @@ export function FluidBackground() {
         }
       }
 
+      // 流星:渐隐尾迹 + 头部亮点
+      if (!meteor && performance.now() > nextMeteorAt) spawnMeteor();
+      if (meteor) {
+        meteor.life += 1;
+        meteor.x += meteor.vx;
+        meteor.y += meteor.vy;
+        const fade = Math.max(0, 0.55 - meteor.life / 240);
+        for (let k = 0; k < 12; k++) {
+          const f = k / 12;
+          const a = (1 - f) * fade;
+          if (a <= 0.01) continue;
+          c2d.fillStyle = `oklch(66% 0.165 40 / ${a})`;
+          c2d.beginPath();
+          c2d.arc(
+            meteor.x - meteor.vx * f * 4,
+            meteor.y - meteor.vy * f * 4,
+            1.6 * (1 - f * 0.7),
+            0,
+            Math.PI * 2,
+          );
+          c2d.fill();
+        }
+        c2d.fillStyle = "oklch(80% 0.13 40 / 0.85)";
+        c2d.beginPath();
+        c2d.arc(meteor.x, meteor.y, 1.8, 0, Math.PI * 2);
+        c2d.fill();
+        if (
+          meteor.life > 120 ||
+          meteor.x < -100 ||
+          meteor.x > W + 100 ||
+          meteor.y > H + 100
+        ) {
+          meteor = null;
+          nextMeteorAt = performance.now() + 9000 + Math.random() * 6000;
+        }
+      }
+
       // 粒子
       for (const p of particles) {
         // 鼠标引力:260px 内粒子被吸向光标,叠加轻微切向分量形成环绕
@@ -134,12 +192,15 @@ export function FluidBackground() {
         if (p.y < -20) p.y = H + 20;
         else if (p.y > H + 20) p.y = -20;
         p.tw += 0.02;
-        const alpha = p.bright ? 0.45 + 0.35 * Math.sin(p.tw) : 0.3;
+        // 光标点亮:220px 内粒子变亮变大,像被透镜照到
+        const lightBoost = Math.max(0, 1 - Math.sqrt(d2) / LIGHT_DIST);
+        const alpha =
+          (p.bright ? 0.45 + 0.35 * Math.sin(p.tw) : 0.3) * (1 + lightBoost * 1.1);
         c2d.fillStyle = p.bright
           ? `oklch(66% 0.165 40 / ${alpha})`
           : `oklch(56% 0.154 250 / ${alpha})`;
         c2d.beginPath();
-        c2d.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        c2d.arc(p.x, p.y, p.r * (1 + lightBoost * 0.6), 0, Math.PI * 2);
         c2d.fill();
       }
 
@@ -178,6 +239,33 @@ export function FluidBackground() {
       morph(".fblob-4", { x: 50, y: 70, scale: 1.15, rotation: -8 }, 28);
       morph(".fblob-5", { x: 60, y: -70, scale: 1.12, rotation: 6 }, 34);
 
+      // 开场 bloom:光斑渐显(只动 opacity,不与 morph 的 transform 冲突)
+      gsap.fromTo(
+        ".fblob",
+        { opacity: 0 },
+        { opacity: 1, duration: 1.6, ease: "power2.out", stagger: 0.12 },
+      );
+
+      // 深景视差:光斑外壳按深度分层响应鼠标(与光斑自身 morph 属性隔离)
+      const shellMovers: Array<(dx: number, dy: number) => void> = [];
+      const depths: Array<[string, number, number]> = [
+        [".fblob-shell-1", 1.6, -34],
+        [".fblob-shell-2", 2.0, -24],
+        [".fblob-shell-3", 2.4, -40],
+        [".fblob-shell-4", 1.8, -28],
+        [".fblob-shell-5", 2.2, -36],
+      ];
+      for (const [sel, dur, k] of depths) {
+        const el = root.querySelector<HTMLElement>(sel);
+        if (!el) continue;
+        const qx = gsap.quickTo(el, "x", { duration: dur, ease: "power2.out" });
+        const qy = gsap.quickTo(el, "y", { duration: dur, ease: "power2.out" });
+        shellMovers.push((dx, dy) => {
+          qx(dx * k);
+          qy(dy * k);
+        });
+      }
+
       const spotX = gsap.quickTo(spot, "x", { duration: 0.6, ease: "power3.out" });
       const spotY = gsap.quickTo(spot, "y", { duration: 0.6, ease: "power3.out" });
       const dotX = gsap.quickTo(dot, "x", { duration: 0.22, ease: "power2.out" });
@@ -188,6 +276,9 @@ export function FluidBackground() {
         spotY(e.clientY);
         dotX(e.clientX);
         dotY(e.clientY);
+        const dx = e.clientX / Math.max(1, window.innerWidth) - 0.5;
+        const dy = e.clientY / Math.max(1, window.innerHeight) - 0.5;
+        for (const move of shellMovers) move(dx, dy);
         mx = e.clientX;
         my = e.clientY;
       };
@@ -226,11 +317,21 @@ export function FluidBackground() {
 
   return (
     <div ref={rootRef} className="fluid-bg" aria-hidden="true">
-      <span className="fblob fblob-1" />
-      <span className="fblob fblob-2" />
-      <span className="fblob fblob-3" />
-      <span className="fblob fblob-4" />
-      <span className="fblob fblob-5" />
+      <span className="fblob-shell fblob-shell-1">
+        <span className="fblob fblob-1" />
+      </span>
+      <span className="fblob-shell fblob-shell-2">
+        <span className="fblob fblob-2" />
+      </span>
+      <span className="fblob-shell fblob-shell-3">
+        <span className="fblob fblob-3" />
+      </span>
+      <span className="fblob-shell fblob-shell-4">
+        <span className="fblob fblob-4" />
+      </span>
+      <span className="fblob-shell fblob-shell-5">
+        <span className="fblob fblob-5" />
+      </span>
       <canvas className="fconstellation" />
       <span className="fspot" />
       <span className="fdot" />
