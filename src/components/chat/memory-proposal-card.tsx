@@ -39,8 +39,12 @@ export function MemoryProposalCard({
   const [editContent, setEditContent] = useState(content);
   const [currentStatus, setCurrentStatus] = useState(status);
   const rootRef = useRef<HTMLDivElement>(null);
+  // 退场动画期间防重复提交:250ms 淡出内再次点击会产生第二个 onComplete
+  const leavingRef = useRef(false);
 
   const handleAccept = useCallback(() => {
+    if (leavingRef.current) return;
+    leavingRef.current = true;
     playExitFade(rootRef.current, () => {
       setCurrentStatus("confirmed");
       onAccept(memoryId);
@@ -48,6 +52,8 @@ export function MemoryProposalCard({
   }, [memoryId, onAccept]);
 
   const handleReject = useCallback(() => {
+    if (leavingRef.current) return;
+    leavingRef.current = true;
     playExitFade(rootRef.current, () => {
       setCurrentStatus("rejected");
       onReject(memoryId);

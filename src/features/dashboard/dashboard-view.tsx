@@ -9,7 +9,6 @@ import { fetchApi } from "@/lib/client-api";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import { Button } from "@/components/ui/button";
 import { CountUp } from "@/lib/motion/count-up";
-import { getMotionSafe } from "@/lib/motion/motion-safe";
 import { Reveal } from "@/components/ui/reveal";
 
 /* ── 指标卡 ── */
@@ -143,7 +142,6 @@ export function DashboardView({ data, refresh, setNotice }: DashboardViewProps) 
                     strokeWidth={2}
                     fill="var(--cm-brand)"
                     fillOpacity={0.18}
-                    isAnimationActive={getMotionSafe()}
                     animationDuration={600}
                     label={{ fontSize: 12, fill: "var(--cm-text-muted)" }}
                   />

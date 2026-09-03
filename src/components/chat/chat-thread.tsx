@@ -46,6 +46,14 @@ export function ChatThread({ messages, activeConversationId, onNewChat, onQuickA
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // 会话切换视为"首帧":重置入场状态,避免历史加载/整体替换触发入场动画
+  // (必须在入场 effect 之前声明:同一提交内先重置、后判入场)
+  useEffect(() => {
+    seenIdsRef.current = new Set();
+    prevLenRef.current = 0;
+    firstRenderRef.current = true;
+  }, [activeConversationId]);
+
   // 新消息入场:仅对"追加"(长度 +1/+2)且非流式占位的最新一条消息播放一次
   useEffect(() => {
     const len = messages.length;
