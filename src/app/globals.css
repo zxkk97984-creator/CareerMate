@@ -5790,33 +5790,60 @@ body {
   pointer-events: none;
 }
 
-/* 光斑外壳：承担光标避让（GSAP quickTo 写 transform，勿加 CSS transform） */
-.fblob-shell {
-  position: absolute;
-  inset: 0;
-}
-
+/* 光斑：五斑极光,GSAP 写 transform(勿加 CSS transform) */
 .fblob {
   position: absolute;
   border-radius: 50%;
-  filter: blur(80px);
+  filter: blur(90px);
   will-change: transform;
 }
 
 .fblob-1 {
-  width: 560px;
-  height: 560px;
-  left: -120px;
-  top: -140px;
-  background: radial-gradient(circle, oklch(56% 0.154 250 / 0.16), transparent 66%);
+  width: 600px;
+  height: 600px;
+  left: -130px;
+  top: -150px;
+  background: radial-gradient(circle, oklch(56% 0.154 250 / 0.18), transparent 66%);
 }
 
 .fblob-2 {
+  width: 520px;
+  height: 520px;
+  right: -80px;
+  top: 14%;
+  background: radial-gradient(circle, oklch(76% 0.09 190 / 0.15), transparent 66%);
+}
+
+.fblob-3 {
   width: 480px;
   height: 480px;
-  right: -90px;
-  bottom: -110px;
-  background: radial-gradient(circle, oklch(66% 0.165 40 / 0.11), transparent 66%);
+  right: -60px;
+  bottom: -100px;
+  background: radial-gradient(circle, oklch(66% 0.165 40 / 0.13), transparent 66%);
+}
+
+.fblob-4 {
+  width: 400px;
+  height: 400px;
+  left: 14%;
+  bottom: 4%;
+  background: radial-gradient(circle, oklch(66% 0.165 40 / 0.10), transparent 66%);
+}
+
+.fblob-5 {
+  width: 340px;
+  height: 340px;
+  left: 52%;
+  top: -8%;
+  background: radial-gradient(circle, oklch(56% 0.154 250 / 0.12), transparent 66%);
+}
+
+/* 粒子星座画布 */
+.fconstellation {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }
 
 /* 透镜光晕：700px 柔光随光标缓跟；multiply 在浅底上压出可见的天蓝水印感 */
