@@ -11,7 +11,7 @@ import { useMotionSafe } from "@/lib/motion/motion-safe";
  * 1. 五光斑极光:天蓝/青/珊瑚三色阶大柔光斑,不同尺寸,22-36s 反向 morph
  *    (位移+缩放+旋转,yoyo 循环)——"丰富"的主体
  * 2. 粒子星座:canvas 80 点(移动端 36),缓慢漂移、近距连线、亮星闪烁;
- *    鼠标 260px 内粒子被引力吸引并环绕光标,像星群跟随
+ *    粒子间 36px 内相互排斥防止缩团;鼠标 260px 内引力吸引并环绕光标,像星群跟随
  * 3. 透镜光晕 700px:quickTo 0.6s 缓跟光标
  * 4. 光标辉点 64px:0.22s 紧贴
  * 5. 胶片颗粒:消除渐变色带
@@ -53,6 +53,7 @@ export function FluidBackground() {
     const isMobile = window.matchMedia("(max-width: 768px)").matches;
     const COUNT = isMobile ? 36 : 80;
     const LINK_DIST = 130;
+    const REPEL_DIST = 36;
 
     interface Particle {
       x: number;
@@ -83,7 +84,7 @@ export function FluidBackground() {
     const frame = () => {
       c2d.clearRect(0, 0, W, H);
 
-      // 连线
+      // 配对:粒子间斥力(防缩团)+ 连线
       for (let i = 0; i < COUNT; i++) {
         for (let j = i + 1; j < COUNT; j++) {
           const a = particles[i];
@@ -91,6 +92,14 @@ export function FluidBackground() {
           const dx = a.x - b.x;
           const dy = a.y - b.y;
           const d2 = dx * dx + dy * dy;
+          if (d2 > 0.01 && d2 < REPEL_DIST * REPEL_DIST) {
+            const d = Math.sqrt(d2);
+            const f = (1 - d / REPEL_DIST) * 0.04;
+            a.vx += (dx / d) * f;
+            a.vy += (dy / d) * f;
+            b.vx -= (dx / d) * f;
+            b.vy -= (dy / d) * f;
+          }
           if (d2 < LINK_DIST * LINK_DIST) {
             const d = Math.sqrt(d2);
             c2d.strokeStyle = `oklch(56% 0.154 250 / ${(1 - d / LINK_DIST) * 0.2})`;

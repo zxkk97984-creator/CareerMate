@@ -36,7 +36,7 @@ CareerMate 的静态视觉已由 v13 规范收敛(色彩/字体/圆角/阴影全
 8. **e2e 环境怪癖**:本机 Chrome(channel)不响应 `test.use({ reducedMotion })`,必须逐用例 `page.emulateMedia({ reducedMotion: "reduce" })`;opacity 断言用 `expect.poll` 等稳定态。
 9. **基线问题**:仓库基线 lint 有 4054 个既有问题、vitest 有 2 个既有失败(simulation 相关),本特性以"不新增失败"为验收线,未修复基线问题(超范围)。
 10. **repo2 已 git init**(基线 `ee3c6df`),本文件的"不提交"说明已过时;本文件随实施计划一并纳入版本控制。
-11. **动态背景「星野」**(2026-09-03 用户追加需求,替换原网格视差背景):参考 Linear/Vercel/Stripe 式多光斑 morph 与星座粒子做法,五光斑极光(天蓝/青/珊瑚三色阶,22-36s 反向 morph)+ 粒子星座(canvas 80/36 点,近距连线、鼠标引力环绕、亮星闪烁)+ 双深度光标透镜 + 胶片颗粒。视口外与标签页隐藏暂停 rAF,dpr 上限 2,reduced-motion 全静止,触屏不挂光标跟随。原 `interactive-background.tsx` 及其测试已删除,新组件 `fluid-background.tsx`(落地页+登录页两处使用)。
+11. **动态背景「星野」**(2026-09-03 用户追加需求,替换原网格视差背景):参考 Linear/Vercel/Stripe 式多光斑 morph 与星座粒子做法,五光斑极光(天蓝/青/珊瑚三色阶,22-36s 反向 morph)+ 粒子星座(canvas 80/36 点,近距连线、粒子间斥力防缩团、鼠标引力环绕、亮星闪烁)+ 双深度光标透镜 + 胶片颗粒。视口外与标签页隐藏暂停 rAF,dpr 上限 2,reduced-motion 全静止,触屏不挂光标跟随。原 `interactive-background.tsx` 及其测试已删除,新组件 `fluid-background.tsx`(落地页+登录页两处使用)。
 
 ## 2. 硬约束(不可违反)
 
