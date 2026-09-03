@@ -22,6 +22,21 @@ CareerMate 的静态视觉已由 v13 规范收敛(色彩/字体/圆角/阴影全
 - **Playwright 全局配置不加入 `reducedMotion`**(避免改变现有测试行为);新增 e2e 用例按需 `emulateMedia({ reducedMotion: 'reduce' })` 获得确定性。
 - 仓库当前**不是 git 仓库**(repo2 无 .git),本文件直接落盘,不提交。
 
+## 1.1 执行期决策与偏差(2026-09-03 实施后补充)
+
+实施(分支 `motion/gsap-v1`,基线 `ee3c6df`)与终审后的最终口径,与上文不一致处以本节为准:
+
+1. **雷达图不显式门控**:终审发现 `isAnimationActive={getMotionSafe()}` 会造成 reduced-motion 用户的 hydration 分叉(recharts 服务端按 true 渲染入场几何,客户端首帧为 false)。最终恢复 recharts 默认 `'auto'`(其内部已按 `prefers-reduced-motion` 自门控且 SSR 安全),保留 `animationDuration={600}`。
+2. **记忆提案卡退出防重入**:`playExitFade` 的 250ms 窗口内允许二次点击会造成重复 POST/冲突提交,增加 `leavingRef` 守卫(终审 Important)。
+3. **会话切换重置入场状态**:ChatThread 跨会话保持挂载,`activeConversationId` 变化时重置入场 refs 并视为首帧,避免"整体替换恰好差 1-2 条"触发入场动画(终审 M-1,已修)。
+4. **Kurisu speaking 口径收窄**:speaking 时容器完全静止(Live2D 自带说话动作),仅 idle 呼吸 + waiting 思考倾斜;清理时 `gsap.set` 复位 transform(§5 #4 的"说话点头"按此收窄)。
+5. **候选卡"其余淡出"收窄**:确认/提交只作用于被操作卡片自身的沉降与按钮隐藏,其他待确认卡片不联动(各自独立确认)。
+6. **template 淡入用 `fromTo` 而非 `from`**:dev StrictMode 双跑 effect 时 `gsap.from` 会把被 kill 的残留 opacity 当作终点导致页面卡在半透明,`fromTo` 显式终点 1 修复(实测验证)。
+7. **will-change 未显式挂/卸**:全部为 transform/opacity 短动画,合成器自行提升图层;仅 Kurisu 呼吸为持续动画,暂不加 `willChange`(可选 polish)。
+8. **e2e 环境怪癖**:本机 Chrome(channel)不响应 `test.use({ reducedMotion })`,必须逐用例 `page.emulateMedia({ reducedMotion: "reduce" })`;opacity 断言用 `expect.poll` 等稳定态。
+9. **基线问题**:仓库基线 lint 有 4054 个既有问题、vitest 有 2 个既有失败(simulation 相关),本特性以"不新增失败"为验收线,未修复基线问题(超范围)。
+10. **repo2 已 git init**(基线 `ee3c6df`),本文件的"不提交"说明已过时;本文件随实施计划一并纳入版本控制。
+
 ## 2. 硬约束(不可违反)
 
 1. 不动任何 v13 视觉令牌(颜色/圆角/字号/阴影);新增样式仅限运动相关(transform / opacity / will-change)。
