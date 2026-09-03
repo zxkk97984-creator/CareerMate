@@ -11,7 +11,7 @@ import { useMotionSafe } from "@/lib/motion/motion-safe";
  * 1. 五光斑极光:天蓝/青/珊瑚三色阶大柔光斑,不同尺寸,22-36s 反向 morph
  *    (位移+缩放+旋转,yoyo 循环)——"丰富"的主体
  * 2. 粒子星座:canvas 80 点(移动端 36),缓慢漂移、近距连线、亮星闪烁;
- *    鼠标 160px 内轻微斥力,像拨动星野
+ *    鼠标 260px 内粒子被引力吸引并环绕光标,像星群跟随
  * 3. 透镜光晕 700px:quickTo 0.6s 缓跟光标
  * 4. 光标辉点 64px:0.22s 紧贴
  * 5. 胶片颗粒:消除渐变色带
@@ -53,7 +53,6 @@ export function FluidBackground() {
     const isMobile = window.matchMedia("(max-width: 768px)").matches;
     const COUNT = isMobile ? 36 : 80;
     const LINK_DIST = 130;
-    const MOUSE_RADIUS = 160;
 
     interface Particle {
       x: number;
@@ -76,6 +75,7 @@ export function FluidBackground() {
 
     let mx = -1e4;
     let my = -1e4;
+    const ATTRACT_DIST = 260;
     let raf = 0;
     let visible = true;
     let paused = document.hidden;
@@ -105,13 +105,16 @@ export function FluidBackground() {
 
       // 粒子
       for (const p of particles) {
-        const dx = p.x - mx;
-        const dy = p.y - my;
+        // 鼠标引力:260px 内粒子被吸向光标,叠加轻微切向分量形成环绕
+        const dx = mx - p.x;
+        const dy = my - p.y;
         const d2 = dx * dx + dy * dy;
-        if (d2 > 1 && d2 < MOUSE_RADIUS * MOUSE_RADIUS) {
+        if (d2 > 1 && d2 < ATTRACT_DIST * ATTRACT_DIST) {
           const d = Math.sqrt(d2);
-          p.vx += (dx / d) * 0.06;
-          p.vy += (dy / d) * 0.06;
+          p.vx += (dx / d) * 0.02;
+          p.vy += (dy / d) * 0.02;
+          p.vx += (-dy / d) * 0.01;
+          p.vy += (dx / d) * 0.01;
         }
         p.vx *= 0.985;
         p.vy *= 0.985;
