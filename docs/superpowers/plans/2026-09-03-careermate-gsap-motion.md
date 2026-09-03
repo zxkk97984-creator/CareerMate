@@ -12,7 +12,8 @@
 
 - **依赖冻结**:不得新增/升级任何 npm 依赖;不得引入 GSAP 插件(ScrollTrigger / SplitText / TextPlugin)。
 - **git**:repo2 已初始化 git(基线提交 `ee3c6df`,工作分支 `motion/gsap-v1`)。每个任务结束时,实现者提交该任务的改动(单条提交,信息形如 `feat(motion): 动效门控工具层`);任务完成标志 = 测试通过 + 已提交。**禁止**修改与任务无关的文件;禁止 `git push`(无远程)。
-- **已知基线问题(执行期实测,勿修勿扰)**:仓库基线存在 4054 个 lint 问题(183 errors,主要来自 tracked 的 `public/lib/*.min.js` 压缩产物,`npm run lint` 因 `--max-warnings=0` 必然非零退出)与 1 个既有测试失败(`src/features/simulation` 中"训练得分:82 分"断言)。执行时以"**不新增** lint 错误/测试失败"为准,不要顺手修复这些既有问题(超出本计划范围)。
+- **已知基线问题(执行期实测,勿修勿扰)**:仓库基线存在 4054 个 lint 问题(183 errors,主要来自 tracked 的 `public/lib/*.min.js` 压缩产物,`npm run lint` 因 `--max-warnings=0` 必然非零退出)与 **2 个既有测试失败**(`src/lib/simulation.test.ts`、`src/features/simulation/simulation-view.test.tsx`;基线全量 1038/1040 通过)。执行时以"**不新增** lint 错误/测试失败"为准,不要顺手修复这些既有问题(超出本计划范围)。
+- **hydration 约束**(Task 1 审查发现,对全部下游任务生效):`useMotionSafe()` 的初始值在服务端渲染时恒为 true(SSR 无 matchMedia),仅客户端 hydration 后才能反映真实偏好。因此**只在 effect/handler 中消费 `useMotionSafe()` 的返回值,禁止用它条件渲染 JSX**(会导致 hydration mismatch);需要渲染期判断时用 `getMotionSafe()`,但注意其值不响应偏好变化。
 - **所有命令在 `repo2` 目录下运行**(本文件中的相对路径均以 repo2 为根)。
 - **视觉冻结**:不动任何 v13 令牌(颜色/圆角/字号/阴影);新增样式仅限 transform/opacity/will-change;只动 transform + opacity,绝不动画布局属性。
 - **降级安全**:所有 GSAP 动画一律 `from`/`fromTo` 语义;JS 失败或 reduced-motion 时元素处于最终可见态,绝不卡在 `opacity: 0`。
