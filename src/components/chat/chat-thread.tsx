@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import gsap from "gsap";
+import { useMotionSafe } from "@/lib/motion/motion-safe";
 import type { MessageItem } from "@/lib/chat/schemas";
 import type { ChatMessagePart } from "@/lib/chat/persistence";
 import { MessageParts } from "./message-parts";
@@ -32,12 +34,46 @@ const PROFILE_GUIDANCE_MESSAGE = "我想完善我的职业画像";
 
 export function ChatThread({ messages, activeConversationId, onNewChat, onQuickAction, openChatEntry = true, streaming = false, kurisuPhase = "idle" }: ChatThreadProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const threadRef = useRef<HTMLDivElement>(null);
+  const seenIdsRef = useRef<Set<string>>(new Set());
+  const prevLenRef = useRef(0);
+  const firstRenderRef = useRef(true);
+  const motionSafe = useMotionSafe();
   const [profileGuidanceSent, setProfileGuidanceSent] = useState(false);
 
   // 自动滚动到底部
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // 新消息入场:仅对"追加"(长度 +1/+2)且非流式占位的最新一条消息播放一次
+  useEffect(() => {
+    const len = messages.length;
+    if (firstRenderRef.current) {
+      messages.forEach((m) => seenIdsRef.current.add(m.id));
+      prevLenRef.current = len;
+      firstRenderRef.current = false;
+      return;
+    }
+    const delta = len - prevLenRef.current;
+    const last = messages[len - 1];
+    if (
+      motionSafe &&
+      delta >= 1 &&
+      delta <= 2 &&
+      last &&
+      !seenIdsRef.current.has(last.id) &&
+      last.status !== "streaming" &&
+      threadRef.current
+    ) {
+      const node = threadRef.current.querySelector(`[data-msg-id="${last.id}"]`);
+      if (node) {
+        gsap.from(node, { opacity: 0, y: 12, duration: 0.35, ease: "power2.out" });
+      }
+    }
+    messages.forEach((m) => seenIdsRef.current.add(m.id));
+    prevLenRef.current = len;
+  }, [messages, motionSafe]);
 
   // 空状态：欢迎页
   if (!activeConversationId && messages.length === 0) {
@@ -98,10 +134,11 @@ export function ChatThread({ messages, activeConversationId, onNewChat, onQuickA
   }
 
   return (
-    <div className="chat-thread" role="log" aria-live="polite" aria-label="聊天消息">
+    <div ref={threadRef} className="chat-thread" role="log" aria-live="polite" aria-label="聊天消息">
       {messages.map(msg => (
         <div
           key={msg.id}
+          data-msg-id={msg.id}
           className={`message-wrapper ${msg.role === "user" ? "message-user" : "message-assistant"}`}
         >
           <div className="message-avatar">
