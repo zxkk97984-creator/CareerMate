@@ -1,7 +1,9 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import gsap from "gsap";
 import { cn } from "@/components/ui/cn";
+import { useMotionSafe } from "@/lib/motion/motion-safe";
 
 // ── 类型 ────────────────────────────────────────
 
@@ -23,6 +25,25 @@ export interface QuickActionsProps {
 export function QuickActions({ questionId, actions, status, onSelect }: QuickActionsProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
+  const listRef = useRef<HTMLDivElement>(null);
+  const motionSafe = useMotionSafe();
+
+  // 挂载时对按钮播放一次性 stagger;状态翻转不重播
+  useLayoutEffect(() => {
+    const root = listRef.current;
+    if (!root || !motionSafe) return;
+    const ctx = gsap.context(() => {
+      gsap.from(root.querySelectorAll("button"), {
+        opacity: 0,
+        y: 8,
+        duration: 0.32,
+        ease: "power2.out",
+        stagger: 0.04,
+      });
+    }, root);
+    return () => ctx.revert();
+  }, [motionSafe]);
+
   const handleClick = useCallback(
     (action: QuickActionItem) => {
       if (status !== "pending" || selectedId) return;
@@ -36,6 +57,7 @@ export function QuickActions({ questionId, actions, status, onSelect }: QuickAct
 
   return (
     <div
+      ref={listRef}
       data-testid="quick-actions"
       data-question-id={questionId}
       data-status={status}
