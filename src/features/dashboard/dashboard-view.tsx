@@ -6,6 +6,7 @@ import { PolarAngleAxis, PolarGrid, Radar, RadarChart, ResponsiveContainer } fro
 import { abilityKeys, abilityLabels, taskStatusLabels, type PlanMonth, type TaskStatus } from "@/lib/types";
 import type { WorkspaceData } from "@/lib/workspace-types";
 import { fetchApi } from "@/lib/client-api";
+import { selectNextAction } from "@/lib/next-action";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import { Button } from "@/components/ui/button";
 import { CountUp } from "@/lib/motion/count-up";
@@ -45,28 +46,26 @@ const statusTone: Record<string, { bg: string; color: string }> = {
   delayed: { bg: "var(--cm-danger-bg)", color: "var(--cm-danger)" },
 };
 
-const statusProgress: Record<string, string> = {
-  not_started: "15%",
-  in_progress: "60%",
-  done: "100%",
-  completed: "100%",
-  delayed: "40%",
-};
-
-const statusBarColor: Record<string, string> = {
-  not_started: "var(--cm-surface-sunken)",
-  in_progress: "var(--cm-info)",
-  done: "var(--cm-success)",
-  completed: "var(--cm-success)",
-  delayed: "var(--cm-danger)",
-};
-
 interface DashboardViewProps { data: WorkspaceData; refresh: () => Promise<void>; setNotice: (v: string) => void; }
 
 export function DashboardView({ data, refresh, setNotice }: DashboardViewProps) {
   const radar = abilityKeys.map((k) => ({ ability: abilityLabels[k], score: data.profile?.abilityScores[k] ?? 0 }));
   const currentMonth = (data.plan?.months?.[Math.max((data.plan?.currentMonthIndex ?? 1) - 1, 0)] ?? null) as PlanMonth | null;
   const [generating, setGenerating] = useState(false);
+
+  // 真实完成进度（F06/T11）：completed/total，不再用基于 status 的虚构百分比
+  const currentTasks = (currentMonth?.learningTasks ?? []) as Array<{ id: string; title: string; type: string; status: TaskStatus; dueWeek?: number }>;
+  const totalTasks = currentTasks.length;
+  const doneTasks = currentTasks.filter((t) => t.status === "done").length;
+
+  // 确定性“下一步”（plan 3.3）：画像→引导 / pending→审阅 / 无计划→生成 / 进行中→继续 / 延期→查看 / 未开始→第一项 / 全完成→复盘
+  const nextAction = selectNextAction({
+    profileCompleted: Boolean(data.profile?.onboardingCompleted),
+    plan: data.plan ? { id: data.plan.id } : null,
+    pendingPlan: data.pendingPlan ? { id: data.pendingPlan.id } : null,
+    tasks: currentTasks.map((t, i) => ({ id: t.id, title: t.title, status: t.status, dueWeek: t.dueWeek, order: i })),
+    hasCompleted: doneTasks > 0,
+  });
 
   async function generatePlan() {
     if (generating) return;
@@ -95,6 +94,21 @@ export function DashboardView({ data, refresh, setNotice }: DashboardViewProps) 
 
   return (
     <>
+      {/* 下一步主区：行动优先（plan 3.3 / T11）——状态短标签 → 任务标题 → 推荐原因 → 一个主按钮 */}
+      <section className="dash-next-action" data-od-id="dashboard-next-action" style={{ borderRadius: "var(--cm-radius-card)", border: "1px solid var(--cm-border)", background: "var(--cm-surface)", boxShadow: "var(--cm-shadow-card)", padding: "20px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 20, flexWrap: "wrap" }}>
+        <div style={{ minWidth: 0 }}>
+          <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--cm-brand-ink, #0E76FF)" }}>下一步</span>
+          <div style={{ marginTop: 6, fontSize: 18, fontWeight: 600, lineHeight: 1.4, color: "var(--cm-text-strong)" }}>{nextAction.title}</div>
+          <p style={{ margin: "6px 0 0", fontSize: 13.5, color: "var(--cm-text-muted)" }}>{nextAction.reason}</p>
+        </div>
+        <a
+          href={nextAction.href}
+          style={{ flexShrink: 0, minHeight: 44, padding: "0 18px", display: "inline-flex", alignItems: "center", borderRadius: "var(--cm-radius-control)", background: "var(--cm-brand, #0E76FF)", color: "#fff", textDecoration: "none", fontWeight: 600 }}
+        >
+          {nextAction.actionLabel}
+        </a>
+      </section>
+
       {/* 待确认计划横条：生成的是候选，确认前不改当前任务（F05/T09） */}
       {data.pendingPlan ? (
         <section data-od-id="dashboard-pending-plan" style={{ borderRadius: "var(--cm-radius-card)", border: "1px solid var(--cm-border)", background: "var(--cm-surface)", boxShadow: "var(--cm-shadow-card)", padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
@@ -138,7 +152,7 @@ export function DashboardView({ data, refresh, setNotice }: DashboardViewProps) 
         </section>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-          <Metric title="本月任务" value={currentMonth?.learningTasks?.length ?? 0} unit="项" tone="brand" />
+          <Metric title="本月任务" value={totalTasks} unit="项" tone="brand" />
           <Metric title="待确认画像" value={pendingCandidateCount} unit="条" tone="warning" />
         </div>
       </div>
@@ -177,28 +191,33 @@ export function DashboardView({ data, refresh, setNotice }: DashboardViewProps) 
                   {currentMonth?.goal ?? "还没有生成职业路径"}
                 </div>
               </div>
+              {/* 真实进度：已完成/总数（不虚构百分比） */}
+              {totalTasks > 0 && (
+                <div style={{ fontSize: 12.5, color: "var(--cm-text-subtle)" }}>
+                  本期已完成 {doneTasks}/{totalTasks}
+                </div>
+              )}
               <div style={{ display: "grid", gap: 4 }}>
-                {(currentMonth?.learningTasks ?? []).map((t: any) => {
+                {currentTasks.map((t) => {
                   const tone = statusTone[t.status] ?? { bg: "var(--cm-canvas)", color: "var(--cm-text-muted)" };
                   return (
-                    <div key={t.id} className="cm-task-row">
+                    <a
+                      key={t.id}
+                      href={`/path#task-${t.id}`}
+                      className="cm-task-row"
+                      style={{ textDecoration: "none", cursor: "pointer", minHeight: 44, alignItems: "center" }}
+                    >
                       <div className="cm-task-main">
-                        <div className="cm-task-title">{t.title}</div>
+                        <div className="cm-task-title" style={{ color: "var(--cm-text-strong)" }}>{t.title}</div>
                         <div className="cm-task-meta">第 {t.dueWeek ?? "-"} 周前完成</div>
                       </div>
                       <span className="cm-task-status" style={{ background: tone.bg, color: tone.color }}>
-                        {taskStatusLabels[t.status as TaskStatus] ?? t.status}
+                        {taskStatusLabels[t.status] ?? t.status}
                       </span>
-                      <div className="cm-task-track">
-                        <span
-                          className="cm-task-bar"
-                          style={{ width: statusProgress[t.status] ?? "15%", background: statusBarColor[t.status] ?? "var(--cm-surface-sunken)" }}
-                        />
-                      </div>
-                    </div>
+                    </a>
                   );
                 })}
-                {(currentMonth?.learningTasks?.length ?? 0) === 0 && (
+                {totalTasks === 0 && (
                   <p style={{ margin: 0, fontSize: 13.5, color: "var(--cm-text-muted)" }}>暂无任务，先生成职业路径。</p>
                 )}
               </div>

@@ -24,10 +24,10 @@
 
 ## B. 产品与前端
 
-- [ ] T10a 合并重复 token，保留实际视觉基线。
+- [x] T10a 合并重复 token，保留实际视觉基线。 — 证据见 [t10a-baseline.md](t10a-baseline.md)；删除 oklch 草案 :root，唯一真源 #F7F7F5，44 token 无丢失。
 - [ ] T10b 统一页面标题、外壳、导航与断点。
 - [ ] T10c 分页迁移 CSS，避免无界全局覆盖。
-- [ ] T11 行动优先概览与确定性下一步选择。
+- [x] T11 行动优先概览与确定性下一步选择。 — 证据见 [t11-baseline.md](t11-baseline.md)；`selectNextAction` 纯函数覆盖 plan3.3 全分支（8 用例）、删虚构百分比、真实 completed/total。
 - [ ] T12a 参考分命名、中文标签、缺失数据表现。
 - [ ] T12b 权重校验、解释、建议优先级与证据。
 - [ ] T13 当前计划与待确认版独立预览/对比。
@@ -70,6 +70,10 @@
 | T08a | 执行 agent / 2026-09-06 | 新增 `src/lib/suggestions.ts`（SuggestionRef 判别联合 + buildSuggestionList 同源计数 + SuggestionDetail 按 kind）、`use-suggestions.ts` 聚合 hook | `npm run test` 126/126（1106）；lint 0/0；`tsc` 通过；`npm run build` exit 0 | 节点环境无浏览器 | 读模型接入 MemoryView 并做确认前详情/类型化失败 UI 属 T08b |
 | T08b | 执行 agent / 2026-09-06 | `memory-view.tsx`：operate/operateV2 判断 ok、确认前展示 old→new、decisionBusy 防重、409 提示重生成、confirmDelete 判断 ok | `npm run test` 126/126；lint 0/0；`tsc` 通过；`npm run build` exit 0 | 节点环境无浏览器 | 浏览器接受/拒绝/冲突流程留 T19/T25；计划接受闭环属 T09 |
 | T09 | 执行 agent / 2026-09-06 | `dashboard-view`/`workspace`：generatePlan 改“新计划已准备好，确认后开始执行”、pending 横条 + “审阅计划”、pending 计划纳入待确认计数 | `npm run test` 126/126；lint 0/0；`tsc` 通过；`npm run build` exit 0 | 节点环境无浏览器 | 浏览器“生成→确认→执行”点击闭环留 T19/T25；pending 横条视觉在 T11/T13 收敛 |
+| T06a | 执行 agent / 2026-09-06 | `use-assistant-controller`/`assistant-provider`/`assistant-controller-utils`：单一消息状态源、幂等 requestId、订阅切换隔离、保留 parts/meta/draft | 控制器纯函数 5 用例通过；全量 127/127（1111）；lint 0/0；`tsc` 通过；build exit 0 | 节点环境无浏览器 | 浏览器串话/重试不丢输入验证留 T19/T25 |
+| T06b | 执行 agent / 2026-09-06 | `assistant-panel` 接 controller 复用 ChatThread/MemoizedMarkdown/MessageParts/ChatComposer；根 layout 挂 AssistantProvider | 全量 127/127；lint 0/0；`tsc` 通过；build exit 0 | 节点环境无浏览器 | 消息/候选/来源浏览器表现留 T19/T25 |
+| T07a | 执行 agent / 2026-09-06 | `assistant-entry-button` 页头入口；controller panelOpen/expanded + open/toggle；panel 420/760px；根 layout 渲染 panel | 全量 127/127；lint 0/0；`tsc` 通过；build exit 0 | 节点环境无浏览器 | Kurisu 本地状态并入 controller 属 chat 重构收敛；浏览器入口验证留 T19/T25 |
+| T07b | 执行 agent / 2026-09-06 | panel Escape 关闭回焦；手机 100dvh+safe-area sheet；Kurisu 失败静态替代 | 全量 127/127；lint 0/0；`tsc` 通过；build exit 0 | 节点环境无浏览器 | 手机/焦点/安全区浏览器实测留 T19/T25 |
 | 评估与计划 | 当前评估 / 2026-09-06 | 仅 tasks/ 文档与截图 | baseline 见评估报告；非全绿 | 7 张本次截图 | 产品优化尚未执行 |
 
 ## 下一位 agent 从这里开始
