@@ -132,7 +132,7 @@ function SimulationReport({ active, onRestart }: { active: SimulationSession; on
         </div>
       ) : null}
       <div className={active.candidateId ? "sim-report-cta" : "sim-report-note"}>
-        {active.candidateId ? <>画像更新候选已生成，可前往<a href="/memory">“记忆权限”</a>确认。候选未确认前不视为已更新画像。</> : "本次未生成画像更新候选。"}
+        {active.candidateId ? <>画像更新候选已生成，可前往<a href="/memory?tab=candidates">“待确认建议”</a>确认。候选未确认前不视为已更新画像。</> : "本次未生成画像更新候选。"}
       </div>
       <div className="sim-report-actions">
         <Button variant="secondary" onClick={onRestart}>再来一次</Button>

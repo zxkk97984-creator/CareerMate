@@ -166,7 +166,11 @@ export function Workspace({ initialView, isAdmin = false }: { initialView: View;
               <ResourceView resources={data.resources} profile={data.profile} weakAbilities={data.match?.weakAbilities ?? []} />
             </Suspense>
           )}
-          {activeView === "memory" && <MemoryView memories={data.memories} candidates={data.candidates} v2Candidates={data.v2Candidates} memoryEnabled={data.profile.memoryEnabled} refresh={refresh} setNotice={setNotice} />}
+          {activeView === "memory" && (
+            <Suspense fallback={null}>
+              <MemoryView memories={data.memories} candidates={data.candidates} v2Candidates={data.v2Candidates} profile={data.profile} memoryEnabled={data.profile.memoryEnabled} refresh={refresh} setNotice={setNotice} />
+            </Suspense>
+          )}
           {activeView === "admin" && <AdminView drafts={data.drafts} templates={data.templates} refresh={refresh} setNotice={setNotice} />}
           </div>
         </div>

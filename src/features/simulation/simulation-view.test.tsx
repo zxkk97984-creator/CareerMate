@@ -47,6 +47,8 @@ describe("SimulationView", () => {
     const html = renderCompleted(82, "candidate-1");
 
     expect(html).toContain("画像候选已生成");
-    expect(html).toContain("记忆权限");
+    // 深链接到“待确认建议”标签（T18），不再用旧的“记忆权限”泛指
+    expect(html).toContain("待确认建议");
+    expect(html).toContain('/memory?tab=candidates');
   });
 });

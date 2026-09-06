@@ -3549,6 +3549,47 @@ select.cm-select {
   gap: 20px;
 }
 
+/* 成长档案：三标签布局（T18） */
+.memory-tabbed {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.memory-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--cm-border);
+  padding-bottom: 10px;
+}
+.memory-tab {
+  min-height: 38px;
+  padding: 0 16px;
+  border-radius: var(--cm-radius-control);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--cm-text-muted);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s var(--cm-ease), color 0.15s var(--cm-ease), border-color 0.15s ease;
+}
+.memory-tab:hover {
+  background: var(--cm-surface-soft);
+  color: var(--cm-text-strong);
+}
+.memory-tab.active {
+  background: var(--cm-tint-brand);
+  border-color: var(--cm-brand);
+  color: var(--cm-brand-ink);
+  font-weight: 600;
+}
+.memory-profile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px 24px;
+}
+
 .memory-card {
   border: 1px solid var(--cm-border);
   border-radius: var(--cm-radius-card);
