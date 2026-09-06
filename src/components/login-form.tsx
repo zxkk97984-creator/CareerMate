@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { FluidBackground } from "@/components/fluid-background";
-import { BriefcaseBusiness, Eye, EyeOff, Lock, Map, MessagesSquare, UserRound } from "lucide-react";
+import { BriefcaseBusiness, Eye, EyeOff, Lock, UserRound } from "lucide-react";
 
 type Mode = "login" | "register";
 

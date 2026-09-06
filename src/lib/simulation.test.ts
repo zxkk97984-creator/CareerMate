@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildCareerInterviewScenario,
   canCompleteSimulation,
   getSimulationScenario,
   listSimulationScenarios,
@@ -9,14 +10,20 @@ import {
 } from "./simulation";
 
 describe("simulation domain", () => {
-  it("defines five documented scenarios with full metadata", () => {
+  it("defines the documented scenario enum, including the dynamic career interview", () => {
+    // career_interview 是依赖用户画像动态构建的岗位面试场景，包含在枚举中，
+    // 但不出现在通用 listSimulationScenarios() 目录里（由 buildCareerInterviewScenario 单独构建）。
     expect(simulationScenarioKeys).toEqual([
       "cross_role_communication",
       "ai_office",
       "remote_collaboration",
       "data_driven_decision",
       "requirement_clarification",
+      "career_interview",
     ]);
+  });
+
+  it("lists the five selectable scenarios and verifies each has complete metadata", () => {
     const catalog = listSimulationScenarios();
     expect(catalog).toHaveLength(5);
     for (const scenario of catalog) {
@@ -29,6 +36,20 @@ describe("simulation domain", () => {
       expect(scenario.scoringDimensions.length).toBeGreaterThanOrEqual(3);
       expect(scenario.prompts.length).toBeGreaterThanOrEqual(5);
     }
+  });
+
+  it("builds a profile-aware career interview scenario with complete metadata", () => {
+    const scenario = buildCareerInterviewScenario({ targetRole: "data_analyst", targetRoleLabel: "数据分析师" });
+    expect(scenario.key).toBe("career_interview");
+    expect(scenario.title).toBe("数据分析师 岗位面试");
+    expect(scenario.role).toBe("数据分析师");
+    expect(scenario.counterpart).toBe("面试官");
+    expect(scenario.difficulty).toBe("L2");
+    expect(scenario.prompts.length).toBeGreaterThanOrEqual(5);
+    expect(scenario.scoringDimensions.length).toBeGreaterThanOrEqual(3);
+    expect(scenario.openingMessage).toContain("数据分析师");
+    // 通用目录不应把动态面试场景当作可预选场景
+    expect(listSimulationScenarios().some((s) => s.key === "career_interview")).toBe(false);
   });
 
   it("allows completion from three through six user turns", () => {

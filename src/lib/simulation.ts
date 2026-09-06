@@ -159,7 +159,6 @@ export function buildCareerInterviewScenario(profile: {
   targetRoleLabel?: string | null;
 }): SimulationScenarioMeta {
   const roleName = profile.targetRoleLabel ?? profile.targetRole ?? "目标岗位";
-  const roleKey = profile.targetRole ?? "target_role";
   return {
     key: "career_interview",
     title: `${roleName} 岗位面试`,

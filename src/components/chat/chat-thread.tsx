@@ -32,7 +32,7 @@ const SUGGESTED_QUESTIONS = [
 /** 画像完善引导的快捷消息 */
 const PROFILE_GUIDANCE_MESSAGE = "我想完善我的职业画像";
 
-export function ChatThread({ messages, activeConversationId, onNewChat, onQuickAction, openChatEntry = true, streaming = false, kurisuPhase = "idle" }: ChatThreadProps) {
+export function ChatThread({ messages, activeConversationId, onNewChat, onQuickAction, openChatEntry = true }: ChatThreadProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const threadRef = useRef<HTMLDivElement>(null);
   const seenIdsRef = useRef<Set<string>>(new Set());

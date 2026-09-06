@@ -82,7 +82,6 @@ function historyErrorMessage(status: number): string {
 export function KurisuChatWindow() {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const dragRef = useRef<{ offsetX: number; offsetY: number; pointerId: number } | null>(null);
-  const resizeRef = useRef<{ startX: number; startY: number; w: number; h: number } | null>(null);
   const dialogDragRef = useRef<{ offsetX: number; offsetY: number; pointerId: number } | null>(null);
   const dialogResizeRef = useRef<{ startX: number; startY: number; w: number; h: number } | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -96,7 +95,6 @@ export function KurisuChatWindow() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogLoading, setDialogLoading] = useState(false);
   const [dialogError, setDialogError] = useState<string | null>(null);
-  const [dialogSide, setDialogSide] = useState<"left" | "right">("right");
   const [dialogPos, setDialogPos] = useState<{ x: number; y: number } | null>(null);
   const [dialogSize, setDialogSize] = useState<{ w: number; h: number | null }>(loadDialogSize);
   const [draft, setDraft] = useState("");
@@ -129,10 +127,9 @@ export function KurisuChatWindow() {
       dialogW: dialogSize.w,
       rect,
     });
-    setDialogSide(resolved.side);
     setDialogPos(resolved.pos);
     try { localStorage.setItem(DIALOG_POS_KEY, JSON.stringify(resolved.pos)); } catch {}
-  }, [rect.x, rect.y, rect.w, dialogSize.w]);
+  }, [rect, dialogSize.w]);
 
   const loadConversationMessages = useCallback(async (id: string) => {
     // 打开历史时必须共用与新建对话一致的定位逻辑：先用已保存/自动位置显示对话框，再异步填内容。
@@ -248,29 +245,6 @@ export function KurisuChatWindow() {
     if (dragRef.current?.pointerId === e.pointerId) dragRef.current = null;
   }, []);
 
-  // 调整窗口大小
-  const onResizePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    resizeRef.current = { startX: e.clientX, startY: e.clientY, w: rect.w, h: rect.h };
-    (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
-  }, [rect.w, rect.h]);
-
-  const onResizePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (!resizeRef.current) return;
-    const w = Math.max(200, Math.min(420, resizeRef.current.w + (e.clientX - resizeRef.current.startX)));
-    const h = Math.max(220, Math.min(520, resizeRef.current.h + (e.clientY - resizeRef.current.startY)));
-    setRect(prev => {
-      const next = { ...prev, w, h };
-      try { localStorage.setItem(SIZE_KEY, JSON.stringify({ w: next.w, h: next.h })); } catch {}
-      return next;
-    });
-  }, []);
-
-  const onResizePointerUp = useCallback(() => {
-    resizeRef.current = null;
-  }, []);
-
   // 右键菜单：固定在克里斯右边（相对窗口坐标）
   const openMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -279,7 +253,7 @@ export function KurisuChatWindow() {
     const x = Math.min(KURISU_RIGHT + 8, window.innerWidth - rect.x - menuWidth - 12);
     const y = Math.min(24, Math.max(8, window.innerHeight - rect.y - 260));
     setMenu({ x, y });
-  }, [rect.x, rect.y, rect.w]);
+  }, [rect.x, rect.y]);
 
   const closeMenu = useCallback(() => setMenu(null), []);
 
@@ -332,7 +306,7 @@ export function KurisuChatWindow() {
     const next = clampDialogPos(rawX, rawY, dialogSize.w, rect);
     setDialogPos(next);
     try { localStorage.setItem(DIALOG_POS_KEY, JSON.stringify(next)); } catch {}
-  }, [dialogSize.w, rect.x, rect.y]);
+  }, [dialogSize.w, rect]);
 
   const onDialogHeaderPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (dialogDragRef.current?.pointerId === e.pointerId) dialogDragRef.current = null;
@@ -492,6 +466,9 @@ export function KurisuChatWindow() {
                     <button
                       type="button"
                       className="kurisu-dialog-retry"
+                      // 最小复现确认：react-hooks/refs 对“事件回调内读写 ref”误报；
+                      // loadConversationMessages 只在 onClick/异步回调里访问 localCidRef，并非渲染期访问。
+                      // eslint-disable-next-line react-hooks/refs
                       onClick={() => { void loadConversationMessages(activeConversationId); }}
                     >
                       重试加载
@@ -511,6 +488,9 @@ export function KurisuChatWindow() {
               className="kurisu-dialog-form"
               onSubmit={(e) => {
                 e.preventDefault();
+                // 最小复现确认：react-hooks/refs 对“事件回调内读写 ref”误报；
+                // sendLocalMessage 只在 submit 时访问 localCidRef，并非渲染期访问。
+                // eslint-disable-next-line react-hooks/refs
                 sendLocalMessage(draft);
               }}
             >

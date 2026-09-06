@@ -26,7 +26,8 @@ describe("SimulationView", () => {
   it("shows an unscored completion without claiming a candidate exists", () => {
     const html = renderCompleted(null, null);
 
-    expect(html).toContain("本次未产生正式评分");
+    // 语义上应呈现“未产生正式评分”，而非一个 0 分圆环或“训练得分： 分”旧文案
+    expect(html).toContain("未产生正式评分");
     expect(html).not.toContain("画像候选已生成");
     expect(html).not.toContain("训练得分： 分");
   });
@@ -34,8 +35,12 @@ describe("SimulationView", () => {
   it("only claims a candidate when the session actually has one", () => {
     const html = renderCompleted(82, null);
 
-    expect(html).toContain("训练得分：82 分");
+    // 新评分 UI 用可访问名“综合得分 82 分”，不再使用“训练得分：82 分”旧文案
+    expect(html).toContain('aria-label="综合得分 82 分"');
+    expect(html).not.toContain("训练得分：82 分");
     expect(html).not.toContain("画像候选已生成");
+    // 未生成候选时明确提示，避免把候选建议写成已确认的能力提升
+    expect(html).toContain("本次未生成画像候选");
   });
 
   it("shows the candidate confirmation guidance when a candidate exists", () => {

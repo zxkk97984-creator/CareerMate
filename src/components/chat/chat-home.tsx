@@ -6,6 +6,7 @@ import { ChatThread } from "./chat-thread";
 import { ChatComposer } from "./chat-composer";
 import { GrowthProfileDrawer } from "./growth-profile-drawer";
 import type { ConversationItem, MessageItem } from "@/lib/chat/schemas";
+import { readApiJson } from "@/lib/client-api";
 import { consumeFrontendSseResponse, type FrontendSseResult } from "@/lib/tbox/frontend-sse";
 import type { AiExecutionMeta } from "@/lib/types";
 import { Menu, PanelRightClose, PanelRightOpen } from "lucide-react";
@@ -27,23 +28,20 @@ export function ChatHomePage({ displayName, openChatEntry = true }: ChatHomePage
   const [lastAssistantMeta, setLastAssistantMeta] = useState<AiExecutionMeta | null>(null);
   const [kurisuPhase, setKurisuPhase] = useState<"idle" | "waiting" | "speaking">("idle");
   const [lastAssistantWarnings, setLastAssistantWarnings] = useState<string[]>([]);
-  const [runStats, setRunStats] = useState<{ elapsedMs: number; chars: number; source: string } | null>(null);
 
   // 用 ref 追踪当前活跃会话和流式状态，避免闭包过期
   const activeCidRef = useRef<string | null>(null);
   const streamingRef = useRef(false);
   const requestIdRef = useRef<string | null>(null);
   const activeAsstIdRef = useRef<string>(""); // 当前助手消息 ID（可能被 context 事件替换）
-  const runStartRef = useRef<number | null>(null);
 
   const activeConversation = conversations.find((c) => c.id === activeConversationId) ?? null;
 
   // 加载会话列表
   const loadConversations = useCallback(async () => {
     const res = await fetch("/api/chat/conversations?limit=30");
-    if (!res.ok) return;
-    const body = await res.json();
-    if (body.ok) setConversations(body.data.items);
+    const body = await readApiJson<{ items?: ConversationItem[] }>(res);
+    if (body?.ok && body.data) setConversations(body.data.items ?? []);
   }, []);
 
   useEffect(() => { loadConversations(); }, [loadConversations]);
@@ -51,18 +49,17 @@ export function ChatHomePage({ displayName, openChatEntry = true }: ChatHomePage
   // 加载待确认候选数量（含旧画像候选和 V2 候选）
   useEffect(() => {
     Promise.all([
-      fetch("/api/profile/candidates").then(r => r.json()),
-      fetch("/api/agentic-v2/candidates?status=pending").then(r => r.json()),
+      fetch("/api/profile/candidates").then((r) => readApiJson<{ items?: Array<{ status: string }> }>(r)),
+      fetch("/api/agentic-v2/candidates?status=pending").then((r) => readApiJson<{ items?: unknown[] }>(r)),
     ])
       .then(([legacy, v2]) => {
         let pending = 0;
-        if (legacy.ok) {
-          const items = (legacy.data as { items?: Array<{ status: string }> })?.items ?? [];
+        if (legacy?.ok) {
+          const items = legacy.data?.items ?? [];
           pending += items.filter((c) => c.status === "pending").length;
         }
-        if (v2.ok) {
-          const v2Items = (v2.data as { items?: Array<unknown> })?.items ?? [];
-          pending += v2Items.length;
+        if (v2?.ok) {
+          pending += (v2.data?.items ?? []).length;
         }
         setPendingCandidateCount(pending);
       })
@@ -85,10 +82,11 @@ export function ChatHomePage({ displayName, openChatEntry = true }: ChatHomePage
     fetch(`/api/chat/conversations/${requestedConversationId}/messages?limit=50`, {
       signal: controller.signal,
     })
-      .then(r => r.json())
+      .then((r) => readApiJson<MessageItem[]>(r))
       .then(b => {
         if (
-          b.ok &&
+          b?.ok &&
+          b.data &&
           activeCidRef.current === requestedConversationId &&
           !streamingRef.current
         ) {
@@ -122,8 +120,6 @@ export function ChatHomePage({ displayName, openChatEntry = true }: ChatHomePage
     streamingRef.current = true;
     setIsStreaming(true);
     setKurisuPhase("waiting");
-    runStartRef.current = Date.now();
-    setRunStats(null);
 
     const clientRequestId = requestIdRef.current;
 
@@ -231,14 +227,6 @@ export function ChatHomePage({ displayName, openChatEntry = true }: ChatHomePage
       streamingRef.current = false;
       setIsStreaming(false);
       setKurisuPhase("idle");
-      if (runStartRef.current != null) {
-        setRunStats({
-          elapsedMs: Date.now() - runStartRef.current,
-          chars: assistantContent.length,
-          source: sseResult?.meta?.source ?? "careermate",
-        });
-        runStartRef.current = null;
-      }
       requestIdRef.current = null; // 重置请求 ID 用于下次发送
     }
 
@@ -254,16 +242,16 @@ export function ChatHomePage({ displayName, openChatEntry = true }: ChatHomePage
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
-      if (!res.ok) return;
-      const body = await res.json();
-      if (body.ok && body.data?.id) {
-        setConversations(prev => [body.data, ...prev]);
-        setActiveConversationId(body.data.id);
-        activeCidRef.current = body.data.id;
+      const body = await readApiJson<ConversationItem>(res);
+      const created = body?.ok ? body.data : null;
+      if (created?.id) {
+        setConversations(prev => [created, ...prev]);
+        setActiveConversationId(created.id);
+        activeCidRef.current = created.id;
         setMessages([]);
         // 如果传入了初始消息，直接发送（使用新会话 ID，避免闭包问题）
         if (initialMessage) {
-          doSend(body.data.id, initialMessage);
+          doSend(created.id, initialMessage);
         }
       }
     } catch {
@@ -282,11 +270,11 @@ export function ChatHomePage({ displayName, openChatEntry = true }: ChatHomePage
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
-      if (!res.ok) return;
-      const body = await res.json();
-      if (!body.ok) return;
-      convId = body.data.id as string;
-      setConversations(prev => [body.data, ...prev]);
+      const body = await readApiJson<ConversationItem>(res);
+      const created = body?.ok ? body.data : null;
+      if (!created?.id) return;
+      convId = created.id;
+      setConversations(prev => [created, ...prev]);
       setActiveConversationId(convId);
       activeCidRef.current = convId;
     }
@@ -311,22 +299,12 @@ export function ChatHomePage({ displayName, openChatEntry = true }: ChatHomePage
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title }),
     });
-    if (!res.ok) return;
-    const body = await res.json();
-    if (body.ok) {
-      setConversations(prev => prev.map(c => c.id === id ? { ...c, title: body.data.title } : c));
+    const body = await readApiJson<{ title: string }>(res);
+    const newTitle = body?.ok ? body.data?.title : null;
+    if (newTitle) {
+      setConversations(prev => prev.map(c => c.id === id ? { ...c, title: newTitle } : c));
     }
   }, []);
-
-  /** 从 Kurisu 悬浮窗选择历史会话 */
-  const handleSelectConversationFromKurisu = useCallback((id: string) => {
-    setMessages([]);
-    setActiveConversationId(id);
-    activeCidRef.current = id;
-  }, []);
-
-  const latestAssistantText = [...messages].reverse().find(m => m.role === "assistant")?.content ?? "";
-  const kurisuStarted = Boolean(activeConversationId || messages.length > 0);
 
   return (
     <div className="chat-home-layout" data-testid="app-shell" data-od-id="chat-layout">

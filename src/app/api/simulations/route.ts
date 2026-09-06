@@ -4,7 +4,7 @@ import { requireCurrentUser } from "@/lib/auth";
 import { getTboxConfig } from "@/lib/env";
 import { getPrisma } from "@/lib/prisma";
 import { parseJson } from "@/lib/json";
-import { buildCareerInterviewScenario, buildRoleSimulationScenarios, getSimulationScenario, listSimulationScenarios, simulationDto, simulationScenarioSchema } from "@/lib/simulation";
+import { buildCareerInterviewScenario, buildRoleSimulationScenarios, getSimulationScenario, simulationDto, simulationScenarioSchema } from "@/lib/simulation";
 
 const createSchema = z.object({ scenarioType: simulationScenarioSchema }).strict();
 

@@ -12,7 +12,6 @@ interface KurisuAvatarProps {
 /** Kurisu Live2D 作为 AI 聊天头像：等待时思考，输出时说话 */
 export function KurisuAvatar({ streaming = false, phase = "idle" }: KurisuAvatarProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [loaded, setLoaded] = useState(false);
   const [modelReady, setModelReady] = useState(false);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevPhaseRef = useRef<"idle" | "waiting" | "speaking">("idle");
@@ -87,7 +86,6 @@ export function KurisuAvatar({ streaming = false, phase = "idle" }: KurisuAvatar
         title="Kurisu Live2D"
         tabIndex={-1}
         onLoad={() => {
-          setLoaded(true);
           pollTimerRef.current = setInterval(() => {
             const win = iframeRef.current?.contentWindow as (Window & {
               __kurisuReady?: boolean;
