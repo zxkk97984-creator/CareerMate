@@ -1,72 +1,120 @@
-# 百宝箱工作流配置
+# CareerMate AI 工作流当前边界
 
-> 更新日期：2026-07-14
-> 主 Agent 统一编排入口：`agent_id` 由服务端环境变量 `TBOX_AGENT_ID` 指定，不再分别调用子工作流 ID。
-> 子工作流由主 Agent 在平台侧内部选择，Next.js 不传子工作流 ID。
+本文只描述代码当前可以承接的业务任务和输出边界。页面不会传递“调用某个工作流”的实现指令；页面只发送自然语言和受限的 `interaction.surface/action`。
 
-## 0. 结构化输出协议（7 类能力）
+## 1. 运行入口
 
-主 Agent 结束节点通过 `variables.result` 返回以下七类结构化 envelope 之一。`type` 字段必须与下表完全一致。
+产品聊天主链路：
 
-| 能力 | `resultType` | 关键字段 | Zod Schema |
-|------|-------------|---------|------------|
-| 技能评估 | `profile_assessment` | `targetRole`, `scores`(6维), `strengths`, `gaps`, `evidence`, `assumptions`, `needsConfirmation: true`, `candidateUpdates` | `profileAssessmentSchema` |
-| 画像匹配 | `role_match` | `matches[3]`: `role`, `score`, `reasons`, `gaps`, `assumptions` | `roleMatchResultSchema` |
-| 职业计划 | `career_plan` | `plan`(复用 `careerPlanSchema`), `candidateUpdates` | `careerPlanResultSchema` |
-| 学习路线 | `learning_route` | `targetRole`, `weeklyHours`, `phases[]`: 阶段/周任务/资源/风险 | `learningRouteResultSchema` |
-| 模拟训练(轮) | `simulation_turn` | `scenarioKey`, `assistantMessage`, `turnIndex`, `shouldComplete` | `simulationTurnResultSchema` |
-| 模拟训练(报告) | `simulation_report` | `scenarioKey`, `score`, `strengths`, `improvements`, `evidence`, `abilityImpact`, `candidateUpdates` | `simulationReportResultSchema` |
-| 简历优化 | `resume_review` | `summary`, `issues[]`, `suggestions[]`, `rewrites[]`, `fabricatedFacts: false` | `resumeReviewResultSchema` |
+```text
+Kurisu 浮窗
+→ /api/chat/conversations/:id/stream
+→ src/lib/chat/stream-service.ts
+→ TBox 适配器或 Agentic V2
+```
 
-**直接回复节点**只输出用户可见 Markdown，不得包含结构化 JSON。
-**结束节点**只返回变量消息 `result`（使用对应能力 envelope），不得再次输出与直接回复相同的用户可见文本。
+页面专用 API 仍负责确定性业务状态：画像确认、计划任务状态、模拟会话、记忆决策和管理员审核。
 
-## 一、职业探索工作流
+## 2. Agentic V2 任务类型
 
-**触发条件：** 用户询问职业信息、比较职业、确定目标
+V2 ArtifactV1 支持以下 `taskType`：
 
-**流程：**
-1. 判断职业是否在 `supportedRoleKeys`（ai_product_manager, data_analyst, aigc_operator）
-2. 已核验职业 → 调用知识库 `roleCompetency`
-3. 未知职业 → 调用 `search_engine` 联网搜索
-4. 结果通过 `explorationReportSchema` Zod 校验
-5. 展示来源标签（已核验职业库 / 实时联网调研 / AI分析与推断）
+```text
+profile_assessment
+career_exploration
+career_plan
+learning_route
+simulation_turn
+simulation_report
+resume_review
+growth_review
+memory_item
+career_template_draft
+```
 
-## 二、画像候选工作流
+只有需要用户确认的结果才会进入候选生命周期：
 
-**触发条件：** AI 从对话中发现新的用户画像信息
+```text
+Agent artifact
+→ 精确 envelope 解析
+→ AgentArtifactV1 校验
+→ candidateType / data Schema 校验
+→ pending 候选
+→ 用户接受或拒绝
+→ 版本检查
+→ 事务化投影
+```
 
-**输出约束：**
-- 仅允许 `ALLOWED_CANDIDATE_FIELDS` 白名单字段
-- 每个候选必须包含：原文依据 (evidenceExcerpt)、置信度 (confidence)、计划影响 (impactSummary)
-- 能力候选同时创建 `AbilityEvidence(status=pending)`
-- 能力分限定 0–100
+## 3. 画像评估和画像候选
 
-## 三、新职业调研工作流
+触发条件：用户在对话中明确表达阶段、专业、目标岗位、时间、偏好、经历或限制。
 
-**触发条件：** 用户询问非内置职业
+约束：
 
-**流程：**
-1. 调用 `search_engine` 搜索
-2. 搜索优先级：政府/职业标准 → 行业协会 → 企业官方岗位 → 研究报告
-3. 输出 `ExplorationReport` 结构
-4. 关键事实必须有非推断来源
-5. fitAnalysis 必须标注 "AI推断"
+- 只允许 `UserProfile` 字段白名单。
+- 推断信息必须包含证据、置信度和原因。
+- 画像版本发生变化时，旧候选接受操作返回版本冲突。
+- 正式画像只能在用户确认后更新。
 
-## 四、计划生成/重规划工作流
+画像引导的确定性实现位于：
 
-**触发条件：** 用户请求制定或更新职业计划
+- `src/lib/onboarding.ts`
+- `src/app/api/onboarding/chat/route.ts`
+- `src/app/api/onboarding/complete/route.ts`
 
-**输出约束：**
-- 统一计划结构：3年方向 + 12个月里程碑 + 90天任务 + 本周行动
-- 重规划：生成新版本候选 + 差异对象
-- 不直接确认——用户确认后才激活
+## 4. 职业探索
 
-## 五、模拟训练工作流
+代码支持已知岗位模板和未知岗位：
 
-**触发条件：** 用户请求模拟面试、沟通等场景
+- 已知岗位可读取 `RoleTemplate` 和本地知识素材。
+- 未知岗位通过稳定 custom role key 表示，不会因为一次回答自动写入正式岗位模板。
+- 需要市场变化、薪资或当前招聘信息时，必须标记为实时核验或 AI 推断。
+- 探索报告保存到 `CareerExplorationReport`，必要时生成 `career_template_draft` 候选。
 
-**流程：**
-1. 选择场景（面试/沟通/汇报/协作）
-2. 逐轮反馈
-3. 结构化总结（分数 + 改进建议）
+## 5. 职业计划与学习路线
+
+当前同时兼容两种计划结构：
+
+- V1：历史固定 3 年、12 个季度和 36 个月数组。
+- V2：`horizon`、`phases`、`actions` 的灵活结构。
+
+V2 结构由 `src/lib/plans/schema-v2.ts` 校验，全局 action ID 必须唯一。`PLAN_V2_WRITE=false` 时可以读取/转换 V2，但不会创建新的 V2 正式计划。
+
+所有新计划先进入 `pending`，由用户确认后再成为 `active`。计划任务状态由本地 API 校验并写入，不依赖 AI 直接修改数据库。
+
+学习路线是独立的 `LearningRoute` 版本化模型，不能把 `CareerPlan` 的读取或接受当作学习路线写入。
+
+## 6. 模拟训练
+
+当前训练由本地 `SimulationSession` 管理：
+
+1. 创建场景和 opening message。
+2. 最多 6 轮回答。
+3. 至少 3 轮后才允许完成评分。
+4. 生成结构化报告。
+5. 保存分数、优势、改进项和能力影响。
+6. 非降级报告可以创建 `ability_evidence` 候选。
+
+`simulation_turn` 是逐轮协议，不会直接创建候选；`simulation_report` 在完成接口中单独校验。
+
+## 7. 记忆
+
+记忆写入受 `UserProfile.memoryEnabled` 控制：
+
+- 用户明确要求记住且置信度足够高的普通记忆可以自动确认。
+- Agent 提议的普通记忆进入 pending。
+- 敏感记忆进入 pending，不自动确认。
+- 关闭长期记忆时不写入新记忆，但已有记忆不被自动删除。
+
+V2 snapshot 只读取已确认、职业作用域、普通敏感度且未过期的记忆。
+
+## 8. 工作流和平台资源的边界
+
+平台侧工作流、知识库、Skill 和子智能体的真实发布状态不由仓库代码保证。代码只保证：
+
+- TBox 请求参数和超时处理。
+- SSE 事件归一化。
+- 结构化结果的本地 Schema 校验。
+- 候选、版本、权限和事务投影。
+
+因此文档中的资源名称只能作为职责分类，不能替代百宝箱控制台中的真实资源引用和版本核验。

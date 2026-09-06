@@ -4,7 +4,7 @@ import type { AiExecutionMeta, CareerPlanDto, ProfileDto, ResourceItemDto } from
 import { abilityKeys } from "@/lib/types";
 
 /** 工作台视图标识 */
-export type View = "onboarding" | "dashboard" | "path" | "simulation" | "resources" | "memory" | "chat" | "admin";
+export type View = "onboarding" | "dashboard" | "path" | "simulation" | "resources" | "memory" | "admin";
 
 /** 通用 API 响应 */
 export interface ApiPayload<T> {

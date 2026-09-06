@@ -19,7 +19,7 @@ vi.mock("@/lib/prisma", () => ({
 
 import { POST as login } from "@/app/api/auth/login/route";
 import { POST as register } from "@/app/api/auth/register/route";
-import { onboardingDestination } from "./onboarding-routing";
+import { homeDestination, onboardingDestination } from "./onboarding-routing";
 
 function request(url: string, body: unknown) {
   return new Request(url, {
@@ -40,6 +40,12 @@ describe("onboarding routing", () => {
     expect(onboardingDestination(null)).toBe("/onboarding");
     expect(onboardingDestination({ onboardingCompleted: false }, "/dashboard")).toBe("/onboarding");
     expect(onboardingDestination({ onboardingCompleted: true }, "/dashboard")).toBe("/dashboard");
+  });
+
+  it("sends completed profiles to the growth dashboard and incomplete ones to onboarding at the home entry", () => {
+    expect(homeDestination(null)).toBe("/onboarding");
+    expect(homeDestination({ onboardingCompleted: false })).toBe("/onboarding");
+    expect(homeDestination({ onboardingCompleted: true })).toBe("/dashboard");
   });
 
   it("creates registration profiles as incomplete and returns onboarding as the next path", async () => {

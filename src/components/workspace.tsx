@@ -29,7 +29,6 @@ const VIEW_BY_PATH: Record<string, View> = {
   "/resources": "resources",
   "/memory": "memory",
   "/admin": "admin",
-  "/": "chat",
 };
 
 export function Workspace({ initialView, isAdmin = false }: { initialView: View; isAdmin?: boolean }) {
@@ -208,11 +207,6 @@ export function Workspace({ initialView, isAdmin = false }: { initialView: View;
           {activeView === "simulation" && <SimulationView simulations={data.simulations} profile={data.profile} refresh={loadAll} setNotice={setNotice} />}
           {activeView === "resources" && <ResourceView resources={data.resources} profile={data.profile} weakAbilities={data.match?.weakAbilities ?? []} />}
           {activeView === "memory" && <MemoryView memories={data.memories} candidates={data.candidates} v2Candidates={data.v2Candidates} memoryEnabled={data.profile.memoryEnabled} refresh={loadAll} setNotice={setNotice} />}
-          {activeView === "chat" && (
-            <div className="p-8 text-center text-[var(--cm-text-muted)]">
-              聊天功能已迁移到首页，请返回首页开始对话。
-            </div>
-          )}
           {activeView === "admin" && <AdminView drafts={data.drafts} templates={data.templates} refresh={loadAll} setNotice={setNotice} />}
           </div>
         </div>

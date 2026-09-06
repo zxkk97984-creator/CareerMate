@@ -4,12 +4,12 @@
 
 ## 1. 当前运行链路
 
-CareerMate 当前采用“单一 AI 大脑 + 业务后端治理”的架构：
+CareerMate 当前采用“工作台 + 全局 Kurisu 对话入口 + 单一 AI 大脑 + 业务后端治理”的架构：
 
 ```text
 用户
-→ CareerMate 前端
-→ CareerMate 后端 /api/chat
+→ CareerMate 工作台页面或全局 Kurisu 浮窗
+→ CareerMate 后端 /api/chat/conversations/:id/stream
 → 脱敏 profileSnapshot / historySnapshot / simulationState
 → 一个已发布的百宝箱 Agentic V2 agent_id
 → 知识库、工作流、Skill、专业子智能体、夸克搜索与平台记忆
@@ -21,8 +21,10 @@ CareerMate 当前采用“单一 AI 大脑 + 业务后端治理”的架构：
 
 运行约束：
 
-- 百宝箱 Agentic 是唯一 AI 决策中枢，CareerMate 后端不维护第二套路由模型。
-- 所有页面统一经过 `/api/chat`，页面只描述用户动作和当前界面，不命令 Agent 调用具体工具。
+- 百宝箱 Agentic 是可选运行路径中的唯一 AI 决策中枢，CareerMate 后端不维护第二套路由模型。
+- 当前登录后的主聊天入口是工作台页面中的全局 Kurisu 浮窗；`/chat` 路由目前只重定向到 `/dashboard`。
+- 产品聊天主链路是 `/api/chat/conversations/:id/stream`。`/api/tbox/chat*` 仅保留用于诊断和兼容。
+- 页面只描述用户动作和当前界面，不命令 Agent 调用具体工具。
 - 后端只调用一个 V2 `agent_id`，同一会话复用已绑定的百宝箱 `conversation_id`。
 - 当前真实链路使用脱敏快照，不使用上下文签名令牌访问业务 MCP。
 - 当前请求关闭百宝箱内置搜索，由 Agent 已挂载的夸克搜索 MCP 统一提供联网能力。
@@ -37,6 +39,13 @@ CareerMate 当前采用“单一 AI 大脑 + 业务后端治理”的架构：
 - `src/lib/agentic-v2/artifact-envelope.ts`
 - `src/lib/agentic-v2/candidate-ingestion.ts`
 - `src/lib/agentic-v2/candidate-resolution.ts`
+
+当前页面入口与聊天组件：
+
+- `src/components/workspace.tsx`：聚合 `/api/me`、计划、资源、记忆、候选和模拟数据。
+- `src/components/chat/global-kurisu.tsx`：在工作台页面挂载全局 Kurisu。
+- `src/components/chat/kurisu-chat-window.tsx`：Kurisu 的会话列表、浮窗和 SSE 对话。
+- `src/components/chat/chat-home.tsx`：可复用的主聊天布局，目前没有被 App Router 页面直接挂载。
 
 ## 2. 职责边界
 
@@ -104,7 +113,7 @@ CareerMate 当前采用“单一 AI 大脑 + 业务后端治理”的架构：
 
 ### 3.1 前端到 CareerMate 后端
 
-所有页面使用统一聊天入口。除自然语言消息外，可提供页面上下文：
+工作台中的 Kurisu 浮窗通过本地会话 API 工作。除自然语言消息外，聊天请求可提供页面上下文：
 
 ```json
 {
@@ -118,6 +127,17 @@ CareerMate 当前采用“单一 AI 大脑 + 业务后端治理”的架构：
 ```
 
 `interaction` 不能覆盖用户消息，也不能携带 `call_workflow_*` 一类实现指令。
+
+当前主要请求路径：
+
+```text
+POST /api/chat/conversations
+GET  /api/chat/conversations/:id/messages
+POST /api/chat/conversations/:id/stream
+PATCH/DELETE /api/chat/conversations/:id
+```
+
+`src/features/chat/chat-view.tsx` 和 `src/components/chat/chat-home.tsx` 仍包含旧/可复用聊天 UI，但当前 App Router 的 `/chat` 页面不直接渲染它们。
 
 ### 3.2 CareerMate 后端到百宝箱
 
@@ -216,6 +236,8 @@ error
 - 可见正文与 artifact 分离保存。
 - 只有 `pending_confirmation` 且 `requiresUserConfirmation=true` 的兼容任务才创建候选。
 - `simulation_turn` 不创建正式候选。
+
+`AgentResponse` 是旧的 terminal structured 路径，仍由 `src/lib/chat/agent-protocol.ts` 和 `TBOX_STRUCTURED_MODE=terminal` 支持，但不是 Agentic V2 artifact 主契约。`AGENT_OPERATIONS_V1` 默认关闭；开启前必须先验证对应的 AgentResponse 输出。
 
 ## 4. 百宝箱 V2 资源拓扑
 
@@ -431,23 +453,23 @@ CAREERMATE_MCP_ALLOWED_ORIGINS
 ### 8.1 本地质量门禁
 
 ```bash
-npm.cmd run secret:scan
-npm.cmd run lint
-npm.cmd run typecheck
-npm.cmd run test
-npm.cmd run test:migrations
-npm.cmd run build
+npm run secret:scan
+npm run lint
+npm run typecheck
+npm run test
+npm run test:migrations
+npm run build
 ```
 
 也可以执行：
 
 ```bash
-npm.cmd run verify
+npm run verify
 ```
 
 ### 8.2 百宝箱资源检查
 
-- 主应用类型确认为 Agentic 自主规划。
+- 若启用 V2，主应用类型应确认为 Agentic 自主规划；本地默认 `CAREERMATE_AGENTIC_V2=false`，使用 Mock/基础适配器路径。
 - 实际挂载资源与本节拓扑一致。
 - 人设中的资源均为编辑器生成的真实绑定引用。
 - 工作流引用的是已验证版本，不存在待升级的旧引用。

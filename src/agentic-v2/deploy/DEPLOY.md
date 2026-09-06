@@ -1,99 +1,160 @@
-# CareerMate 部署指南
+# CareerMate 部署说明
 
-## 概述
+本文只记录当前仓库代码支持的部署边界。部署前请以 `package.json`、`next.config.ts`、`.env.example` 和 `prisma/schema.prisma` 为准。
 
-将 CareerMate Next.js 应用部署到公网 HTTPS，供百宝箱 Agentic V2 通过 HTTP API 调用。
+## 1. 当前部署形态
 
-端点路径：`/api/agentic-v2`、`/api/chat/conversations/:id/stream`
-协议：REST + SSE（Server-Sent Events）
+CareerMate 是 Next.js 16 App Router 应用，当前 Prisma provider 是 SQLite：
 
-## 数据库说明
+- 适合本地开发、单实例自托管或带持久卷的演示环境。
+- 不应仅修改 `DATABASE_URL` 就声称支持 PostgreSQL、Turso 或多实例 Vercel 部署。
+- 多实例生产环境需要单独完成 Prisma provider、迁移、锁和持久化策略迁移。
 
-当前 Prisma provider 为 **SQLite**，适用于本地开发或单实例持久卷演示场景。
-
-SQLite = 本地或单实例持久卷演示。不要声称只改 `DATABASE_URL` 就能部署 PostgreSQL/Turso/Vercel。
-
-如需生产环境多实例部署，需先完成正式的 PostgreSQL 迁移（修改 schema 中的 provider 并重新生成迁移），本文档不涉及半套数据库迁移。
-
-## 前置条件
-
-1. Next.js 16.2+ 生产构建通过
-2. 公网 HTTPS 域名（或 Vercel 自动提供的预览 URL）
-3. 以下密钥已生成且未提交到 Git
-
-## 第一步：生成密钥
-
-```bash
-# 生成 MCP 客户端 Bearer Token（至少 32 字节 base64url）
-node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
-
-# 生成 Agentic V2 上下文令牌签名密钥（至少 32 字节 base64url）
-node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
-```
-
-**警告：这些密钥不得提交到 Git、不得打印到日志、不得发送到搜索服务。**
-
-## 第二步：配置环境变量
-
-在部署平台（如 Vercel）设置以下环境变量：
-
-```env
-# 数据库（当前为 SQLite，仅支持单实例持久卷）
-DATABASE_URL="file:./data/production.db"
-
-# 应用内认证密钥
-CAREERMATE_AUTH_SECRET="<生成的随机密钥>"
-
-# 开启 Agentic V2 模式
-CAREERMATE_AGENTIC_V2="true"
-
-# 管理员凭据（生产环境必填，从显式环境变量读取）
-CAREERMATE_ADMIN_USERNAME=""
-CAREERMATE_ADMIN_PASSWORD_HASH=""
-```
-
-## 第三步：部署
-
-### Vercel 部署（推荐）
-
-```bash
-npx vercel --prod
-```
-
-预览 URL 将自动分配 HTTPS。生产环境绑定自定义域名。
-
-### 自托管部署
+应用端口由启动命令决定：
 
 ```bash
 npm run build
-npm start
+npm run start -- --hostname 0.0.0.0 --port 3000
 ```
 
-前面需配置反向代理（Nginx/Caddy）提供 HTTPS。
+反向代理或平台需要提供 HTTPS。当前产品聊天使用 SSE，因此代理必须允许长连接和 `text/event-stream` 响应。
 
-## 第四步：验证部署
+## 2. 必要环境变量
+
+最小本地配置：
+
+```env
+DATABASE_URL="file:./dev.db"
+TBOX_MODE="mock"
+```
+
+真实百宝箱 Agentic V2 环境：
+
+```env
+DATABASE_URL="file:./data/production.db"
+TBOX_MODE="api"
+TBOX_API_KEY="<server-only-api-key>"
+TBOX_AGENT_ID="<validated-agent-id>"
+TBOX_AGENT_VERSION="<validated-agent-version>"
+CAREERMATE_AGENTIC_V2="true"
+TBOX_CONTEXT_TRANSPORT="business_data"
+TBOX_HISTORY_MODE="provider"
+STATEFUL_CHAT_TURNS="true"
+TBOX_SEARCH_ENGINE="false"
+```
+
+可选开关：
+
+- `PLAN_V2_WRITE=true`：允许写入 V2 灵活计划。
+- `TBOX_STRUCTURED_MODE=terminal`：启用旧 AgentResponse terminal 路径；只有完成探针验证后才应开启。
+- `AGENT_OPERATIONS_V1=true`：启用旧 structured operations；默认关闭。
+
+不要配置或依赖不存在于当前代码中的 `CAREERMATE_AUTH_SECRET`、`CAREERMATE_ADMIN_USERNAME` 或 `CAREERMATE_ADMIN_PASSWORD_HASH`。
+
+## 3. 认证和管理员
+
+当前认证实现是数据库 session：
+
+```text
+登录
+→ 随机 session token
+→ 数据库保存 token hash
+→ httpOnly Cookie careermate_session
+```
+
+管理员权限来自 `User.role === "admin"`，不是独立的管理员环境变量。管理员用户应通过受控的数据库初始化或后台流程创建，不能在公开部署中依赖固定演示密码。
+
+相关代码：
+
+- `src/lib/auth.ts`
+- `src/lib/session-security.ts`
+- `src/app/api/auth/*`
+
+## 4. 数据库初始化
+
+首次部署：
 
 ```bash
-# 健康检查 — 应返回 200
-curl -v -X GET https://your-deploy.example/
-
-# Agentic V2 候选列表 — 应返回 200 + JSON
-curl -v -X GET https://your-deploy.example/api/agentic-v2/candidates?status=pending \
-  -H "Cookie: session=<your-session-token>"
+npm install
+npm run prisma:generate
+npm run db:migrate:deploy
 ```
 
-## 第五步：百宝箱配置
+仅在本地开发或专用测试环境使用：
 
-在百宝箱"外包"空间配置 Agentic V2 连接：
+```bash
+npm run seed
+```
 
-1. 名称：`CareerMate Agentic V2`
-2. 协议：REST + SSE
-3. Chat 端点：`https://your-deploy.example/api/chat/conversations/:id/stream`
-4. 上下文通过 `business_data` 一次性注入，不需要独立业务 MCP
+`prisma/seed.ts` 写入虚构用户、岗位模板和资源；生产环境不要直接使用演示种子覆盖数据库。
 
-## 安全注意事项
+## 5. 主要公网行为
 
-- 不在前端代码中引用认证密钥
-- 定期轮换密钥（建议 90 天）
-- 生产环境必须通过 `CAREERMATE_ADMIN_USERNAME` / `CAREERMATE_ADMIN_PASSWORD_HASH` 显式设置管理员凭据，种子脚本不得自动创建固定密码管理员
-- 开发机 IP 等敏感配置通过环境变量传入，不在 next.config.ts 中硬编码
+浏览器页面：
+
+```text
+/
+/login
+/onboarding
+/dashboard
+/path
+/simulation
+/resources
+/memory
+/admin
+```
+
+产品聊天：
+
+```text
+POST /api/chat/conversations/:id/stream
+```
+
+该接口要求当前 CareerMate session Cookie，不是供百宝箱直接用无状态 Bearer Token 调用的公网 Chat API。
+
+Agentic V2 的业务上下文由 CareerMate 服务端在请求内部组装为 `business_data`。当前 V2 聊天不依赖公网业务 MCP，也不依赖签名上下文令牌。
+
+候选接口：
+
+```text
+GET  /api/agentic-v2/candidates
+GET  /api/agentic-v2/candidates/:candidateId
+POST /api/agentic-v2/candidates/:candidateId/decision
+```
+
+## 6. 部署后验证
+
+先检查页面：
+
+```bash
+curl -I https://your-domain.example/
+curl -I https://your-domain.example/login
+```
+
+再用已登录浏览器验证：
+
+1. 登录并进入 `/dashboard`。
+2. 确认工作台可以加载 `/api/me`。
+3. 打开 Kurisu 浮窗并创建会话。
+4. 发送消息，确认 SSE 返回 `context`、`delta` 和 `done`。
+5. 验证候选只能在用户确认后写入正式数据。
+6. 验证 `/memory` 的导出和清空确认词流程。
+
+本地质量门禁：
+
+```bash
+npm run secret:scan
+npm run lint
+npm run typecheck
+npm run test
+npm run test:migrations
+npm run build
+```
+
+## 7. 安全边界
+
+- `TBOX_API_KEY`、`TBOX_AGENT_ID` 和上下文密钥只能存在于服务端环境变量。
+- 不要把真实密钥、session Cookie 或 SQLite 数据库提交到 Git。
+- 生产环境使用持久化数据库路径，并限制数据库文件访问权限。
+- 反向代理必须正确转发 Cookie、SSE 和长连接。
+- `CAREERMATE_CONTEXT_TOKEN_SECRET`、`CAREERMATE_PLUGIN_TOKEN` 和 `/api/mcp/v2` 属于保留基础设施；启用它们前必须单独完成 Scope、Origin、协议和跨用户隔离验证。
