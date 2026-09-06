@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { GlobalKurisu } from "@/components/chat/global-kurisu";
+import { AssistantProvider } from "@/components/chat/assistant-provider";
 
 export const metadata: Metadata = {
   title: "CareerMate",
@@ -15,8 +16,10 @@ export default function RootLayout({
   return (
     <html lang="zh-CN">
       <body>
-        {children}
-        <GlobalKurisu />
+        <AssistantProvider>
+          {children}
+          <GlobalKurisu />
+        </AssistantProvider>
       </body>
     </html>
   );
