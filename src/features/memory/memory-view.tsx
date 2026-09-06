@@ -8,6 +8,22 @@ import { SurfaceCard } from "@/components/ui/surface-card";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
+/** 把决策接口的失败归一化为用户可读提示；409 提示需重生成，404 提示已不存在。 */
+function decisionMessage(status: number, code: string, fallback: string): string {
+  if (status === 409 || code === "CONFLICT") return "资料已变化，这条建议需要重新生成";
+  if (status === 404) return "这条建议已不存在";
+  if (status === 401) return "登录已过期，请重新登录后再试";
+  return fallback;
+}
+
+/** 候选值的可读展示：数组/对象来自后端 JSON 字段，这里转成文本（空值显示“未设置”）。 */
+function formatCandidateValue(value: unknown): string {
+  if (value === null || value === undefined) return "未设置";
+  if (Array.isArray(value)) return value.map((v) => String(v)).join("、");
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
 /* ── 主视图 ── */
 
 interface MemoryViewProps { memories: any[]; candidates: any[]; v2Candidates?: any[]; memoryEnabled: boolean; refresh: () => Promise<void>; setNotice: (v: string) => void; }
@@ -39,8 +55,44 @@ export function MemoryView({ memories, candidates, v2Candidates = [], memoryEnab
   const [editContent, setEditContent] = useState("");
   // 删除确认目标
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
+  // 候选决策进行中（避免双击重复写入；成功后被处理卡片进入终态）
+  const [decisionBusy, setDecisionBusy] = useState<string | null>(null);
 
-  async function operate(candidateId: string, action: "accept" | "reject") { await fetchApi("/api/profile/candidates", { method: "PATCH", body: JSON.stringify({ candidateId, action }) }); setNotice(action === "accept" ? "画像更新已确认。" : "画像更新已拒绝。"); await refresh(); }
+  /** V1 画像候选决策：检查 r.ok，失败按 status/code 归一化提示，成功才更新状态。 */
+  async function operate(candidateId: string, action: "accept" | "reject") {
+    if (decisionBusy) return;
+    setDecisionBusy(candidateId);
+    const r = await fetchApi("/api/profile/candidates", {
+      method: "PATCH",
+      body: JSON.stringify({ candidateId, action }),
+    });
+    if (!r.ok) {
+      setNotice(decisionMessage(r.status, r.error.code, `画像更新${action === "accept" ? "确认" : "拒绝"}失败，请稍后重试`));
+      setDecisionBusy(null);
+      return;
+    }
+    setNotice(action === "accept" ? "画像更新已确认。" : "画像更新已拒绝。");
+    setDecisionBusy(null);
+    await refresh();
+  }
+
+  /** V2 候选决策：POST decision，检查 ok，成功才提示并刷新。 */
+  async function operateV2(candidateId: string, decision: "accept" | "reject") {
+    if (decisionBusy) return;
+    setDecisionBusy(candidateId);
+    const r = await fetchApi(`/api/agentic-v2/candidates/${candidateId}/decision`, {
+      method: "POST",
+      body: JSON.stringify({ decision }),
+    });
+    if (!r.ok) {
+      setNotice(decisionMessage(r.status, r.error.code, decision === "accept" ? "确认失败，请稍后重试" : "拒绝失败，请稍后重试"));
+      setDecisionBusy(null);
+      return;
+    }
+    setNotice(decision === "accept" ? "已确认候选" : "已拒绝候选");
+    setDecisionBusy(null);
+    await refresh();
+  }
   async function createMemory() { const r = await fetchApi<{ memory: any }>("/api/memories", { method: "POST", body: JSON.stringify({ content, sensitivity: "normal" }) }); if (!r.ok) return setNotice(r.error?.message ?? "记忆创建失败。"); setContent(""); setNotice("记忆已创建。"); await refresh(); }
 
   /** 开始编辑记忆（内联） */
@@ -69,7 +121,11 @@ export function MemoryView({ memories, candidates, v2Candidates = [], memoryEnab
   /** 确认删除记忆 */
   async function confirmDelete() {
     if (!deleteTarget) return;
-    await fetchApi(`/api/memory/${deleteTarget.id}`, { method: "DELETE" });
+    const r = await fetchApi(`/api/memory/${deleteTarget.id}`, { method: "DELETE" });
+    if (!r.ok) {
+      setNotice(decisionMessage(r.status, r.error.code, "记忆删除失败，请稍后重试"));
+      return;
+    }
     setDeleteTarget(null);
     setNotice("记忆已删除。");
     await refresh();
@@ -204,10 +260,18 @@ export function MemoryView({ memories, candidates, v2Candidates = [], memoryEnab
                     </span>
                   ) : null}
                 </div>
+                {/* 确认前必看的“当前值 → 建议值”，不可盲确认（F04） */}
+                {c.status === "pending" && (
+                  <div style={{ marginTop: 8, fontSize: 13, lineHeight: 1.6, color: "var(--cm-text-muted)" }}>
+                    <span style={{ textDecoration: "line-through", opacity: 0.8 }}>{formatCandidateValue(c.oldValue)}</span>
+                    <span> → </span>
+                    <span style={{ fontWeight: 600, color: "var(--cm-text-strong)" }}>{formatCandidateValue(c.newValue)}</span>
+                  </div>
+                )}
                 <p style={{ margin: "8px 0 0", fontSize: 13.5, lineHeight: 1.7, color: "var(--cm-text-muted)" }}>{c.reason}</p>
                 <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
-                  <Button variant="secondary" disabled={c.status !== "pending"} onClick={() => operate(c.id, "accept")}>确认</Button>
-                  <Button variant="ghost" disabled={c.status !== "pending"} onClick={() => operate(c.id, "reject")}>拒绝</Button>
+                  <Button variant="secondary" disabled={c.status !== "pending" || decisionBusy === c.id} onClick={() => operate(c.id, "accept")}>确认</Button>
+                  <Button variant="ghost" disabled={c.status !== "pending" || decisionBusy === c.id} onClick={() => operate(c.id, "reject")}>拒绝</Button>
                 </div>
               </div>
             ))}
@@ -236,14 +300,8 @@ export function MemoryView({ memories, candidates, v2Candidates = [], memoryEnab
                   创建于 {new Date(c.createdAt).toLocaleDateString("zh-CN")} · 状态：{c.status === "pending" ? "待确认" : c.status === "accepted" ? "已接受" : c.status === "rejected" ? "已拒绝" : c.status}
                 </p>
                 <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
-                  <Button variant="secondary" disabled={c.status !== "pending"} onClick={async () => {
-                    const r = await fetchApi(`/api/agentic-v2/candidates/${c.id}/decision`, { method: "POST", body: JSON.stringify({ decision: "accept" }) });
-                    if (r.ok) { setNotice("已确认候选"); refresh(); } else { setNotice(r.error?.message ?? "确认失败"); }
-                  }}>确认</Button>
-                  <Button variant="ghost" disabled={c.status !== "pending"} onClick={async () => {
-                    const r = await fetchApi(`/api/agentic-v2/candidates/${c.id}/decision`, { method: "POST", body: JSON.stringify({ decision: "reject" }) });
-                    if (r.ok) { setNotice("已拒绝候选"); refresh(); } else { setNotice(r.error?.message ?? "拒绝失败"); }
-                  }}>拒绝</Button>
+                  <Button variant="secondary" disabled={c.status !== "pending" || decisionBusy === c.id} onClick={() => operateV2(c.id, "accept")}>确认</Button>
+                  <Button variant="ghost" disabled={c.status !== "pending" || decisionBusy === c.id} onClick={() => operateV2(c.id, "reject")}>拒绝</Button>
                 </div>
               </div>
             ))}
