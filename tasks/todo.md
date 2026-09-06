@@ -11,18 +11,15 @@
 - [x] T02b 修源码 lint，在正常隔离环境重跑 SQLite suite。 — lint 0/0；全量测试 125/125；SQLite contract 11 用例通过，EPERM 已消除。
 - [x] T03 统一客户端 HTTP/业务/JSON/网络错误契约。 — 证据见 [t03-baseline.md](t03-baseline.md)；可判别联合 `ApiResult<T>`、`ApiError`、`apiResultFromResponse`，17 用例覆盖 401/403/409/422/429/500/空/HTML/网络失败/取消。
 - [x] T04 初次加载与局部后台刷新分离，保留页面状态。 — 证据见 [t04-baseline.md](t04-baseline.md)；新增 `use-workspace-data`，initialLoading/refreshing/fatal/moduleErrors 分离，仅 401 登出，构建通过；浏览器级验证留待 T19/T25。
+- [x] T05 修复首次打开历史无对话框。 — 证据见 [t05-baseline.md](t05-baseline.md)；抽取 `kurisu-dialog-position` 纯函数，6 用例通过；`kurisu-chat-window` 存在 2 处 `react-hooks/refs` 误报待 T02b。
 - [x] T08a 聚合画像/记忆/计划/V2 建议读模型及计数。 — 证据见 [t08a-baseline.md](t08a-baseline.md)；`SuggestionRef` 判别联合、`buildSuggestionList` 同源计数、`SuggestionDetail` 按 kind 判别，7 用例。UI 接入属 T08b。
 - [x] T08b 候选预览、确认、拒绝、版本冲突与结果同步。 — 证据见 [t08b-baseline.md](t08b-baseline.md)；`memory-view` 修复 operate 未判断 ok 即提示成功、确认前展示 old→new、`decisionBusy` 防双击重复写、409 提示重生成；`confirmDelete` 判断 ok。
-- [ ] T03 统一客户端 HTTP/业务/JSON/网络错误契约。
-- [ ] T04 初次加载与局部后台刷新分离，保留页面状态。
-- [x] T05 修复首次打开历史无对话框。 — 证据见 [t05-baseline.md](t05-baseline.md)；抽取 `kurisu-dialog-position` 纯函数，6 用例通过；`kurisu-chat-window` 存在 2 处 `react-hooks/refs` 误报待 T02b。
+- [x] T09 生成计划到待确认再到正式执行的完整反馈。 — 证据见 [t09-baseline.md](t09-baseline.md)；dashboard 改“新计划已准备好，确认后开始执行”、新增 pending 横条 + “审阅计划”、pending 计划纳入待确认计数（概览/侧栏一致）。
 - [ ] T06a 提取唯一助手控制器，保证幂等、隔离与失败恢复。
 - [ ] T06b 挂载正文、引用、候选与执行来源渲染。
 - [ ] T07a 增加显式 AI 助手入口，角色共享 controller。
 - [ ] T07b 手机 sheet、键盘焦点、角色收起与失败替代。
-- [ ] T08a 聚合画像/记忆/计划/V2 建议读模型及计数。
-- [ ] T08b 候选预览、确认、拒绝、版本冲突与结果同步。
-- [ ] T09 生成计划到待确认再到正式执行的完整反馈。
+- [ ] 检查点 A：核心链路与 P0 错误恢复有自动化/浏览器证据。
 - [ ] 检查点 A：核心链路与 P0 错误恢复有自动化/浏览器证据。
 
 ## B. 产品与前端
@@ -72,6 +69,7 @@
 | T04 | 执行 agent / 2026-09-06 | 新增 `src/hooks/use-workspace-data.ts`；`workspace.tsx` 改接 hook（initialLoading/refreshing/fatal/moduleErrors 分离、仅 401 登出、后台刷新不卸载） | `tsc` 通过；lint 0/0；`npm run test` 125/125（1099）；`npm run build` exit 0 | node 环境无浏览器，未跑慢请求/模块 500 的交互验证 | 浏览器级 loading 闪回/模块 500 验证留 T19/T25；`refreshSlices` 逐视图接入属后续任务 |
 | T08a | 执行 agent / 2026-09-06 | 新增 `src/lib/suggestions.ts`（SuggestionRef 判别联合 + buildSuggestionList 同源计数 + SuggestionDetail 按 kind）、`use-suggestions.ts` 聚合 hook | `npm run test` 126/126（1106）；lint 0/0；`tsc` 通过；`npm run build` exit 0 | 节点环境无浏览器 | 读模型接入 MemoryView 并做确认前详情/类型化失败 UI 属 T08b |
 | T08b | 执行 agent / 2026-09-06 | `memory-view.tsx`：operate/operateV2 判断 ok、确认前展示 old→new、decisionBusy 防重、409 提示重生成、confirmDelete 判断 ok | `npm run test` 126/126；lint 0/0；`tsc` 通过；`npm run build` exit 0 | 节点环境无浏览器 | 浏览器接受/拒绝/冲突流程留 T19/T25；计划接受闭环属 T09 |
+| T09 | 执行 agent / 2026-09-06 | `dashboard-view`/`workspace`：generatePlan 改“新计划已准备好，确认后开始执行”、pending 横条 + “审阅计划”、pending 计划纳入待确认计数 | `npm run test` 126/126；lint 0/0；`tsc` 通过；`npm run build` exit 0 | 节点环境无浏览器 | 浏览器“生成→确认→执行”点击闭环留 T19/T25；pending 横条视觉在 T11/T13 收敛 |
 | 评估与计划 | 当前评估 / 2026-09-06 | 仅 tasks/ 文档与截图 | baseline 见评估报告；非全绿 | 7 张本次截图 | 产品优化尚未执行 |
 
 ## 下一位 agent 从这里开始

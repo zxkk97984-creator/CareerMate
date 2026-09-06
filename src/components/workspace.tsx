@@ -63,7 +63,7 @@ export function Workspace({ initialView, isAdmin = false }: { initialView: View;
         <div className="cm-loading" style={{ borderRadius: "var(--cm-radius-card)", border: "1px solid var(--cm-border)", background: "var(--cm-surface)", padding: "24px 28px", fontSize: 14, color: "var(--cm-text-strong)", boxShadow: "var(--cm-shadow-card)", maxWidth: 420 }}>
           <p>你的成长记录暂时未能加载。</p>
           <p style={{ color: "var(--cm-text-muted)", margin: "8px 0 16px" }}>{fatal ?? "请检查网络后重试。"}</p>
-          <button type="button" className="cm-btn cm-btn-primary" onClick={() => void retryFatal()}>
+          <button type="button" style={{ minHeight: 44, padding: "0 16px", borderRadius: "var(--cm-radius-control)", background: "var(--cm-brand, #0E76FF)", color: "#fff", fontWeight: 600, border: "none", cursor: "pointer" }} onClick={() => void retryFatal()}>
             重试加载
           </button>
         </div>
@@ -72,7 +72,8 @@ export function Workspace({ initialView, isAdmin = false }: { initialView: View;
   }
 
   const pendingCandidateCount = (data.candidates || []).filter((c: any) => c.status === "pending").length
-    + (data.v2Candidates ?? []).length; // V2 候选列表接口已按 status=pending 过滤
+    + (data.v2Candidates ?? []).length
+    + (data.pendingPlan ? 1 : 0); // pending 计划计入待确认，保持概览/路径/建议中心一致
 
   const failedModules = (Object.keys(moduleErrors) as ModuleKey[]).filter((k) => moduleErrors[k]);
 

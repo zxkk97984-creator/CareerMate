@@ -78,7 +78,8 @@ export function DashboardView({ data, refresh, setNotice }: DashboardViewProps) 
         setNotice(r.error?.message ?? "路径生成失败，请稍后重试。");
         return;
       }
-      setNotice("职业路径已生成，当前月任务已刷新。");
+      // /api/plans/generate 创建的是 pending 候选，不是立即生效的正式计划（F05）
+      setNotice("新计划已准备好，确认后开始执行。");
       await refresh();
     } catch {
       setNotice("网络异常，路径生成失败，请检查网络后重试。");
@@ -89,10 +90,26 @@ export function DashboardView({ data, refresh, setNotice }: DashboardViewProps) 
 
   const pendingCandidateCount =
     data.candidates.filter((c: any) => c.status === "pending").length +
-    (data.v2Candidates ?? []).length;
+    (data.v2Candidates ?? []).length +
+    (data.pendingPlan ? 1 : 0); // pending 计划同样计入待确认，保持概览/路径/建议中心计数一致
 
   return (
     <>
+      {/* 待确认计划横条：生成的是候选，确认前不改当前任务（F05/T09） */}
+      {data.pendingPlan ? (
+        <section data-od-id="dashboard-pending-plan" style={{ borderRadius: "var(--cm-radius-card)", border: "1px solid var(--cm-border)", background: "var(--cm-surface)", boxShadow: "var(--cm-shadow-card)", padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <div>
+            <strong style={{ fontSize: 14, color: "var(--cm-text-strong)" }}>新计划待确认</strong>
+            <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--cm-text-muted)" }}>
+              新计划已准备好，确认后开始执行；当前任务保持不变。
+            </p>
+          </div>
+          <a href="/path" style={{ flexShrink: 0, minHeight: 44, padding: "0 16px", display: "inline-flex", alignItems: "center", borderRadius: "var(--cm-radius-control)", background: "var(--cm-brand, #0E76FF)", color: "#fff", textDecoration: "none", fontWeight: 600 }}>
+            审阅计划
+          </a>
+        </section>
+      ) : null}
+
       {/* 第一行：左侧大号岗位匹配度卡片 + 右侧两个小指标卡 */}
       <div className="dash-row-1" data-od-id="dashboard-row-match">
         <section className="cm-match-card" style={{ gridColumn: "span 1" }}>
