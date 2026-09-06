@@ -38,9 +38,15 @@ export type ApiResult<T> =
 
 /** 岗位匹配数据 */
 export interface MatchData {
-  score: number;
+  /** 成长参考分 /100；信息不足时为 null（不臆造 0） */
+  score: number | null;
   explanation: string;
   weakAbilities: Array<(typeof abilityKeys)[number]>;
+  /** 有岗位权重但无能力记录的维度（未评估，不参与猜排名） */
+  unassessed?: string[];
+  /** 各维度明细：值、权重、补弱优先级，供“查看依据” */
+  breakdown?: Array<{ key: string; label: string; value?: number; weight: number; gap?: number }>;
+  hasInsufficientData?: boolean;
 }
 
 /** 成长日志条目 */

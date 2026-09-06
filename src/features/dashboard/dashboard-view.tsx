@@ -128,16 +128,25 @@ export function DashboardView({ data, refresh, setNotice }: DashboardViewProps) 
       <div className="dash-row-1" data-od-id="dashboard-row-match">
         <section className="cm-match-card" style={{ gridColumn: "span 1" }}>
           <div style={{ position: "relative", zIndex: 1 }}>
-            <span className="cm-eyebrow" style={{ marginBottom: 10 }}>岗位匹配度 · MATCH</span>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-              <CountUp className="cm-match-number" value={data.match?.score ?? 0} />
-              <span style={{ fontSize: 26, color: "var(--cm-text-subtle)" }}>%</span>
-            </div>
-            <p style={{ margin: "14px 0 0", fontSize: 13.5, lineHeight: 1.7, color: "var(--cm-text-muted)", maxWidth: 460 }}>
-              当前能力画像与目标岗位
-              <strong style={{ color: "var(--cm-text-strong)" }}>{data.profile?.targetRoleLabel ?? "（未设置）"}</strong>
-              的加权匹配度。能力越接近岗位要求，评分越高。
-            </p>
+            <span className="cm-eyebrow" style={{ marginBottom: 10 }}>成长参考分 · GROWTH SCORE</span>
+            {data.match?.score != null ? (
+              <>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
+                  <CountUp className="cm-match-number" value={data.match.score} />
+                  <span style={{ fontSize: 26, color: "var(--cm-text-subtle)" }}>/ 100</span>
+                </div>
+                <p style={{ margin: "14px 0 0", fontSize: 13.5, lineHeight: 1.7, color: "var(--cm-text-muted)", maxWidth: 460 }}>
+                  {data.match.explanation}
+                </p>
+              </>
+            ) : (
+              <>
+                <div style={{ marginTop: 6, fontSize: 18, fontWeight: 600, color: "var(--cm-text-muted)" }}>信息不足</div>
+                <p style={{ margin: "14px 0 0", fontSize: 13.5, lineHeight: 1.7, color: "var(--cm-text-muted)", maxWidth: 460 }}>
+                  {data.match?.explanation ?? "完成画像并记录能力后，这里会给出成长参考分（用于学习安排参考，不表示胜任概率）。"}
+                </p>
+              </>
+            )}
           </div>
           {(data.match?.weakAbilities?.length ?? 0) > 0 && (
             <div style={{ position: "relative", zIndex: 1, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>

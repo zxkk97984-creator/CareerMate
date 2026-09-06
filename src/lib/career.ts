@@ -1,5 +1,6 @@
 import { getPrisma } from "@/lib/prisma";
 import { toJson } from "@/lib/json";
+import { abilityLabels } from "@/lib/types";
 import type { CareerPlan } from "@/lib/tbox/schemas";
 import type { AbilityKey, ProfileDto } from "@/lib/types";
 
@@ -30,6 +31,66 @@ const roleFallbackWeights: Record<string, Record<AbilityKey, number>> = {
   },
 };
 
+/** 权重是否为有限非负数（避免 NaN/非法权重导致分数失真）。 */
+function isFiniteWeight(value: number): boolean {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+/** 归一化权重并求和；非法/缺失权重丢弃。返回 null 表示无有效权重。 */
+export function normalizeWeights(raw: Record<string, number> | undefined): Record<AbilityKey, number> | null {
+  if (!raw) return null;
+  const cleaned: Partial<Record<AbilityKey, number>> = {};
+  for (const [key, weight] of Object.entries(raw)) {
+    if (isFiniteWeight(weight)) cleaned[key as AbilityKey] = weight;
+  }
+  return Object.keys(cleaned).length ? cleaned as Record<AbilityKey, number> : null;
+}
+
+export interface MatchDimension {
+  key: AbilityKey;
+  label: string;
+  /** 已记录能力值（0 仅当真实记录为 0 才出现）；无记录则不出现 */
+  value?: number;
+  weight: number;
+  /** 加权补弱优先级：weight * (100 - value)，仅对已记录维度有意义 */
+  gap?: number;
+}
+
+export function calculateMatchScore(weights: Record<AbilityKey, number>, scores: Partial<Record<AbilityKey, number>>): {
+  score: number | null;
+  unassessed: AbilityKey[];
+  breakdown: MatchDimension[];
+} {
+  const breakdown: MatchDimension[] = [];
+  const unassessed: AbilityKey[] = [];
+  let weightedSum = 0;
+  let totalWeight = 0;
+
+  for (const [keyStr, weight] of Object.entries(weights)) {
+    const key = keyStr as AbilityKey;
+    const value = scores[key];
+    // 没有任何能力记录 → 视为“未评估”，不计入分数，不兜底为 0
+    if (value === undefined || value === null || !Number.isFinite(value)) {
+      unassessed.push(key);
+      breakdown.push({ key, label: abilityLabels[key] ?? key, weight });
+      continue;
+    }
+    weightedSum += value * weight;
+    totalWeight += weight;
+    breakdown.push({
+      key,
+      label: abilityLabels[key] ?? key,
+      value,
+      weight,
+      gap: weight * (100 - value),
+    });
+  }
+
+  // 无任何已记录能力或总权重为 0 → 信息不足，分数为 null（不臆造 0）
+  const score = totalWeight > 0 ? Math.round(weightedSum / totalWeight) : null;
+  return { score, unassessed, breakdown };
+}
+
 export async function calculateMatch(profile: ProfileDto) {
   if (!profile.targetRole || !profile.targetRoleLabel) return null;
 
@@ -37,29 +98,44 @@ export async function calculateMatch(profile: ProfileDto) {
     where: { roleKey: profile.targetRole },
   });
 
-  // 从模板解析权重；无模板则从种子回退表获取；都没有则返回 null
-  let weights: Record<AbilityKey, number> | undefined;
+  // 从模板解析权重；非法/缺失权重丢弃；无模板则种子回退；都没有返回 null
+  let weights: Record<AbilityKey, number> | null = null;
   if (template?.abilityWeights) {
     try {
-      weights = JSON.parse(template.abilityWeights) as Record<AbilityKey, number>;
+      weights = normalizeWeights(JSON.parse(template.abilityWeights) as Record<string, number>);
     } catch { /* ignore */ }
   }
-  const effectiveWeights = weights ?? roleFallbackWeights[profile.targetRole];
+  const effectiveWeights = weights ?? normalizeWeights(roleFallbackWeights[profile.targetRole]);
   if (!effectiveWeights) return null;
 
-  const score = Object.entries(effectiveWeights).reduce((sum, [key, weight]) => {
-    return sum + (profile.abilityScores[key as AbilityKey] ?? 0) * weight;
-  }, 0);
+  const { score, unassessed, breakdown } = calculateMatchScore(effectiveWeights, profile.abilityScores);
 
-  const weakAbilities = Object.entries(profile.abilityScores)
-    .sort(([, a], [, b]) => a - b)
-    .slice(0, 2)
-    .map(([key]) => key as AbilityKey);
+  // 补弱优先级：按 weight * (100 - score) 排序（真实权重，非按最低分猜）
+  const weakAbilities = breakdown
+    .filter((d) => d.value !== undefined && d.gap !== undefined)
+    .sort((a, b) => (b.gap ?? 0) - (a.gap ?? 0))
+    .slice(0, 3)
+    .map((d) => d.key);
+
+  if (score === null) {
+    return {
+      score: null,
+      weakAbilities,
+      unassessed,
+      breakdown,
+      hasInsufficientData: true,
+      explanation: `基于 ${profile.targetRoleLabel} 岗位权重，目前还缺少部分能力记录，信息不足，暂不计算成长参考分。`,
+    };
+  }
 
   return {
-    score: Math.round(score),
+    score,
     weakAbilities,
-    explanation: `当前与 ${profile.targetRoleLabel} 的匹配度约为 ${Math.round(score)} 分，优先补齐 ${weakAbilities.join("、")} 相关能力。`,
+    unassessed,
+    breakdown,
+    hasInsufficientData: unassessed.length > 0,
+    // “成长参考分 /100”，不写成“胜任概率/%”（plan 3.4 / F07）
+    explanation: `${profile.targetRoleLabel} 成长参考分 ${score} / 100（基于已记录能力和岗位权重，供学习安排参考；${unassessed.length ? `另有 ${unassessed.length} 项能力待评估` : "暂无缺失维度"}）。`,
   };
 }
 
