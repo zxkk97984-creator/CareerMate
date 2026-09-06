@@ -54,9 +54,9 @@ export function KurisuAvatar({ streaming = false, phase = "idle" }: KurisuAvatar
     if (!win) return;
 
     if (phase === "waiting") {
-      // 等待回复：思考动作，不张嘴
+      // 等待回复：思考动作，不张嘴；reduced motion 下不播放持续动作（T19）
       win.kurisuSetTalking?.(false);
-      if (prevPhaseRef.current !== "waiting") {
+      if (prevPhaseRef.current !== "waiting" && motionSafe) {
         win.kurisuPlayMotion?.("thinking");
       }
     } else if (phase === "speaking") {
@@ -70,12 +70,12 @@ export function KurisuAvatar({ streaming = false, phase = "idle" }: KurisuAvatar
       if (prevPhaseRef.current === "speaking") {
         win.kurisuSetTalking?.(false);
         win.clearExpression?.();
-        win.kurisuPlayMotion?.("mtn_01");
+        if (motionSafe) win.kurisuPlayMotion?.("mtn_01");
       }
     }
 
     prevPhaseRef.current = phase;
-  }, [phase, modelReady, streaming]);
+  }, [phase, modelReady, streaming, motionSafe]);
 
   return (
     <div ref={containerRef} className="kurisu-avatar" aria-hidden="true">

@@ -16,6 +16,8 @@ export function AssistantEntryButton() {
       onClick={controller.openPanel}
       aria-label="AI 助手"
       aria-controls="assistant-panel"
+      aria-expanded={controller.panelOpen}
+      aria-haspopup="dialog"
       style={{ minHeight: 44, display: "inline-flex", alignItems: "center", gap: 6, padding: "0 14px", borderRadius: "var(--cm-radius-control)", border: "1px solid var(--cm-border-strong)", background: "var(--cm-surface)", color: "var(--cm-text-strong)", cursor: "pointer", fontWeight: 600 }}
     >
       <Bot size={16} aria-hidden="true" />

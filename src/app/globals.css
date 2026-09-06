@@ -114,6 +114,45 @@ select.cm-select:focus {
   background: rgba(14, 118, 255, 0.16);
 }
 
+/* T19：正文允许选取/复制。全局 user-select:none 仅作用于交互控件与装饰，
+   内容区（消息、卡片、报告、说明段落）恢复可选中，避免点击选中残留且保证可复制。 */
+.message-text,
+.parts-citation-list,
+.memory-card,
+.sim-report,
+.sim-report-list,
+.sim-brief,
+.sim-scenario-prompt,
+.sim-turn,
+.path-notes,
+.note-list,
+.path-section,
+.resource-card,
+.surface-card p,
+.surface-card li,
+.dashboard-view,
+.onboarding-view {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* 交互控件与装饰性元素保持不可选中，保留应用手感（覆写上面的 * 规则） */
+button,
+[role="button"],
+a,
+summary,
+label,
+select,
+.cm-dot-tag,
+.weak-chip,
+.sim-scenario-chip,
+.sim-brief-dim,
+.sim-report-badge,
+.resource-type {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 /* 滚动条：细、浅 */
 *::-webkit-scrollbar {
   width: 8px;

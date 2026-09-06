@@ -46,6 +46,7 @@ export function AssistantPanel() {
     <aside
       ref={panelRef}
       className="assistant-panel"
+      id="assistant-panel"
       data-testid="assistant-panel"
       data-expanded={controller.expanded}
       aria-label="AI 助手"
