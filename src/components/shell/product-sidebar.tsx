@@ -62,6 +62,7 @@ export function ProductSidebar({
   return (
     <aside
       className={cn("chat-sidebar", open && "sidebar-open")}
+      id="primary-sidebar"
       data-testid="primary-sidebar"
     >
       {/* ── 品牌区 ──────────────────────────────────────── */}

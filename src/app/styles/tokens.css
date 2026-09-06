@@ -1,0 +1,66 @@
+/* ============================================================
+   CareerMate 设计 token（T10c 分层引导：tokens/base/shell/page）
+   —— 全局样式唯一真源之一。品牌/字体/圆角/阴影/断点统一在此。
+   本文件不含组件规则，只定义 :root 令牌与 body 令牌绑定。
+   ============================================================ */
+
+:root {
+  --cm-canvas: #F7F7F5;
+  --cm-surface: #FFFFFF;
+  --cm-surface-soft: #EEEEEE;
+  --cm-surface-sunken: #E4E4E1;
+  --cm-surface-glass: rgba(255, 255, 255, 0.82);
+
+  --cm-text-strong: #000000;
+  --cm-text-muted: #3A3A3A;
+  --cm-text-subtle: #6B6B6B;
+  --cm-text-faint: #9A9A9A;
+
+  --cm-brand: #0E76FF;
+  --cm-brand-hover: #0B5ED9;
+  --cm-brand-pressed: #0A50B8;
+  --cm-brand-ink: #0E76FF;
+  --cm-brand-soft: rgba(14, 118, 255, 0.10);
+  --cm-tint-brand: rgba(14, 118, 255, 0.08);
+  --cm-gradient-brand: linear-gradient(180deg, #2E8BFF 0%, #0E76FF 100%);
+
+  --cm-accent: #C4D5E7;
+  --cm-accent-ink: #5B8FCC;
+  --cm-accent-soft: rgba(196, 213, 231, 0.35);
+
+  --cm-success: #16A34A;
+  --cm-success-bg: rgba(22, 163, 74, 0.08);
+  --cm-info: #0E76FF;
+  --cm-info-bg: rgba(14, 118, 255, 0.08);
+  --cm-warning: #D97706;
+  --cm-warning-bg: rgba(217, 119, 6, 0.09);
+  --cm-danger: #DC2626;
+  --cm-danger-hover: #B91C1C;
+  --cm-danger-bg: rgba(220, 38, 38, 0.08);
+
+  --cm-border: rgba(0, 0, 0, 0.08);
+  --cm-border-strong: #C4D5E7;
+
+  --cm-radius-sm: 8px;
+  --cm-radius-control: 12px;
+  --cm-radius-card: 16px;
+  --cm-radius-container: 20px;
+  --cm-radius-pill: 999px;
+
+  --cm-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --cm-shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.04), 0 6px 18px rgba(14, 118, 255, 0.06);
+  --cm-shadow-float: 0 2px 8px rgba(0, 0, 0, 0.05), 0 16px 40px rgba(14, 118, 255, 0.10);
+
+  --cm-sidebar-width: 280px;
+  --cm-content-max: 1120px;
+  --cm-reading-max: 760px;
+
+  --cm-duration-fast: 150ms;
+  --cm-duration-drawer: 260ms;
+  --cm-ease: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+body {
+  background: var(--cm-canvas);
+  color: var(--cm-text-strong);
+}

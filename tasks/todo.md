@@ -25,18 +25,18 @@
 ## B. 产品与前端
 
 - [x] T10a 合并重复 token，保留实际视觉基线。 — 证据见 [t10a-baseline.md](t10a-baseline.md)；删除 oklch 草案 :root，唯一真源 #F7F7F5，44 token 无丢失。
-- [ ] T10b 统一页面标题、外壳、导航与断点。
-- [ ] T10c 分页迁移 CSS，避免无界全局覆盖。
+- [x] T10b 统一页面标题、外壳、导航与断点。 — 证据见 [t10b-baseline.md](t10b-baseline.md)；`ProductSidebar` 补 `id=primary-sidebar` 使入口 `aria-controls` 指向真实 id；移动顶栏去重复岗位标题改中立“工作台”，业务 h1 唯一在 PageHeader；删除无引用 `AppShell`/`MobileNavigation` 死代码。
+- [x] T10c 分页迁移 CSS，避免无界全局覆盖。 — 证据见 [t10c-baseline.md](t10c-baseline.md)；`globals.css` 拆出 `styles/tokens.css`（唯一 :root 令牌真源）与 `styles/base.css`（reset/光标/焦点/滚动条）由顶层统一 `@import`，保留 Tailwind 导入规则。
 - [x] T11 行动优先概览与确定性下一步选择。 — 证据见 [t11-baseline.md](t11-baseline.md)；`selectNextAction` 纯函数覆盖 plan3.3 全分支（8 用例）、删虚构百分比、真实 completed/total。
 - [x] T12 参考分的可信表达与证据。 — 证据见 [t12-baseline.md](t12-baseline.md)；改名“成长参考分 /100”、null 不兜底为 0、权重校验防 NaN、按 weight*(100-score) 排序补弱项、中文解释（7 用例）。
 - [x] T13 当前计划与待确认版本分开。 — 证据见 [t13-baseline.md](t13-baseline.md)；`timelinePlan` 恒为 activePlan，pending 独立预览并标注“当前 vN · 建议 vN+1”，不混排跨版本。
 - [x] T14a 任务详情、真实完成标准与状态更新。 — 证据见 [t14a-baseline.md](t14a-baseline.md)；`task-detail` 纯函数 + 抽屉组件：只读现有字段、缺失“让 AI 细化”、月份级交付物标“本阶段共同要求”、状态复用现有 PATCH（5 用例）。
 - [x] T14b 近期任务内容质量、时间预算和历史兼容。 — 证据见 [t14b-baseline.md](t14b-baseline.md)；`plan-budget` 预算校验（超支不静默）+ 具体性启发式（泛词识别），8 用例；只读不写历史计划。
-- [ ] T12a 参考分命名、中文标签、缺失数据表现。
-- [ ] T12b 权重校验、解释、建议优先级与证据。
-- [ ] T13 当前计划与待确认版独立预览/对比。
-- [ ] T14a 任务详情、真实完成标准与状态更新。
-- [ ] T14b 近期任务内容质量、时间预算和历史兼容。
+- [x] T12a 参考分命名、中文标签、缺失数据表现。 — 同 T12，证据见 [t12-baseline.md](t12-baseline.md)。
+- [x] T12b 权重校验、解释、建议优先级与证据。 — 同 T12，证据见 [t12-baseline.md](t12-baseline.md)。
+- [x] T13 当前计划与待确认版独立预览/对比。 — 同 T13，证据见 [t13-baseline.md](t13-baseline.md)。
+- [x] T14a 任务详情、真实完成标准与状态更新。 — 同 T14a，证据见 [t14a-baseline.md](t14a-baseline.md)。
+- [x] T14b 近期任务内容质量、时间预算和历史兼容。 — 同 T14b，证据见 [t14b-baseline.md](t14b-baseline.md)。
 - [x] T15 展示已确认 LearningRoute 及关联版本。 — 证据见 [t15-baseline.md](t15-baseline.md)；`toLearningRouteView` 展示 adapter 不渲染 z.unknown 数组，null/损坏/空/归档降级，`path-view` 新增“学习安排”区块接入。
 - [x] T16a 资源岗位标签、链接语义、空态和检索失败。 — 证据见 [t16a-baseline.md](t16a-baseline.md)；岗位选项改由种子+当前画像+资源实际 roleKey 构成（`buildRoleOptions`/`roleLabelFor`），未知岗位可读名称不清空；外链真 `<a>` 无 URL 不伪装跳转；检索失败与零结果分开；裸 fetch 迁移 `fetchApi` + request sequence 防竞态；卡片展示 estimatedHours。
 - [x] T16b 任务上下文到资源再返回任务。 — 证据见 [t16b-baseline.md](t16b-baseline.md)；任务详情“查找学习资源”→ `/resources?taskId&planId`；`/api/resources` 服务端核验任务归属并返回 context roleKey/taskTitle；资源页由任务进入时显示“为当前任务查找资源”+“返回任务”，任意 query 参数不可信，服务端按用户核验。
@@ -85,6 +85,8 @@
 | T17b | 执行 agent / 2026-09-06 | `simulation-view.tsx`：null score 改“未产生正式评分”不画 0 环、完成态一律走报告、能力影响绝对值+负值样式、AI 降级标记、候选“已生成/待确认”不声称改画像、报告加“返回任务”；`simulation.ts` `formatAbilityImpact`/`impactBarPercent`；`simulation.test.ts` +4 用例；`globals.css` 新增 4 样式 | `tsc --noEmit` 通过；改动文件 eslint 0；全量 133/1159 通过；`npm run lint` 0/0；`npm run build` exit 0 | 节点环境无浏览器 | 评分报告/降级/返回任务浏览器验证留 T19/T25 |
 | T18 | 执行 agent / 2026-09-06 | `confirm-dialog.tsx` 异步确认成功才关闭+失败保留+禁用重复提交+焦点圈定回焦；`memory-view.tsx` 三标签（`memory-tabs.ts` 深链接解析）+画像证据只读+清空独立危险区+隐私文案对齐+confirmDelete/clearData 判断成功；`simulation-view.tsx` 候选深链接 `?tab=candidates`；`workspace.tsx` 传 profile+Suspense；`globals.css` 新增 tab 样式；`memory-tabs.test.ts` +4 用例 | `tsc --noEmit` 通过；改动文件 eslint 0；全量 134/1163 通过；`npm run lint` 0/0；`npm run build` exit 0 | 节点环境无浏览器 | ConfirmDialog 交互/焦点圈定/标签切换浏览器验证留 T19/T25 |
 | T19 | 执行 agent / 2026-09-06 | `globals.css` 正文可选取（内容区 user-select:text、控件禁用）；`kurisu-avatar.tsx` iframe 低动效门控；`assistant-panel.tsx` `id=assistant-panel`；`assistant-entry-button.tsx` `aria-expanded`/`aria-controls`/`aria-haspopup` | `tsc --noEmit` 通过；改动文件 eslint 0；全量 134/1163 通过；`npm run lint` 0/0；`npm run build` exit 0 | 节点环境无浏览器 | 纯键盘打开/关闭、360px/200% 缩放、对比度、iframe 低动效、`e2e/motion-reduced.spec.ts` 浏览器运行留 T25 |
+| T10b | 执行 agent / 2026-09-06 | `product-sidebar.tsx` 补 `id=primary-sidebar`；`workspace.tsx` 移动顶栏去重复岗位标题改“工作台”；删除无引用 `app-shell.tsx`/`mobile-navigation.tsx` | 引用核查无外部引用；`tsc --noEmit` 通过；改动文件 eslint 0；全量 134/1163 通过；`npm run lint` 0/0；`npm run build` exit 0 | 节点环境无浏览器 | 断点/遮挡浏览器验证留 T25 |
+| T10c | 执行 agent / 2026-09-06 | `styles/tokens.css`（唯一 :root）+ `styles/base.css`（reset/光标/焦点/滚动条）；`globals.css` 改 `@import "./styles/tokens.css"`/`"./styles/base.css"` 并移除已迁块 | :root 唯一性 tokens:1/globals:0；`tsc --noEmit` 通过；全量 134/1163 通过；`npm run lint` 0/0；`npm run build` exit 0 | 节点环境无浏览器 | 纯搬运无视觉改动；最终 computed styles/断点浏览器验证留 T25 |
 | 评估与计划 | 当前评估 / 2026-09-06 | 仅 tasks/ 文档与截图 | baseline 见评估报告；非全绿 | 7 张本次截图 | 产品优化尚未执行 |
 
 ## 下一位 agent 从这里开始

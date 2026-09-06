@@ -116,9 +116,7 @@ export function Workspace({ initialView, isAdmin = false }: { initialView: View;
           >
             <Menu size={20} />
           </button>
-          <span className="topbar-title">
-            {data.profile.targetRoleLabel ?? "未设置目标岗位"} 工作台
-          </span>
+          <span className="topbar-title">工作台</span>
           {refreshing && <span className="workspace-refreshing" aria-live="polite">正在更新</span>}
         </header>
 

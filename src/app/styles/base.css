@@ -1,0 +1,164 @@
+/* ============================================================
+   CareerMate 基础层（T10c 分层引导：tokens/base/shell/page）
+   —— 全局 reset、光标/选中策略、焦点环、滚动条。
+   ============================================================ */
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--cm-canvas);
+  color: var(--cm-text-strong);
+  cursor: default;
+  font-family:
+    "Inter",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    "PingFang SC",
+    "Hiragino Sans GB",
+    "Microsoft YaHei",
+    "Noto Sans SC",
+    ui-sans-serif,
+    system-ui,
+    sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* 非交互区域统一箭头光标 */
+* {
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+  caret-color: transparent;
+}
+
+button,
+[role="button"],
+a,
+summary,
+label,
+select,
+option {
+  cursor: pointer;
+}
+
+input,
+textarea,
+[contenteditable="true"] {
+  cursor: text;
+  user-select: text;
+  -webkit-user-select: text;
+  caret-color: var(--cm-brand);
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button:disabled {
+  opacity: 0.55;
+}
+
+/* 焦点：一律可见的 2px 主色环 */
+:where(button, a, summary, select, [role="button"], input, textarea):focus-visible {
+  outline: 2px solid var(--cm-brand);
+  outline-offset: 2px;
+}
+
+/* 文本输入控件：聚焦只有 3px 主色淡描边，不出现外框 */
+.cm-input,
+.cm-input-textarea,
+select.cm-select {
+  outline: none;
+}
+
+.cm-input:focus,
+.cm-input-textarea:focus,
+select.cm-select:focus {
+  outline: none;
+  border-color: var(--cm-brand);
+  box-shadow: 0 0 0 3px rgba(14, 118, 255, 0.14);
+}
+
+::selection {
+  background: rgba(14, 118, 255, 0.16);
+}
+
+/* T19：正文允许选取/复制。全局 user-select:none 仅作用于交互控件与装饰，
+   内容区（消息、卡片、报告、说明段落）恢复可选中，避免点击选中残留且保证可复制。 */
+.message-text,
+.parts-citation-list,
+.memory-card,
+.sim-report,
+.sim-report-list,
+.sim-brief,
+.sim-scenario-prompt,
+.sim-turn,
+.path-notes,
+.note-list,
+.path-section,
+.resource-card,
+.surface-card p,
+.surface-card li,
+.dashboard-view,
+.onboarding-view {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* 交互控件与装饰性元素保持不可选中，保留应用手感（覆写上面的 * 规则） */
+button,
+[role="button"],
+a,
+summary,
+label,
+select,
+.cm-dot-tag,
+.weak-chip,
+.sim-scenario-chip,
+.sim-brief-dim,
+.sim-report-badge,
+.resource-type {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* 滚动条：细、浅 */
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.14);
+  border-radius: 8px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.26);
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
