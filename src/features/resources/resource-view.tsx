@@ -1,18 +1,18 @@
 "use client";
 
-/** 资源中心 —— 按岗位/能力/类型筛选学习资源 */
-import { useState } from "react";
+/** 资源中心 —— 按岗位/能力/类型筛选学习资源（T16a） */
+import { useRef, useState } from "react";
 import { ExternalLink, Search } from "lucide-react";
 import { filterResources } from "@/lib/resources";
-import { abilityKeys, abilityLabels, resourceTypeLabels, resourceTypes, seedRoleKeys, type ProfileDto, type ResourceItemDto, type ResourceType } from "@/lib/types";
+import { buildRoleOptions, roleLabelFor } from "@/lib/role-options";
+import { abilityKeys, abilityLabels, resourceTypeLabels, resourceTypes, type ProfileDto, type ResourceItemDto, type ResourceType } from "@/lib/types";
+import { fetchApi } from "@/lib/client-api";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import { InlineAlert } from "@/components/ui/inline-alert";
 
 /* ── 主视图 ── */
 
 interface ResourceViewProps { resources: ResourceItemDto[]; profile: ProfileDto; weakAbilities: string[]; }
-
-const roleLabels: Record<string, string> = { ai_product_manager: "AI 产品经理", data_analyst: "数据分析师", aigc_operator: "AIGC 运营" };
 
 const selectClass = "cm-select";
 
@@ -25,49 +25,46 @@ export function ResourceView({ resources, profile, weakAbilities }: ResourceView
   const [tboxItems, setTboxItems] = useState<Array<{ content: string; source: string; score: number }>>([]);
   const [tboxLoading, setTboxLoading] = useState(false);
   const [tboxSearched, setTboxSearched] = useState(false);
+  // 检索失败与零结果分开：null=未失败；"x"=失败文案
+  const [tboxError, setTboxError] = useState<string | null>(null);
+  // request sequence 防结果竞态：仅接受最新一次查询的返回（T16a）
+  const tboxSeq = useRef(0);
+
+  // 岗位选项：种子模板 + 当前画像岗位 + 资源中实际出现的有效岗位（T16a，不再只维护三项 roleLabels）
+  const resourceRoleKeys = Array.from(new Set(resources.map((r) => r.roleKey).filter((k) => k && k.trim())));
+  const roleOptions = buildRoleOptions(profile, resourceRoleKeys);
+
   const relevant = filterResources(resources, { roleKey, abilityKey, type: resourceType });
 
   async function searchTbox(queryOverride?: string) {
     const query = (queryOverride ?? tboxQuery).trim();
     if (!query) return;
+    const seq = ++tboxSeq.current;
     setTboxLoading(true);
+    setTboxError(null);
     setNotice("");
-    try {
-      const res = await fetch("/api/tbox/retrieve", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ datasetKey: "learningResources", query, limit: 10 }),
-      });
-      const body = await res.json();
-      if (body.ok) {
-        setTboxItems(body.data.items ?? []);
-      } else {
-        setTboxItems([]);
-        setNotice(body.error?.message ?? "百宝箱检索失败，请稍后重试");
-      }
-      setTboxSearched(true);
-    } catch {
+    const r = await fetchApi<{ items?: Array<{ content: string; source: string; score: number }> }>("/api/tbox/retrieve", {
+      method: "POST",
+      body: JSON.stringify({ datasetKey: "learningResources", query, limit: 10 }),
+    });
+    // 已有更新的查询发起，本次结果过期，丢弃
+    if (seq !== tboxSeq.current) return;
+    setTboxSearched(true);
+    setTboxLoading(false);
+    if (r.ok) {
+      setTboxItems(r.data.items ?? []);
+      setTboxError(null);
+    } else {
       setTboxItems([]);
-      setNotice("百宝箱检索失败，请稍后重试");
-      setTboxSearched(true);
-    } finally {
-      setTboxLoading(false);
+      setTboxError(r.error?.message ?? "百宝箱检索失败，请稍后重试");
     }
   }
 
   function buildRecommendQuery() {
-    const parts = [roleLabels[roleKey] ?? "", abilityKey !== "all" ? (abilityLabels[abilityKey as keyof typeof abilityLabels] ?? "") : ""];
+    const parts = [roleLabelFor(roleKey, profile), abilityKey !== "all" ? (abilityLabels[abilityKey as keyof typeof abilityLabels] ?? "") : ""];
     const query = parts.filter(Boolean).join(" ");
     setTboxQuery(query);
     if (query) void searchTbox(query);
-  }
-
-  function openResource(item: ResourceItemDto) {
-    if (item.url) {
-      window.open(item.url, "_blank", "noopener,noreferrer");
-      return;
-    }
-    setNotice(`「${item.title}」暂未提供在线链接，可参考来源信息自行查找。`);
   }
 
   return (
@@ -78,7 +75,8 @@ export function ResourceView({ resources, profile, weakAbilities }: ResourceView
         <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13.5, fontWeight: 500, color: "var(--cm-text-muted)" }}>
           目标岗位
           <select className={selectClass} value={roleKey} onChange={(e) => setRoleKey(e.target.value)}>
-            {seedRoleKeys.map((r) => <option key={r} value={r}>{roleLabels[r]}</option>)}
+            <option value="">全部岗位</option>
+            {roleOptions.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
           </select>
         </label>
         <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13.5, fontWeight: 500, color: "var(--cm-text-muted)" }}>
@@ -104,7 +102,7 @@ export function ResourceView({ resources, profile, weakAbilities }: ResourceView
           style={{ flex: 1, minWidth: 220 }}
           value={tboxQuery}
           onChange={(e) => setTboxQuery(e.target.value)}
-          placeholder="输入关键词搜索百宝箱学习资源"
+          placeholder="搜索学习资源"
           onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void searchTbox(); } }}
         />
         <button
@@ -114,7 +112,7 @@ export function ResourceView({ resources, profile, weakAbilities }: ResourceView
           disabled={tboxLoading || !tboxQuery.trim()}
         >
           <Search size={14} />
-          {tboxLoading ? "检索中..." : "搜索百宝箱"}
+          {tboxLoading ? "检索中..." : "搜索学习资源"}
         </button>
         <button
           className="suggested-btn"
@@ -129,7 +127,10 @@ export function ResourceView({ resources, profile, weakAbilities }: ResourceView
       {tboxSearched ? (
         <div style={{ margin: "16px 0 0" }}>
           <h4 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "var(--cm-text-strong)" }}>百宝箱检索结果</h4>
-          {tboxItems.length === 0 ? (
+          {tboxError ? (
+            // 检索失败（网络/业务/超时）：与“零结果”分开的信息
+            <InlineAlert tone="error">{tboxError}</InlineAlert>
+          ) : tboxItems.length === 0 ? (
             <p style={{ margin: "8px 0 0", fontSize: 13, color: "var(--cm-text-muted)" }}>未找到相关学习资源。</p>
           ) : (
             <div className="resource-grid" style={{ marginTop: 10 }}>
@@ -173,30 +174,48 @@ export function ResourceView({ resources, profile, weakAbilities }: ResourceView
       ) : (
         <div className="resource-grid">
           {relevant.map((item, i) => (
-            <article
-              key={item.id}
-              className={`resource-card ${item.url ? "resource-card-clickable" : ""}`}
-              style={{ animationDelay: `${Math.min(i, 4) * 0.06}s` }}
-              onClick={() => openResource(item)}
-              role={item.url ? "link" : undefined}
-              tabIndex={item.url ? 0 : undefined}
-              onKeyDown={item.url ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); window.open(item.url!, "_blank", "noopener,noreferrer"); } } : undefined}
-            >
-              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, lineHeight: 1.5, color: "var(--cm-text-strong)" }}>{item.title}</h3>
-                <span className="resource-type">{resourceTypeLabels[item.type as ResourceType] ?? item.type}</span>
-              </div>
-              <p style={{ margin: "10px 0 0", fontSize: 13.5, lineHeight: 1.7, color: "var(--cm-text-muted)" }}>{item.description}</p>
-              <div style={{ marginTop: 12, display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, color: "var(--cm-text-subtle)" }}>
-                <span>来源：{item.source}</span>
-                {item.url ? (
+            // 有 URL 才是可跳转的语义链接；无 URL 不伪装成可点击卡片（T16a）
+            item.url ? (
+              <a
+                key={item.id}
+                className="resource-card resource-card-clickable"
+                href={item.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ animationDelay: `${Math.min(i, 4) * 0.06}s`, textDecoration: "none", color: "inherit", display: "flex", flexDirection: "column" }}
+              >
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+                  <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, lineHeight: 1.5, color: "var(--cm-text-strong)" }}>{item.title}</h3>
+                  <span className="resource-type">{resourceTypeLabels[item.type as ResourceType] ?? item.type}</span>
+                </div>
+                <p style={{ margin: "10px 0 0", fontSize: 13.5, lineHeight: 1.7, color: "var(--cm-text-muted)" }}>{item.description}</p>
+                <div style={{ marginTop: "auto", paddingTop: 12, display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, color: "var(--cm-text-subtle)", gap: 8 }}>
+                  <span>来源：{item.source}</span>
+                  {item.estimatedHours != null ? <span>约 {item.estimatedHours} 小时</span> : null}
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "var(--cm-brand-ink)", fontWeight: 500 }}>
                     <ExternalLink size={12} />
                     查看资源
                   </span>
-                ) : null}
-              </div>
-            </article>
+                </div>
+              </a>
+            ) : (
+              <article
+                key={item.id}
+                className="resource-card"
+                style={{ animationDelay: `${Math.min(i, 4) * 0.06}s` }}
+              >
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+                  <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, lineHeight: 1.5, color: "var(--cm-text-strong)" }}>{item.title}</h3>
+                  <span className="resource-type">{resourceTypeLabels[item.type as ResourceType] ?? item.type}</span>
+                </div>
+                <p style={{ margin: "10px 0 0", fontSize: 13.5, lineHeight: 1.7, color: "var(--cm-text-muted)" }}>{item.description}</p>
+                <div style={{ marginTop: "auto", paddingTop: 12, display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, color: "var(--cm-text-subtle)", gap: 8 }}>
+                  <span>来源：{item.source}</span>
+                  {item.estimatedHours != null ? <span>约 {item.estimatedHours} 小时</span> : null}
+                  <span style={{ color: "var(--cm-text-subtle)" }}>查看实践说明</span>
+                </div>
+              </article>
+            )
           ))}
         </div>
       )}
