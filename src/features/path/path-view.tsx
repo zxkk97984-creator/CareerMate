@@ -269,6 +269,7 @@ export function PathView({ plan, pendingPlan, refresh, setNotice }: PathViewProp
                 dueWeek={selectedTask.dueWeek}
                 month={currentMonth}
                 busy={busyTaskId === selectedTask.id}
+                planId={plan?.id}
                 onStatusChange={async (id, status) => { await updateTask(id, status); }}
               />
               <button type="button" style={{ marginTop: 18, minHeight: 44, width: "100%", borderRadius: "var(--cm-radius-control)", border: "1px solid var(--cm-border-strong)", background: "var(--cm-surface)", color: "var(--cm-text-strong)", cursor: "pointer" }} onClick={() => setSelectedTaskId(null)}>关闭</button>

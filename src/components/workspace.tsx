@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import { Menu, RefreshCw } from "lucide-react";
 import { SimulationView } from "@/features/simulation/simulation-view";
 import { DashboardView } from "@/features/dashboard/dashboard-view";
@@ -161,7 +161,11 @@ export function Workspace({ initialView, isAdmin = false }: { initialView: View;
           )}
           {activeView === "path" && <PathView plan={data.plan} pendingPlan={data.pendingPlan} executionMeta={data.planExecutionMeta} refresh={refresh} setNotice={setNotice} />}
           {activeView === "simulation" && <SimulationView simulations={data.simulations} profile={data.profile} refresh={refresh} setNotice={setNotice} />}
-          {activeView === "resources" && <ResourceView resources={data.resources} profile={data.profile} weakAbilities={data.match?.weakAbilities ?? []} />}
+          {activeView === "resources" && (
+            <Suspense fallback={null}>
+              <ResourceView resources={data.resources} profile={data.profile} weakAbilities={data.match?.weakAbilities ?? []} />
+            </Suspense>
+          )}
           {activeView === "memory" && <MemoryView memories={data.memories} candidates={data.candidates} v2Candidates={data.v2Candidates} memoryEnabled={data.profile.memoryEnabled} refresh={refresh} setNotice={setNotice} />}
           {activeView === "admin" && <AdminView drafts={data.drafts} templates={data.templates} refresh={refresh} setNotice={setNotice} />}
           </div>

@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { ExternalLink } from "lucide-react";
 import { buildTaskDetail, taskStatusLabel, type TaskDetailView } from "@/lib/task-detail";
 import type { PlanMonth, TaskStatus } from "@/lib/types";
 
@@ -13,13 +15,15 @@ interface TaskDetailPanelProps {
   month: PlanMonth | null;
   busy?: boolean;
   onStatusChange?: (taskId: string, status: TaskStatus) => void;
+  /** T16b：所属计划 id，用于带上下文跳转资源中心 */
+  planId?: string | null;
 }
 
 /**
  * 任务详情（桌面右侧抽屉 / 手机全屏）：只读现有字段，缺失项明确“待细化”。
  * months 级交付物/完成标准标“本阶段共同要求”，不归属到单任务（plan 4.3 / T14a）。
  */
-export function TaskDetailPanel({ taskId, title, taskType = "practice", status, dueWeek, estimatedHours, month, busy, onStatusChange }: TaskDetailPanelProps) {
+export function TaskDetailPanel({ taskId, title, taskType = "practice", status, dueWeek, estimatedHours, month, busy, onStatusChange, planId }: TaskDetailPanelProps) {
   const detail = buildTaskDetail({
     task: { id: taskId, title, type: taskType, status, dueWeek, estimatedHours },
     month,
@@ -60,6 +64,15 @@ export function TaskDetailPanel({ taskId, title, taskType = "practice", status, 
           </dd>
         </div>
       </dl>
+
+      {planId ? (
+        <Link
+          href={`/resources?taskId=${encodeURIComponent(taskId)}&planId=${encodeURIComponent(planId)}`}
+          style={{ marginTop: 16, display: "inline-flex", alignItems: "center", gap: 6, minHeight: 40, padding: "0 14px", borderRadius: "var(--cm-radius-control)", border: "1px solid var(--cm-border-strong)", background: "var(--cm-surface)", color: "var(--cm-text-strong)", fontSize: 13.5, fontWeight: 500, textDecoration: "none" }}
+        >
+          <ExternalLink size={14} /> 查找学习资源
+        </Link>
+      ) : null}
 
       {onStatusChange ? (
         <div style={{ marginTop: 18 }}>

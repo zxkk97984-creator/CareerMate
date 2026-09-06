@@ -1,8 +1,10 @@
 "use client";
 
-/** 资源中心 —— 按岗位/能力/类型筛选学习资源（T16a） */
-import { useRef, useState } from "react";
-import { ExternalLink, Search } from "lucide-react";
+/** 资源中心 —— 按岗位/能力/类型筛选学习资源（T16a/T16b） */
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { ArrowLeft, ExternalLink, Search } from "lucide-react";
 import { filterResources } from "@/lib/resources";
 import { buildRoleOptions, roleLabelFor } from "@/lib/role-options";
 import { abilityKeys, abilityLabels, resourceTypeLabels, resourceTypes, type ProfileDto, type ResourceItemDto, type ResourceType } from "@/lib/types";
@@ -16,7 +18,10 @@ interface ResourceViewProps { resources: ResourceItemDto[]; profile: ProfileDto;
 
 const selectClass = "cm-select";
 
+interface TaskContext { taskId: string | null; planId: string | null; taskTitle: string | null; roleKey: string | null; }
+
 export function ResourceView({ resources, profile, weakAbilities }: ResourceViewProps) {
+  const searchParams = useSearchParams();
   const [roleKey, setRoleKey] = useState(profile.targetRole ?? "");
   const [abilityKey, setAbilityKey] = useState<string>("all");
   const [resourceType, setResourceType] = useState<string>("all");
@@ -29,6 +34,33 @@ export function ResourceView({ resources, profile, weakAbilities }: ResourceView
   const [tboxError, setTboxError] = useState<string | null>(null);
   // request sequence 防结果竞态：仅接受最新一次查询的返回（T16a）
   const tboxSeq = useRef(0);
+  // T16b：任务进入时保留 taskId/planId 上下文，服务端核验归属
+  const taskId = searchParams.get("taskId") ?? null;
+  const planId = searchParams.get("planId") ?? null;
+  const [taskContext, setTaskContext] = useState<TaskContext | null>(null);
+  const [taskContextError, setTaskContextError] = useState<string | null>(null);
+
+  // 任务上下文：通过 /api/resources 核验归属并取关联角色；任意 query 参数不可信，以服务端为准（T16b）
+  useEffect(() => {
+    if (!taskId && !planId) return;
+    let active = true;
+    void (async () => {
+      const params = new URLSearchParams();
+      if (taskId) params.set("taskId", taskId);
+      if (planId) params.set("planId", planId);
+      const r = await fetchApi<{ items?: ResourceItemDto[]; context?: TaskContext }>(`/api/resources?${params.toString()}`);
+      if (!active) return;
+      if (!r.ok) {
+        setTaskContextError(r.error?.message ?? "无法验证该任务上下文，请从任务详情重新进入");
+        return;
+      }
+      if (r.data.context) {
+        setTaskContext(r.data.context);
+        if (r.data.context.roleKey) setRoleKey(r.data.context.roleKey);
+      }
+    })();
+    return () => { active = false; };
+  }, [taskId, planId]);
 
   // 岗位选项：种子模板 + 当前画像岗位 + 资源中实际出现的有效岗位（T16a，不再只维护三项 roleLabels）
   const resourceRoleKeys = Array.from(new Set(resources.map((r) => r.roleKey).filter((k) => k && k.trim())));
@@ -70,6 +102,23 @@ export function ResourceView({ resources, profile, weakAbilities }: ResourceView
   return (
     <div data-od-id="resources-layout">
     <SurfaceCard title="资源中心" description="按目标岗位、能力方向与资源类型筛选">
+      {/* T16b：由任务进入时显示上下文 + 返回任务 */}
+      {(taskId || planId) ? (
+        <div style={{ marginBottom: 16, padding: 14, borderRadius: "var(--cm-radius-control)", background: "var(--cm-canvas)", border: "1px solid var(--cm-border)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ fontSize: 13.5, color: "var(--cm-text-strong)", display: "flex", alignItems: "center", gap: 8 }}>
+            <span aria-hidden="true">🔎</span>
+            {taskContextError
+              ? <span style={{ color: "var(--cm-warning)" }}>{taskContextError}</span>
+              : taskContext?.taskTitle
+                ? <>为当前任务查找资源：<strong>{taskContext.taskTitle}</strong></>
+                : <>为当前任务查找资源</>}
+          </div>
+          <Link href="/path" style={{ display: "inline-flex", alignItems: "center", gap: 6, minHeight: 36, padding: "0 12px", borderRadius: "var(--cm-radius-control)", border: "1px solid var(--cm-border-strong)", background: "var(--cm-surface)", color: "var(--cm-text-strong)", fontSize: 13, fontWeight: 500, textDecoration: "none" }}>
+            <ArrowLeft size={14} /> 返回任务
+          </Link>
+        </div>
+      ) : null}
+
       {/* 顶部三个筛选器 */}
       <div style={{ display: "grid", gap: 14 }} className="admin-form-grid">
         <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13.5, fontWeight: 500, color: "var(--cm-text-muted)" }}>
