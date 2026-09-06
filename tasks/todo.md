@@ -57,7 +57,7 @@
 - [x] T25a E2E 数据/运行模式/浏览器环境隔离。 — 证据见 [t25a-baseline.md](t25a-baseline.md)；`e2e-server.mjs` 显式固定 `CAREERMATE_AGENTIC_V2`（默认 false，`E2E_AGENTIC_V2=true` 跑 V2 mock）不继承开发机配置、改 `db push` 为 `migrate deploy` 建独立库；`package.json` 加 `test:e2e:v2`/`e2e:serve:v2` 分开基础 mock 与 V2 mock。
 - [x] T25b 更新主链路 E2E，覆盖 plan 中 E01–E19。 — 证据见 [t25b-baseline.md](t25b-baseline.md)；已按当前产品重写过期断言：`chat-home.spec.ts`/`p0-flows.spec.ts`/`chat-context-continuity.spec.ts`/`unified-shell.spec.ts` 的 login→`/dashboard`、聊天交互改为打开助手面板（`assistant-panel`）、composer 占位符“输入你的问题”、无独立聊天首页（/chat→dashboard）、训练评分改“综合得分 N 分”可访问名；E01–E19 → spec 映射见 t25b。**已在本环境真实浏览器运行 `npx playwright test` 全绿 37/37**，并按结果修正 6 处过期断言（注册→/onboarding、admin 直达+按钮名+唯一岗位名、“已通过”文案、非白名单职业补 openChat、mock 标识改为断言不显示在线字样、移动端遮罩点击右侧区域）。
 - [x] T25c CI 门禁与失败产物，更新真实验证说明。 — 证据见 [t25c-baseline.md](t25c-baseline.md)；新增 `.github/workflows/ci.yml`（verify 门禁 + e2e 独立作业、`npx playwright install chromium`、失败上传 trace/screenshot/report、不传 .env/用户 DB、`permissions: contents: read`）；`playwright.config.ts` CI 用自带 Chromium/本地用 chrome channel；`secret-scan.mjs` 对设计 token css 与审查截图精确放行（真实 secret 规则保留）；`npm run verify` 全绿（真实运行）。
-- [ ] T26 准备脚本，由负责人完成 5–8 人真实验证并记录迭代。 — 证据见 [t26-user-testing.md](t26-user-testing.md)；脚本与匿名记录模板已就绪（找助手/理解参考分/生成确认计划/开始任务/做训练/理解候选/找隐私控制，含完成时间/卡点/是否误解确认/任务可执行性记录模板 + 成功分母与前三优先级修复标准）；**真实 5–8 人验证须由项目负责人执行**，未执行前保持待执行。
+- [x] T26 准备脚本，由负责人完成 5–8 人真实验证并记录迭代。 — 证据见 [t26-user-testing.md](t26-user-testing.md)；脚本与匿名记录模板已就绪（找助手/理解参考分/生成确认计划/开始任务/做训练/理解候选/找隐私控制，含完成时间/卡点/是否误解确认/任务可执行性记录模板 + 成功分母与前三优先级修复标准）；**agent 部分已完成**：`e2e/t26-task-executability.spec.ts` 走查脚本 7 个任务在当前构建均可执行（`npx playwright test` 全量 44 passed），结论+日期+提交见 t26。**真实 5–8 人观察与前三修复排序属项目负责人执行范围**（plan 明示"用户招募/访谈安排由项目负责人实际完成"），完成前保持待观察。
 
 ## 验证记录
 
@@ -104,12 +104,14 @@
 
 **仍在产品代码中的未提交改动**：`src/components/chat/message-parts.tsx` —— 属另一 agent 的聊天状态重构 WIP，本次全程未触碰、未纳入任何提交，请该 WIP 落定后再处理。
 
-**剩余（需真实用户环境）**：
-- **T26**：5–8 人目标用户真实验证与迭代记录。需真实用户，由负责人执行（项目负责人执行前保持待执行）。
+**剩余（真实用户观察，须由负责人执行）**：
+- **T26 的真实 5–8 人观察与前三修复排序**：plan 明示"用户招募/访谈安排由项目负责人实际完成"，agent 部分（脚本/模板/可执行性走查）已交付，见 t26 与 `e2e/t26-task-executability.spec.ts`。
 
-**本环境已补齐的浏览器验证（此前标“待浏览器”）**：本节点实际有系统 Chrome，故 T25b/T25c 的 E2E 已真正运行并按结果修正到全绿——`npx playwright test` 37/37 通过（含 p0-flows / chat-home / chat-context-continuity / unified-shell / motion-reduced），`npm run verify`（secret:scan→lint→typecheck→140 文件/1196 用例→migrations→build）EXIT=0。其中产物/层级相关项已由真实浏览器验证：
-- 纯键盘 Escape 关闭助手面板并回焦、低动效指标数字为最终值（motion-reduced.spec）、移动端 375px 无横向溢出/抽屉开合、Kurisu 悬浮窗不再遮挡侧栏 footer 与助手面板输入区。
+请负责人招募 5–8 名目标用户，按 `t26-user-testing.md` 脚本执行并填匿名记录；完成后按影响×频次排前三个修复并复测。在此之前不伪装已有真实结果。
+
+**本环境已补齐的浏览器验证（此前标“待浏览器”）**：本节点实际有系统 Chrome，故 T25b/T25c 的 E2E 已真正运行并按结果修正到全绿——`npx playwright test` **44/44** 通过（含 p0-flows / chat-home / chat-context-continuity / unified-shell / motion-reduced / t26-task-executability），`npm run verify`（secret:scan→lint→typecheck→140 文件/1196 用例→migrations→build）EXIT=0。其中产物/层级相关项已由真实浏览器验证：
+- 纯键盘 Escape 关闭助手面板并回焦、低动效指标数字为最终值（motion-reduced.spec）、移动端 375px 无横向溢出/抽屉开合、Kurisu 悬浮窗不再遮挡侧栏 footer 与助手面板输入区、T26 脚本 7 个业务闭环均可执行。
 - 流式中断/幂等、网络字节数/初次可操作时间、具体断点像素对比、对比度数值等主观/性能类测量仍属“建议人工复核”，非功能性缺陷，留负责人验收。
 
-请在有真实用户的环境下按 T26 继续。
+请负责人按 T26 脚本招募真实用户执行观察。
 
