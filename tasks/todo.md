@@ -40,7 +40,7 @@
 - [x] T15 展示已确认 LearningRoute 及关联版本。 — 证据见 [t15-baseline.md](t15-baseline.md)；`toLearningRouteView` 展示 adapter 不渲染 z.unknown 数组，null/损坏/空/归档降级，`path-view` 新增“学习安排”区块接入。
 - [x] T16a 资源岗位标签、链接语义、空态和检索失败。 — 证据见 [t16a-baseline.md](t16a-baseline.md)；岗位选项改由种子+当前画像+资源实际 roleKey 构成（`buildRoleOptions`/`roleLabelFor`），未知岗位可读名称不清空；外链真 `<a>` 无 URL 不伪装跳转；检索失败与零结果分开；裸 fetch 迁移 `fetchApi` + request sequence 防竞态；卡片展示 estimatedHours。
 - [x] T16b 任务上下文到资源再返回任务。 — 证据见 [t16b-baseline.md](t16b-baseline.md)；任务详情“查找学习资源”→ `/resources?taskId&planId`；`/api/resources` 服务端核验任务归属并返回 context roleKey/taskTitle；资源页由任务进入时显示“为当前任务查找资源”+“返回任务”，任意 query 参数不可信，服务端按用户核验。
-- [ ] T17a 选择/训练/完成三阶段，刷新与失败恢复。
+- [x] T17a 选择/训练/完成三阶段，刷新与失败恢复。 — 证据见 [t17a-baseline.md](t17a-baseline.md)；`simulation-view` 依 4.3 组织选择/训练/完成三阶段：active 会话 brief 从该 session scenarioKey 反查（`scenarioMetaForSession`，不拿默认第一项冒充）、进行中会话折叠情境卡且不显示大片禁用卡片、裸 fetch 迁 `fetchApi`、send/complete 失败保留答案+可重试、重复 start/send/complete 有 busy+状态防护、刷新恢复当前 session。
 - [ ] T17b 评分与候选报告，null 分数与实际来源。
 - [ ] T18 成长档案三标签、建议深链接与安全的隐私操作。
 - [ ] T19 键盘、复制、低动效、手机安全区与缩放检查。
@@ -81,6 +81,7 @@
 | T15 | 执行 agent / 2026-09-06 | `learning-route.ts` 展示 adapter + `learning-route-view.tsx`（LearningRouteDisplay/Body）+ `learning-route.test.ts`；`path-view.tsx` 新增“学习安排”区块接 `/api/learning-routes/current` | `tsc --noEmit` 通过；改动文件 eslint 0；全量 132/1145 通过；`npm run lint` 0/0；`npm run build` exit 0 | 节点环境无浏览器 | 空态/正常/归档三态视觉与接口联调留 T19/T25 |
 | T16a | 执行 agent / 2026-09-06 | `role-options.ts`（buildRoleOptions/roleLabelFor/seedRoleLabels）+ `role-options.test.ts`；`resource-view.tsx`：岗位选项由种子+画像+资源实际 roleKey 构成、外链真 `<a>`、无 URL 不伪装、检索失败与该结果分开、裸 fetch 迁 `fetchApi`+seq 防竞态、展示 estimatedHours | `tsc --noEmit` 通过；改动文件 eslint 0；全量 133/1150 通过；`npm run lint` 0/0；`npm run build` exit 0 | 节点环境无浏览器 | 筛选/键盘/空态/竞态浏览器检查留 T19/T25 |
 | T16b | 执行 agent / 2026-09-06 | `resources/route.ts`：可选 taskId/planId，服务端核验归属并返回 context roleKey/taskTitle；`task-detail.tsx`「查找学习资源」跳转带上下文；`resource-view.tsx` 任务进入显示上下文+返回任务+预填角色；`workspace.tsx` Suspense 包裹；`path-view.tsx` 传 planId | `tsc --noEmit` 通过；改动文件 eslint 0；全量 133/1154 通过；`npm run lint` 0/0；`npm run build` exit 0 | 节点环境无浏览器 | 任务→资源→返回实际导航交互留 T19/T25 |
+| T17a | 执行 agent / 2026-09-06 | `simulation-view.tsx`：选择/训练/完成三阶段、active brief 按场景反查（不冒充默认第一项）、进行中折叠情境卡+隐藏大片禁用卡、裸 fetch 迁 `fetchApi`、send/complete 失败保留答案+可重试、重复操作防护、刷新恢复；`simulation.ts` 新增 `scenarioMetaForSession`；`simulation.test.ts` +3 用例 | `tsc --noEmit` 通过；改动文件 eslint 0；全量 133/1157 通过；`npm run lint` 0/0；`npm run build` exit 0 | 节点环境无浏览器 | 三轮评分/失败恢复/竞态浏览器 E2E 留 T19/T25；评分报告细节属 T17b |
 | 评估与计划 | 当前评估 / 2026-09-06 | 仅 tasks/ 文档与截图 | baseline 见评估报告；非全绿 | 7 张本次截图 | 产品优化尚未执行 |
 
 ## 下一位 agent 从这里开始

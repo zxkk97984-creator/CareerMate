@@ -331,6 +331,18 @@ export function getSimulationScenario(key: SimulationScenarioKey) {
   return { key, ...scenarios[key] };
 }
 
+/**
+ * T17a：进行中会话的 brief 必须与其场景对应。从 session.scenarioKey 在传入的
+ * 场景数组中定位其元信息；返回 null 表示无法对应（调用方应降级，不拿默认第一项冒充）。
+ */
+export function scenarioMetaForSession(
+  session: { scenarioKey?: string | null },
+  available: SimulationScenarioMeta[],
+): SimulationScenarioMeta | null {
+  if (!session.scenarioKey) return null;
+  return available.find((s) => s.key === session.scenarioKey) ?? null;
+}
+
 export function nextSimulationPrompt(key: SimulationScenarioKey, turnCount: number) {
   const prompts = scenarios[key].prompts;
   return prompts[Math.min(Math.max(turnCount - 1, 0), prompts.length - 1)]!;

@@ -6,6 +6,7 @@ import {
   listSimulationScenarios,
   nextSimulationPrompt,
   parseSimulationTranscript,
+  scenarioMetaForSession,
   simulationScenarioKeys,
 } from "./simulation";
 
@@ -82,5 +83,25 @@ describe("simulation domain", () => {
     expect(scenario.key).toBe("requirement_clarification");
     expect(scenario.skills).toContain("communication");
     expect(scenario.scoringDimensions.length).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe("scenarioMetaForSession（T17a：brief 与会话场景对应）", () => {
+  const available = listSimulationScenarios();
+
+  it("maps a session to its own scenario by scenarioKey, not the first default item", () => {
+    const session = { scenarioKey: "data_driven_decision" };
+    const meta = scenarioMetaForSession(session, available);
+    expect(meta?.key).toBe("data_driven_decision");
+    // 且它不是列表第一项（避免拿默认第一项冒充）
+    expect(meta?.key).not.toBe(available[0].key);
+  });
+
+  it("returns null when the session targets a scenario not in the available list", () => {
+    expect(scenarioMetaForSession({ scenarioKey: "career_interview" }, available)).toBeNull();
+  });
+
+  it("returns null when the session has no scenario key", () => {
+    expect(scenarioMetaForSession({}, available)).toBeNull();
   });
 });
