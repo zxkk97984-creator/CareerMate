@@ -41,10 +41,9 @@ export function Workspace({ initialView, isAdmin = false }: { initialView: View;
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [view] = useState<View>(initialView);
-  const { state, setNotice, updateAiRuntime, refresh, refreshSlices, retryFatal } = useWorkspaceData();
-  const { data, initialLoading, refreshing, fatal, moduleErrors, notice } = state;
-
   const activeView = useMemo(() => VIEW_BY_PATH[pathname] ?? view, [pathname, view]);
+  const { state, setNotice, updateAiRuntime, refresh, refreshSlices, retryFatal } = useWorkspaceData(activeView);
+  const { data, initialLoading, refreshing, fatal, moduleErrors, notice } = state;
 
   // 首次加载且尚无数据：整页骨架；fatal 时保留壳并显示重试
   if (initialLoading && !data.user) {

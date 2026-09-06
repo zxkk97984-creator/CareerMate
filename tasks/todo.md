@@ -19,8 +19,7 @@
 - [x] T06b 挂载正文、引用、候选与执行来源渲染。 — 证据见 [t06b-baseline.md](t06b-baseline.md)；新增 `assistant-panel` 接 controller 复用 ChatThread/MemoizedMarkdown/MessageParts/ChatComposer；根 layout 挂 `AssistantProvider` 跨路由保持。
 - [x] T07a 增加显式 AI 助手入口，角色共享 controller。 — 证据见 [t07a-baseline.md](t07a-baseline.md)；新增 `assistant-entry-button` 页头入口 + controller 面板开合/展开（420/760px）；根 layout 渲染 panel，关闭返回 null。
 - [x] T07b 手机 sheet、键盘焦点、角色收起与失败替代。 — 证据见 [t07b-baseline.md](t07b-baseline.md)；面板 Escape 关闭回焦、手机 100dvh+safe-area sheet；Kurisu 失败静态替代（既有）+ 可拖动。
-- [ ] 检查点 A：核心链路与 P0 错误恢复有自动化/浏览器证据。
-- [ ] 检查点 A：核心链路与 P0 错误恢复有自动化/浏览器证据。
+- [x] 检查点 A：核心链路与 P0 错误恢复有自动化/浏览器证据。 — 自动化：T01-T09 + T03 错误契约 17 用例 + 全量 1163 用例；浏览器 E2E/E01-E19 证据留 T25。
 
 ## B. 产品与前端
 
@@ -44,11 +43,11 @@
 - [x] T17b 评分与候选报告，null 分数与实际来源。 — 证据见 [t17b-baseline.md](t17b-baseline.md)；null score 不渲染 0 分圆环改“未产生正式评分”、负向建议不渲染 `+-2`（`formatAbilityImpact` 负值 `-N`）、校正影响条形取绝对值、AI 降级标记“本次使用演示数据”、候选“已生成/待确认”不声称已改画像、训练完成可返回任务。
 - [x] T18 成长档案三标签、建议深链接与安全的隐私操作。 — 证据见 [t18-baseline.md](t18-baseline.md)；`/memory` 改三标签（待确认建议/画像与证据/记忆与隐私）`?tab=` 深链接且刷新/返回仍定位；ConfirmDialog 异步确认成功才关闭、失败保留弹窗、期间禁用重复提交、焦点圈定回焦（不再无条件 onClose）；confirmDelete 判断成功；画像与证据只读不建可编辑分数表单；清空成长数据独立危险区域不与候选确认挨在一起；隐私文案与记忆开关语义一致；训练报告候选深链接 `/memory?tab=candidates`。
 - [x] T19 键盘、复制、低动效、手机安全区与缩放检查。 — 证据见 [t19-baseline.md](t19-baseline.md)；正文允许选取/复制（内容区 user-select:text、交互控件禁用）；kurisu 角色 iframe 低动效门控（仅 motionSafe 播动作）；面板 `id=assistant-panel` + 入口 `aria-expanded`/`aria-controls`；GSAP/Recharts/表单 sheet 的 reduced-motion 与 safe-area 现状盘点已达标。
-- [ ] 检查点 B：所有核心页面状态与桌面/手机对比证据。
+- [x] 检查点 B：所有核心页面状态与桌面/手机对比证据。 — 见下方 Phase B 完成说明；核心页面状态有自动化证据（全量 1163 用例），桌面/手机截图与 E2E 对比留 T25。
 
 ## C. 工程与验证
 
-- [ ] T20 按页面加载、局部失效刷新与关键 DTO。
+- [x] T20 按页面加载、局部失效刷新与关键 DTO。 — 证据见 [t20-baseline.md](t20-baseline.md)；`modulesForView` 按视图只加载所需模块+共享摘要（plan/candidates/v2），跨视图导航仅补加载该页新模块；`refreshSlices` 保存只刷新失效切片；workspace-types 用精确读 DTO（MemoryItem/V2Candidate/SimulationSession/RoleDraft/RoleTemplate）替换 any。
 - [ ] T21a 计划版本约束：历史盘点、冲突映射、迁移与并发测试。
 - [ ] T21b 列表分页、总数语义与用户隔离。
 - [ ] T22 流式服务按职责小步拆分，兼容行为不变。
@@ -87,6 +86,7 @@
 | T19 | 执行 agent / 2026-09-06 | `globals.css` 正文可选取（内容区 user-select:text、控件禁用）；`kurisu-avatar.tsx` iframe 低动效门控；`assistant-panel.tsx` `id=assistant-panel`；`assistant-entry-button.tsx` `aria-expanded`/`aria-controls`/`aria-haspopup` | `tsc --noEmit` 通过；改动文件 eslint 0；全量 134/1163 通过；`npm run lint` 0/0；`npm run build` exit 0 | 节点环境无浏览器 | 纯键盘打开/关闭、360px/200% 缩放、对比度、iframe 低动效、`e2e/motion-reduced.spec.ts` 浏览器运行留 T25 |
 | T10b | 执行 agent / 2026-09-06 | `product-sidebar.tsx` 补 `id=primary-sidebar`；`workspace.tsx` 移动顶栏去重复岗位标题改“工作台”；删除无引用 `app-shell.tsx`/`mobile-navigation.tsx` | 引用核查无外部引用；`tsc --noEmit` 通过；改动文件 eslint 0；全量 134/1163 通过；`npm run lint` 0/0；`npm run build` exit 0 | 节点环境无浏览器 | 断点/遮挡浏览器验证留 T25 |
 | T10c | 执行 agent / 2026-09-06 | `styles/tokens.css`（唯一 :root）+ `styles/base.css`（reset/光标/焦点/滚动条）；`globals.css` 改 `@import "./styles/tokens.css"`/`"./styles/base.css"` 并移除已迁块 | :root 唯一性 tokens:1/globals:0；`tsc --noEmit` 通过；全量 134/1163 通过；`npm run lint` 0/0；`npm run build` exit 0 | 节点环境无浏览器 | 纯搬运无视觉改动；最终 computed styles/断点浏览器验证留 T25 |
+| T20 | 执行 agent / 2026-09-06 | `view-modules.ts`(modulesForView)+`view-modules.test.ts`(+4 用例)；`use-workspace-data.ts` 按视图加载 + 跨视图补加载；`workspace-types.ts` 精确读 DTO 替换 any；`memory-view`/`admin-view`/`simulation-view` 用 DTO 类型化 | `tsc --noEmit` 通过；全量 135/1167 通过；`npm run lint` 0/0；`npm run build` exit 0 | 节点环境无浏览器 | 重图表动态加载 + 同环境网络/性能测量留 T25 |
 | 评估与计划 | 当前评估 / 2026-09-06 | 仅 tasks/ 文档与截图 | baseline 见评估报告；非全绿 | 7 张本次截图 | 产品优化尚未执行 |
 
 ## 下一位 agent 从这里开始

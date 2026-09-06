@@ -8,8 +8,7 @@ import { ArrowLeft, BarChart3, Bot, CheckCircle2, ListChecks, MessagesSquare, Sp
 import { abilityLabels, type ProfileDto } from "@/lib/types";
 import { fetchApi } from "@/lib/client-api";
 import { formatAbilityImpact, impactBarPercent, listSimulationScenarios, scenarioMetaForSession, type SimulationScenarioMeta } from "@/lib/simulation";
-
-interface TranscriptTurn { role: "user" | "assistant"; content: string }
+import type { SimulationSessionDto } from "@/lib/workspace-types";
 
 interface SimulationFeedback {
   score?: number;
@@ -20,18 +19,7 @@ interface SimulationFeedback {
   candidateUpdates?: unknown[];
 }
 
-interface SimulationSession {
-  id: string;
-  scenarioKey?: string;
-  scenarioTitle: string;
-  transcript: TranscriptTurn[];
-  status: string;
-  turnCount: number;
-  actualMode: string;
-  score: number | null;
-  candidateId?: string | null;
-  feedback?: SimulationFeedback | null;
-}
+type SimulationSession = SimulationSessionDto & { feedback?: SimulationFeedback | null };
 
 const fixedScenarios = listSimulationScenarios();
 

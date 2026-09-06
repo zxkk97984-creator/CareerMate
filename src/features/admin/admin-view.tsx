@@ -18,7 +18,9 @@ function safeParseDraftContent(content: unknown): { sources?: string[]; entryReq
 
 /* ── 主视图 ── */
 
-interface AdminViewProps { drafts: any[]; templates: any[]; refresh: () => Promise<void>; setNotice: (v: string) => void; }
+import type { RoleDraftDto, RoleTemplateDto } from "@/lib/workspace-types";
+
+interface AdminViewProps { drafts: RoleDraftDto[]; templates: RoleTemplateDto[]; refresh: () => Promise<void>; setNotice: (v: string) => void; }
 
 export function AdminView({ drafts, templates, refresh, setNotice }: AdminViewProps) {
   const [roleName, setRoleName] = useState("AI 运营分析助理");

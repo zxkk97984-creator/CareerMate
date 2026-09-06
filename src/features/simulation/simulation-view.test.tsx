@@ -7,13 +7,18 @@ function renderCompleted(score: number | null, candidateId: string | null) {
     <SimulationView
       simulations={[{
         id: "session-1",
+        scenarioKey: "cross_role_communication",
         scenarioTitle: "跨岗位沟通",
         transcript: [],
         status: "completed",
         turnCount: 3,
         actualMode: "api",
+        requestedMode: "api",
         score,
         candidateId,
+        feedback: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
       }]}
       profile={null}
       refresh={vi.fn(async () => undefined)}

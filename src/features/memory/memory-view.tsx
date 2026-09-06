@@ -6,6 +6,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { fetchApi } from "@/lib/client-api";
 import { abilityLabels, abilityKeys, type ProfileDto } from "@/lib/types";
 import { memoryTabs, resolveMemoryTab, type MemoryTab } from "@/lib/memory-tabs";
+import type { MemoryItemDto, V2CandidateDto } from "@/lib/workspace-types";
+import type { CandidateDto } from "@/lib/types";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -32,9 +34,9 @@ function formatCandidateValue(value: unknown): string {
 /* ── 主视图 ── */
 
 interface MemoryViewProps {
-  memories: any[];
-  candidates: any[];
-  v2Candidates?: any[];
+  memories: MemoryItemDto[];
+  candidates: CandidateDto[];
+  v2Candidates?: V2CandidateDto[];
   profile: ProfileDto | null;
   memoryEnabled: boolean;
   refresh: () => Promise<void>;
@@ -68,7 +70,7 @@ export function MemoryView({ memories, candidates, v2Candidates = [], profile, m
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState("");
   // 删除确认目标
-  const [deleteTarget, setDeleteTarget] = useState<any>(null);
+  const [deleteTarget, setDeleteTarget] = useState<MemoryItemDto | null>(null);
   // 候选决策进行中（避免双击重复写入；成功后被处理卡片进入终态）
   const [decisionBusy, setDecisionBusy] = useState<string | null>(null);
 
@@ -253,7 +255,7 @@ export function MemoryView({ memories, candidates, v2Candidates = [], profile, m
               </div>
             ))}
 
-            {v2Candidates.map((c: any, i: number) => (
+            {v2Candidates.map((c: V2CandidateDto, i: number) => (
               <div key={c.id} className="memory-card" style={{ animationDelay: `${Math.min(i + candidates.length, 3) * 0.05}s` }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
                   <div style={{ fontSize: 14, fontWeight: 600, color: "var(--cm-text-strong)" }}>

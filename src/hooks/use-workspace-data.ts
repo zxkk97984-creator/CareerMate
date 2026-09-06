@@ -6,7 +6,8 @@ import { fetchApi } from "@/lib/client-api";
 import type { AiRuntimeSnapshot } from "@/lib/ai-runtime";
 import type { ActiveOnboardingConversation } from "@/lib/onboarding-resume";
 import type { AiExecutionMeta, CareerPlanDto, ProfileDto, ResourceItemDto } from "@/lib/types";
-import type { MatchData, ProgressLogData, WorkspaceData } from "@/lib/workspace-types";
+import type { MatchData, ProgressLogData, WorkspaceData, View } from "@/lib/workspace-types";
+import { modulesForView } from "@/lib/view-modules";
 
 /** 可独立成功/失败的业务模块。失败时保留旧数据并记录错误，不伪装为空列表。 */
 export type ModuleKey =
@@ -82,7 +83,7 @@ export interface UseWorkspaceData {
   retryFatal: () => void;
 }
 
-export function useWorkspaceData(): UseWorkspaceData {
+export function useWorkspaceData(activeView: View): UseWorkspaceData {
   const router = useRouter();
   const [data, setData] = useState<WorkspaceData>(() => emptyData());
   const [initialLoading, setInitialLoading] = useState(true);
@@ -93,6 +94,11 @@ export function useWorkspaceData(): UseWorkspaceData {
   const seqRef = useRef(0);
   const mountedRef = useRef(true);
   const hasDataRef = useRef(false);
+  const activeViewRef = useRef(activeView);
+  // 用 effect 同步当前视图（不在 render 期间写 ref，遵守 react-hooks/refs）
+  useEffect(() => {
+    activeViewRef.current = activeView;
+  }, [activeView]);
 
   useEffect(() => {
     return () => { mountedRef.current = false; };
@@ -132,7 +138,7 @@ export function useWorkspaceData(): UseWorkspaceData {
     const candidates = fetchApi<{ items: WorkspaceData["candidates"] }>("/api/profile/candidates");
     const v2Candidates = fetchApi<{ items: WorkspaceData["v2Candidates"] }>("/api/agentic-v2/candidates?status=pending");
     const simulations = fetchApi<{ items: WorkspaceData["simulations"] }>("/api/simulations");
-    const admin = fetchApi<{ drafts: any[]; templates: any[] }>("/api/admin/role-drafts");
+    const admin = fetchApi<{ drafts: WorkspaceData["drafts"]; templates: WorkspaceData["templates"] }>("/api/admin/role-drafts");
 
     const [planR, resourcesR, memoriesR, candidatesR, v2R, simulationsR, adminR] = await Promise.all([
       keys.includes("plan") ? plan : Promise.resolve<null>(null),
@@ -172,7 +178,7 @@ export function useWorkspaceData(): UseWorkspaceData {
     const seq = ++seqRef.current;
     const meOk = await loadMe();
     if (meOk) {
-      await loadModules(["plan", "resources", "memories", "candidates", "v2Candidates", "simulations", "admin"]);
+      await loadModules(modulesForView(activeViewRef.current));
     }
     if (seq === seqRef.current && mountedRef.current) {
       hasDataRef.current = true;
@@ -186,7 +192,7 @@ export function useWorkspaceData(): UseWorkspaceData {
     const seq = ++seqRef.current;
     const meOk = await loadMe();
     if (meOk) {
-      await loadModules(["plan", "resources", "memories", "candidates", "v2Candidates", "simulations", "admin"]);
+      await loadModules(modulesForView(activeViewRef.current));
     }
     if (seq === seqRef.current && mountedRef.current) setRefreshing(false);
   }, [loadInitial, loadMe, loadModules]);
@@ -211,6 +217,18 @@ export function useWorkspaceData(): UseWorkspaceData {
     void loadInitial();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // T20：按页面加载——导航到新视图时，加载该页所需模块（共享摘要已加载的跳过）。跨视图不重载 /api/me。
+  const prevModulesRef = useRef<ModuleKey[]>([]);
+  useEffect(() => {
+    const modules = modulesForView(activeView);
+    const prev = prevModulesRef.current;
+    const added = modules.filter((m) => !prev.includes(m)) as ModuleKey[];
+    prevModulesRef.current = modules;
+    if (!hasDataRef.current) return; // 首次加载由 loadInitial 处理
+    if (added.length > 0) void refreshSlices(added);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeView]);
 
   return {
     state: { data, initialLoading, refreshing, fatal, moduleErrors, notice },

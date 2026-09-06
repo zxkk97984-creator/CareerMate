@@ -1,6 +1,7 @@
 import type { AiRuntimeSnapshot } from "@/lib/ai-runtime";
 import type { ActiveOnboardingConversation } from "@/lib/onboarding-resume";
 import type { AiExecutionMeta, CareerPlanDto, ProfileDto, ResourceItemDto } from "@/lib/types";
+import type { CandidateDto } from "@/lib/types";
 import { abilityKeys } from "@/lib/types";
 
 /** 工作台视图标识 */
@@ -58,6 +59,71 @@ export interface ProgressLogData {
   createdAt: string;
 }
 
+/* ── 工作台各业务模块的精确读 DTO（T20：用精确读类型替换 any） ── */
+
+/** 长期记忆条目（/api/memories） */
+export interface MemoryItemDto {
+  id: string;
+  content: string;
+  sensitivity: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** V2 候选（/api/agentic-v2/candidates?status=pending）—— AgentArtifactCandidate */
+export interface V2CandidateDto {
+  id: string;
+  candidateType: string;
+  status: string;
+  createdAt: string;
+  baseVersion?: number | null;
+  artifact?: unknown;
+  /** 0/1/2/3 为通用稳定 status；这里保留原始 status 供 UI 归一 */
+  impactSummary?: string;
+  evidenceExcerpt?: string;
+}
+
+/** 训练会话读模型（/api/simulations）—— 与 simulationDto 输出一致 */
+export interface SimulationSessionDto {
+  id: string;
+  scenarioKey: string;
+  scenarioTitle: string;
+  transcript: Array<{ role: "user" | "assistant"; content: string }>;
+  score: number | null;
+  feedback: Record<string, unknown> | null;
+  status: string;
+  turnCount: number;
+  actualMode: string;
+  requestedMode: string;
+  candidateId: string | null;
+  remoteConversationId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** 岗位草稿（/api/admin/role-drafts）—— RoleDraft */
+export interface RoleDraftDto {
+  id: string;
+  roleKey: string;
+  roleName: string;
+  category: string;
+  content: string;
+  status: string;
+  reviewNote: string | null;
+  createdAt: string;
+}
+
+/** 岗位模板（/api/admin/role-drafts）—— RoleTemplate */
+export interface RoleTemplateDto {
+  id: string;
+  roleKey: string;
+  roleName: string;
+  category: string;
+  createdAt: string;
+  /** 模板可能无独立 content 字段；读侧以可选对待 */
+  content?: unknown;
+}
+
 /** 工作台聚合状态 */
 export interface WorkspaceData {
   user: { id: string; displayName: string; username: string; role: string } | null;
@@ -66,12 +132,12 @@ export interface WorkspaceData {
   pendingPlan: CareerPlanDto | null;
   planExecutionMeta: AiExecutionMeta | null;
   resources: ResourceItemDto[];
-  memories: any[];
-  candidates: any[];
-  v2Candidates?: any[]; // AgentArtifactCandidate 待确认列表
-  simulations: any[];
-  drafts: any[];
-  templates: any[];
+  memories: MemoryItemDto[];
+  candidates: CandidateDto[];
+  v2Candidates?: V2CandidateDto[]; // AgentArtifactCandidate 待确认列表
+  simulations: SimulationSessionDto[];
+  drafts: RoleDraftDto[];
+  templates: RoleTemplateDto[];
   match: MatchData | null;
   recentProgressLogs: ProgressLogData[];
   aiRuntime: AiRuntimeSnapshot;
