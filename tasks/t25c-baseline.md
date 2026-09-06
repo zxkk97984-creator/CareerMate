@@ -1,6 +1,6 @@
 # T25c CI 门禁与失败产物，更新真实验证说明
 
-日期：2026-09-06 · 执行：agent（workflow 与门禁已就绪，真实 CI 运行需 GitHub Actions 环境）
+日期：2026-09-06 · 执行：agent · 对应提交：`7937325`（verify 门禁本环境已全绿 EXIT=0；真实 GitHub Actions 运行待触发）
 
 ## 目标（plan T25c）
 
