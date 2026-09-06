@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ConversationItem } from "@/lib/chat/schemas";
 import { Plus, X } from "lucide-react";
 import { consumeFrontendSseResponse } from "@/lib/tbox/frontend-sse";
+import { clampDialogPos, resolveDialogPosition, type DialogPoint } from "@/lib/kurisu-dialog-position";
 
 interface WindowRect {
   x: number;
@@ -44,18 +45,6 @@ function loadRect(): WindowRect {
   };
 }
 
-function loadDialogPos(): { x: number; y: number } | null {
-  try {
-    const raw = localStorage.getItem(DIALOG_POS_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<{ x: number; y: number }>;
-    if (typeof parsed.x === "number" && typeof parsed.y === "number") {
-      return { x: parsed.x, y: parsed.y };
-    }
-  } catch {}
-  return null;
-}
-
 function loadDialogSize(): { w: number; h: number | null } {
   try {
     const raw = localStorage.getItem(DIALOG_SIZE_KEY);
@@ -69,22 +58,24 @@ function loadDialogSize(): { w: number; h: number | null } {
   return { w: 260, h: null };
 }
 
-function clampDialogPos(
-  x: number,
-  y: number,
-  w: number,
-  win: { x: number; y: number },
-): { x: number; y: number } {
-  const vw = typeof window !== "undefined" ? window.innerWidth : 1440;
-  const vh = typeof window !== "undefined" ? window.innerHeight : 900;
-  const minX = 8 - win.x;
-  const maxX = vw - 8 - w - win.x;
-  const minY = 8 - win.y;
-  const maxY = Math.max(minY, vh - 80 - win.y);
-  return {
-    x: Math.max(minX, Math.min(Math.max(minX, maxX), x)),
-    y: Math.max(minY, Math.min(maxY, y)),
-  };
+function loadDialogPos(): DialogPoint | null {
+  try {
+    const raw = localStorage.getItem(DIALOG_POS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<DialogPoint>;
+    if (typeof parsed.x === "number" && typeof parsed.y === "number") {
+      return { x: parsed.x, y: parsed.y };
+    }
+  } catch {}
+  return null;
+}
+
+/** 把历史加载失败归一化为用户可读的提示，不能 catch 后静默。 */
+function historyErrorMessage(status: number): string {
+  if (status === 401) return "登录已过期，请重新登录后再试";
+  if (status === 404) return "这段会话不存在或已删除";
+  if (status === 403) return "没有权限查看这段会话";
+  return "历史加载失败，请重试";
 }
 
 /** Kurisu 悬浮聊天窗：全局可用的 AI 对话入口，不依赖主聊天页 */
@@ -103,6 +94,8 @@ export function KurisuChatWindow() {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [dialogLoading, setDialogLoading] = useState(false);
+  const [dialogError, setDialogError] = useState<string | null>(null);
   const [dialogSide, setDialogSide] = useState<"left" | "right">("right");
   const [dialogPos, setDialogPos] = useState<{ x: number; y: number } | null>(null);
   const [dialogSize, setDialogSize] = useState<{ w: number; h: number | null }>(loadDialogSize);
@@ -128,24 +121,54 @@ export function KurisuChatWindow() {
     } catch {}
   }, []);
 
+  // 统一的对话框定位逻辑：优先使用已保存位置，否则按人物位置自动放置并钳制到视口内。
+  // 新建对话与打开历史都必须经此确保 dialogPos 非空，否则对话框因 pending 定位不渲染。
+  const ensureDialogPosition = useCallback(() => {
+    const resolved = resolveDialogPosition({
+      savedPos: loadDialogPos(),
+      dialogW: dialogSize.w,
+      rect,
+    });
+    setDialogSide(resolved.side);
+    setDialogPos(resolved.pos);
+    try { localStorage.setItem(DIALOG_POS_KEY, JSON.stringify(resolved.pos)); } catch {}
+  }, [rect.x, rect.y, rect.w, dialogSize.w]);
+
   const loadConversationMessages = useCallback(async (id: string) => {
+    // 打开历史时必须共用与新建对话一致的定位逻辑：先用已保存/自动位置显示对话框，再异步填内容。
+    // 否则 dialogOpen=true 但 dialogPos 未初始化，渲染要求两者同时存在，对话框不出现（F02）。
+    ensureDialogPosition();
+    setDialogOpen(true);
+    setHistoryOpen(false);
+    setMenu(null);
+    setDialogError(null);
+    setDialogLoading(true);
+    setLocalMessages([]);
     try {
       const res = await fetch(`/api/chat/conversations/${id}/messages?limit=50`);
-      if (!res.ok) return;
-      const body = await res.json();
-      if (body.ok) {
-        const items = (body.data as Array<{ role: string; content: string }>).filter(
-          (m) => m.role === "user" || m.role === "assistant",
-        );
-        setLocalMessages(items.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })));
-        setActiveConversationId(id);
-        localCidRef.current = id;
-        setDialogOpen(true);
-        setHistoryOpen(false);
-        setMenu(null);
+      if (!res.ok) {
+        setDialogError(historyErrorMessage(res.status));
+        setDialogLoading(false);
+        return;
       }
-    } catch {}
-  }, []);
+      const body = await res.json();
+      if (!body.ok) {
+        setDialogError(body.error?.message || "历史加载失败，请重试");
+        setDialogLoading(false);
+        return;
+      }
+      const items = (body.data as Array<{ role: string; content: string }>).filter(
+        (m) => m.role === "user" || m.role === "assistant",
+      );
+      setLocalMessages(items.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })));
+      setActiveConversationId(id);
+      localCidRef.current = id;
+      setDialogLoading(false);
+    } catch {
+      setDialogError("网络异常，无法加载历史");
+      setDialogLoading(false);
+    }
+  }, [ensureDialogPosition]);
 
   useEffect(() => { void loadConversations(); }, [loadConversations]);
 
@@ -281,27 +304,13 @@ export function KurisuChatWindow() {
     localCidRef.current = null;
     setActiveConversationId(null);
     setDraft("");
-    // 优先使用上次调整好的位置；没有保存过才按人物位置自动放置
-    const savedPos = loadDialogPos();
-    let pos: { x: number; y: number };
-    if (savedPos) {
-      pos = clampDialogPos(savedPos.x, savedPos.y, dialogSize.w, rect);
-      setDialogSide(savedPos.x < 0 ? "left" : "right");
-    } else {
-      const rightSpace = window.innerWidth - (rect.x + rect.w);
-      const side = rightSpace < dialogSize.w + 16 ? "left" : "right";
-      setDialogSide(side);
-      pos = side === "right"
-        ? { x: KURISU_RIGHT + 8, y: 20 }
-        : { x: -dialogSize.w - 12, y: 20 };
-      pos = clampDialogPos(pos.x, pos.y, dialogSize.w, rect);
-    }
-    setDialogPos(pos);
-    try { localStorage.setItem(DIALOG_POS_KEY, JSON.stringify(pos)); } catch {}
+    setDialogError(null);
+    setDialogLoading(false);
+    ensureDialogPosition();
     setDialogOpen(true);
     setHistoryOpen(false);
     setMenu(null);
-  }, [rect.x, rect.y, rect.w, dialogSize.w]);
+  }, [ensureDialogPosition]);
 
   // 对话框拖动
   const onDialogHeaderPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
@@ -474,9 +483,24 @@ export function KurisuChatWindow() {
             </button>
           </div>
           <div className="kurisu-dialog-body">
-            <div className="kurisu-dialog-messages">
-              {localMessages.length === 0 && <p className="kurisu-dialog-empty">开始和 Kurisu 对话</p>}
-              {localMessages.map((m, i) => (
+            <div className="kurisu-dialog-messages" aria-live="polite">
+              {dialogLoading && <p className="kurisu-dialog-msg kurisu-dialog-assistant">正在加载历史…</p>}
+              {dialogError && (
+                <div className="kurisu-dialog-errorbox" role="alert">
+                  <p className="kurisu-dialog-msg kurisu-dialog-error">{dialogError}</p>
+                  {activeConversationId && (
+                    <button
+                      type="button"
+                      className="kurisu-dialog-retry"
+                      onClick={() => { void loadConversationMessages(activeConversationId); }}
+                    >
+                      重试加载
+                    </button>
+                  )}
+                </div>
+              )}
+              {!dialogLoading && !dialogError && localMessages.length === 0 && <p className="kurisu-dialog-empty">开始和 Kurisu 对话</p>}
+              {!dialogLoading && !dialogError && localMessages.map((m, i) => (
                 <p key={i} className={`kurisu-dialog-msg kurisu-dialog-${m.role}`}>{m.content}</p>
               ))}
               {localStreaming && (
@@ -495,10 +519,11 @@ export function KurisuChatWindow() {
                 onChange={(e) => setDraft(e.target.value)}
                 placeholder="输入消息..."
                 aria-label="输入消息"
+                disabled={dialogLoading}
               />
               <button
                 type="submit"
-                disabled={localStreaming || !draft.trim()}
+                disabled={dialogLoading || localStreaming || !draft.trim()}
               >
                 发送
               </button>
