@@ -15,7 +15,7 @@
 - [x] T08a 聚合画像/记忆/计划/V2 建议读模型及计数。 — 证据见 [t08a-baseline.md](t08a-baseline.md)；`SuggestionRef` 判别联合、`buildSuggestionList` 同源计数、`SuggestionDetail` 按 kind 判别，7 用例。UI 接入属 T08b。
 - [x] T08b 候选预览、确认、拒绝、版本冲突与结果同步。 — 证据见 [t08b-baseline.md](t08b-baseline.md)；`memory-view` 修复 operate 未判断 ok 即提示成功、确认前展示 old→new、`decisionBusy` 防双击重复写、409 提示重生成；`confirmDelete` 判断 ok。
 - [x] T09 生成计划到待确认再到正式执行的完整反馈。 — 证据见 [t09-baseline.md](t09-baseline.md)；dashboard 改“新计划已准备好，确认后开始执行”、新增 pending 横条 + “审阅计划”、pending 计划纳入待确认计数（概览/侧栏一致）。
-- [ ] T06a 提取唯一助手控制器，保证幂等、隔离与失败恢复。
+- [x] T06a 提取唯一助手控制器，保证幂等、隔离与失败恢复。 — 证据见 [t06a-baseline.md](t06a-baseline.md)；新增 `use-assistant-controller`/`assistant-provider`/`assistant-controller-utils`，幂等 requestId + 订阅切换隔离 + 保留 parts/meta/draft；5 用例。
 - [ ] T06b 挂载正文、引用、候选与执行来源渲染。
 - [ ] T07a 增加显式 AI 助手入口，角色共享 controller。
 - [ ] T07b 手机 sheet、键盘焦点、角色收起与失败替代。
