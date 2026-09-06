@@ -133,22 +133,33 @@ export function useWorkspaceData(activeView: View): UseWorkspaceData {
   }, [router]);
 
   const loadModules = useCallback(async (keys: ModuleKey[]) => {
-    const plan = fetchApi<{ plan: CareerPlanDto | null; pendingPlan: CareerPlanDto | null; executionMeta: AiExecutionMeta | null }>("/api/plans/current");
-    const resources = fetchApi<{ items: ResourceItemDto[] }>("/api/resources");
-    const memories = fetchApi<{ items: WorkspaceData["memories"] }>("/api/memories");
-    const candidates = fetchApi<{ items: WorkspaceData["candidates"] }>("/api/profile/candidates");
-    const v2Candidates = fetchApi<{ items: V2CandidateDto[]; total: number; nextCursor?: string | null }>("/api/agentic-v2/candidates?status=pending&limit=100");
-    const simulations = fetchApi<{ items: WorkspaceData["simulations"] }>("/api/simulations");
-    const admin = fetchApi<{ drafts: WorkspaceData["drafts"]; templates: WorkspaceData["templates"] }>("/api/admin/role-drafts");
+    // 只发起本页需要的模块请求（T20 按页面加载）：共享摘要恒常、其余按 keys，
+    // 不请求未包含的模块——否则普通用户 dashboard 也会命中 admin/资源/记忆/模拟
+    // 等多余接口（admin 对非管理员返回 403 并被误判为失败）。
+    const plan = keys.includes("plan")
+      ? fetchApi<{ plan: CareerPlanDto | null; pendingPlan: CareerPlanDto | null; executionMeta: AiExecutionMeta | null }>("/api/plans/current")
+      : Promise.resolve<null>(null);
+    const resources = keys.includes("resources")
+      ? fetchApi<{ items: ResourceItemDto[] }>("/api/resources")
+      : Promise.resolve<null>(null);
+    const memories = keys.includes("memories")
+      ? fetchApi<{ items: WorkspaceData["memories"] }>("/api/memories")
+      : Promise.resolve<null>(null);
+    const candidates = keys.includes("candidates")
+      ? fetchApi<{ items: WorkspaceData["candidates"] }>("/api/profile/candidates")
+      : Promise.resolve<null>(null);
+    const v2Candidates = keys.includes("v2Candidates")
+      ? fetchApi<{ items: V2CandidateDto[]; total: number; nextCursor?: string | null }>("/api/agentic-v2/candidates?status=pending&limit=100")
+      : Promise.resolve<null>(null);
+    const simulations = keys.includes("simulations")
+      ? fetchApi<{ items: WorkspaceData["simulations"] }>("/api/simulations")
+      : Promise.resolve<null>(null);
+    const admin = keys.includes("admin")
+      ? fetchApi<{ drafts: WorkspaceData["drafts"]; templates: WorkspaceData["templates"] }>("/api/admin/role-drafts")
+      : Promise.resolve<null>(null);
 
     const [planR, resourcesR, memoriesR, candidatesR, v2R, simulationsR, adminR] = await Promise.all([
-      keys.includes("plan") ? plan : Promise.resolve<null>(null),
-      keys.includes("resources") ? resources : Promise.resolve<null>(null),
-      keys.includes("memories") ? memories : Promise.resolve<null>(null),
-      keys.includes("candidates") ? candidates : Promise.resolve<null>(null),
-      keys.includes("v2Candidates") ? v2Candidates : Promise.resolve<null>(null),
-      keys.includes("simulations") ? simulations : Promise.resolve<null>(null),
-      keys.includes("admin") ? admin : Promise.resolve<null>(null),
+      plan, resources, memories, candidates, v2Candidates, simulations, admin,
     ]);
 
     const errors: Partial<Record<ModuleKey, string>> = {};
@@ -159,8 +170,11 @@ export function useWorkspaceData(activeView: View): UseWorkspaceData {
       apply: (value: T) => void,
       fallbackError: string,
     ) {
-      if (result?.ok && result.data !== undefined) apply(result.data as T);
-      else errors[key] = result?.error?.message || fallbackError;
+      // result === null 表示该模块本页未请求（keys 过滤后未 await），
+      // 不应视为加载失败——否则 dashboard 会因未请求 admin/资源等而误报"未能加载"。
+      if (result === null) return;
+      if (result.ok && result.data !== undefined) apply(result.data as T);
+      else errors[key] = result.error?.message || fallbackError;
     }
 
     applyIfOk("plan", planR, (v) => setData((prev) => ({ ...prev, plan: v.plan, pendingPlan: v.pendingPlan, planExecutionMeta: v.executionMeta })), "计划暂时未能加载，重试后继续");
