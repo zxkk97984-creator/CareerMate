@@ -64,51 +64,66 @@ export function createPlanGenerationService(
 
   return {
     async ensureGenerationPlan(input) {
-      return db.$transaction(async (transaction) => {
-        const existing = await transaction.careerPlan.findFirst({
-          where: {
-            userId: input.userId,
-            status: { in: UNFINISHED_STATUSES },
-          },
-          orderBy: { createdAt: "desc" },
-        });
-        if (existing) return { plan: planDto(existing), reused: true };
+      // T21a：CareerPlan (userId+version) 唯一约束。并发生成时对端竞争可能触发 P2002，
+      // 在事务外层做有界重试（重新读 latest 再取下一个版本），不误报为生成失败。
+      const maxAttempts = 3;
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        try {
+          return await db.$transaction(async (transaction) => {
+            const existing = await transaction.careerPlan.findFirst({
+              where: {
+                userId: input.userId,
+                status: { in: UNFINISHED_STATUSES },
+              },
+              orderBy: { createdAt: "desc" },
+            });
+            if (existing) return { plan: planDto(existing), reused: true };
 
-        const profile = await transaction.userProfile.findUnique({
-          where: { userId: input.userId },
-        });
-        if (!profile) {
-          throw new PlanGenerationError("用户画像不存在", "PROFILE_NOT_FOUND", 404);
+            const profile = await transaction.userProfile.findUnique({
+              where: { userId: input.userId },
+            });
+            if (!profile) {
+              throw new PlanGenerationError("用户画像不存在", "PROFILE_NOT_FOUND", 404);
+            }
+            if (!profile.targetRole) {
+              throw new PlanGenerationError("尚未设置目标岗位，无法生成计划", "PROFILE_INCOMPLETE", 422);
+            }
+            const latest = await transaction.careerPlan.findFirst({
+              where: { userId: input.userId },
+              orderBy: { version: "desc" },
+            });
+            const created = await transaction.careerPlan.create({
+              data: {
+                userId: input.userId,
+                targetRole: profile.targetRole,
+                version: (latest?.version ?? 0) + 1,
+                status: "generating",
+                years: "[]",
+                quarters: "[]",
+                months: "[]",
+                currentMonthIndex: 1,
+                assumptions: "[]",
+                riskNotes: "[]",
+                generationMeta: toJson({
+                  triggeredBy: "chat",
+                  conversationId: input.conversationId,
+                  attempts: 0,
+                  generationState: "generating",
+                }),
+              },
+            });
+            return { plan: planDto(created), reused: false };
+          });
+        } catch (error) {
+          const isUniqueConflict = error && typeof error === "object"
+            && (error as { code?: string }).code === "P2002";
+          if (!isUniqueConflict || attempt === maxAttempts - 1) throw error;
+          // 版本竞争：让出时间片后重试（下一轮重新读 latest 取更新版本）
+          await new Promise((resolve) => setTimeout(resolve, 20 + attempt * 30));
         }
-        if (!profile.targetRole) {
-          throw new PlanGenerationError("尚未设置目标岗位，无法生成计划", "PROFILE_INCOMPLETE", 422);
-        }
-        const latest = await transaction.careerPlan.findFirst({
-          where: { userId: input.userId },
-          orderBy: { version: "desc" },
-        });
-        const created = await transaction.careerPlan.create({
-          data: {
-            userId: input.userId,
-            targetRole: profile.targetRole,
-            version: (latest?.version ?? 0) + 1,
-            status: "generating",
-            years: "[]",
-            quarters: "[]",
-            months: "[]",
-            currentMonthIndex: 1,
-            assumptions: "[]",
-            riskNotes: "[]",
-            generationMeta: toJson({
-              triggeredBy: "chat",
-              conversationId: input.conversationId,
-              attempts: 0,
-              generationState: "generating",
-            }),
-          },
-        });
-        return { plan: planDto(created), reused: false };
-      });
+      }
+      // 理论不可达（循环内有 return / throw）
+      throw new PlanGenerationError("计划生成失败，请稍后重试", "GENERATION_CONFLICT", 409);
     },
 
     async generate(planId, userId) {

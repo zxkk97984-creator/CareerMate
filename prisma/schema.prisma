@@ -113,6 +113,7 @@ model CareerPlan {
   sourceReport CareerExplorationReport? @relation(fields: [sourceReportId], references: [id], onDelete: SetNull)
   learningRoutes LearningRoute[]
 
+  @@unique([userId, version])
   @@index([sourceReportId])
   @@index([parentPlanId])
 }

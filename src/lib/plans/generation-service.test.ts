@@ -104,6 +104,33 @@ describe("PlanGenerationService", () => {
     expect(transaction.careerPlan.create).not.toHaveBeenCalled();
   });
 
+  it("T21a: retries on a concurrent version (P2002) instead of failing the generation", async () => {
+    const { service, transaction } = setup();
+    // 第一次 $transaction 因并发生成触发唯一约束冲突(P2002)，第二次成功
+    let calls = 0;
+    const err = Object.assign(new Error("Unique constraint failed"), { code: "P2002" });
+    transaction.careerPlan.create.mockImplementation(async () => {
+      calls += 1;
+      if (calls === 1) throw err;
+      return planRow();
+    });
+
+    const result = await service.ensureGenerationPlan({ userId: "user-1", conversationId: "conversation-1" });
+
+    expect(result.reused).toBe(false);
+    expect(result.plan).toMatchObject({ id: "plan-1", status: "generating" });
+    expect(transaction.careerPlan.create).toHaveBeenCalledTimes(2);
+  });
+
+  it("T21a: surfaces a non-conflict error without retrying", async () => {
+    const { service, transaction } = setup();
+    const err = new Error("db down");
+    transaction.careerPlan.create.mockRejectedValue(err);
+
+    await expect(service.ensureGenerationPlan({ userId: "user-1" })).rejects.toThrow("db down");
+    expect(transaction.careerPlan.create).toHaveBeenCalledTimes(1);
+  });
+
   it("atomically claims and fills the same plan before marking it pending", async () => {
     const { service, db, generatePlan } = setup();
 
