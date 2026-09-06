@@ -6,7 +6,7 @@ import { fetchApi } from "@/lib/client-api";
 import type { AiRuntimeSnapshot } from "@/lib/ai-runtime";
 import type { ActiveOnboardingConversation } from "@/lib/onboarding-resume";
 import type { AiExecutionMeta, CareerPlanDto, ProfileDto, ResourceItemDto } from "@/lib/types";
-import type { MatchData, ProgressLogData, WorkspaceData, View } from "@/lib/workspace-types";
+import type { MatchData, ProgressLogData, WorkspaceData, View, V2CandidateDto } from "@/lib/workspace-types";
 import { modulesForView } from "@/lib/view-modules";
 
 /** 可独立成功/失败的业务模块。失败时保留旧数据并记录错误，不伪装为空列表。 */
@@ -38,6 +38,7 @@ function emptyData(): WorkspaceData {
     memories: [],
     candidates: [],
     v2Candidates: [],
+    v2CandidateTotal: 0,
     simulations: [],
     drafts: [],
     templates: [],
@@ -136,7 +137,7 @@ export function useWorkspaceData(activeView: View): UseWorkspaceData {
     const resources = fetchApi<{ items: ResourceItemDto[] }>("/api/resources");
     const memories = fetchApi<{ items: WorkspaceData["memories"] }>("/api/memories");
     const candidates = fetchApi<{ items: WorkspaceData["candidates"] }>("/api/profile/candidates");
-    const v2Candidates = fetchApi<{ items: WorkspaceData["v2Candidates"] }>("/api/agentic-v2/candidates?status=pending");
+    const v2Candidates = fetchApi<{ items: V2CandidateDto[]; total: number; nextCursor?: string | null }>("/api/agentic-v2/candidates?status=pending&limit=100");
     const simulations = fetchApi<{ items: WorkspaceData["simulations"] }>("/api/simulations");
     const admin = fetchApi<{ drafts: WorkspaceData["drafts"]; templates: WorkspaceData["templates"] }>("/api/admin/role-drafts");
 
@@ -166,7 +167,7 @@ export function useWorkspaceData(activeView: View): UseWorkspaceData {
     applyIfOk("resources", resourcesR, (v) => setData((prev) => ({ ...prev, resources: v.items })), "资源暂时未能加载");
     applyIfOk("memories", memoriesR, (v) => setData((prev) => ({ ...prev, memories: v.items })), "记忆暂时未能加载");
     applyIfOk("candidates", candidatesR, (v) => setData((prev) => ({ ...prev, candidates: v.items })), "建议暂时未能加载");
-    applyIfOk("v2Candidates", v2R, (v) => setData((prev) => ({ ...prev, v2Candidates: v.items })), "建议暂时未能加载");
+    applyIfOk("v2Candidates", v2R, (v) => setData((prev) => ({ ...prev, v2Candidates: v.items, v2CandidateTotal: v.total ?? v.items.length })), "建议暂时未能加载");
     applyIfOk("simulations", simulationsR, (v) => setData((prev) => ({ ...prev, simulations: v.items })), "训练暂时未能加载");
     applyIfOk("admin", adminR, (v) => setData((prev) => ({ ...prev, drafts: v.drafts, templates: v.templates })), "草稿暂时未能加载");
 

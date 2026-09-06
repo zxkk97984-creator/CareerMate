@@ -135,6 +135,8 @@ export interface WorkspaceData {
   memories: MemoryItemDto[];
   candidates: CandidateDto[];
   v2Candidates?: V2CandidateDto[]; // AgentArtifactCandidate 待确认列表
+  /** T21b：v2 候选总数（与当前页长度区分，侧栏计数用它不误用页长） */
+  v2CandidateTotal: number;
   simulations: SimulationSessionDto[];
   drafts: RoleDraftDto[];
   templates: RoleTemplateDto[];

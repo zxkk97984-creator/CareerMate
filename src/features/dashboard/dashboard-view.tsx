@@ -89,7 +89,7 @@ export function DashboardView({ data, refresh, setNotice }: DashboardViewProps) 
 
   const pendingCandidateCount =
     data.candidates.filter((c: any) => c.status === "pending").length +
-    (data.v2Candidates ?? []).length +
+    (data.v2CandidateTotal ?? (data.v2Candidates ?? []).length) +
     (data.pendingPlan ? 1 : 0); // pending 计划同样计入待确认，保持概览/路径/建议中心计数一致
 
   return (

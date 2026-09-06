@@ -72,7 +72,7 @@ export function Workspace({ initialView, isAdmin = false }: { initialView: View;
   }
 
   const pendingCandidateCount = (data.candidates || []).filter((c: any) => c.status === "pending").length
-    + (data.v2Candidates ?? []).length
+    + (data.v2CandidateTotal ?? (data.v2Candidates ?? []).length)
     + (data.pendingPlan ? 1 : 0); // pending 计划计入待确认，保持概览/路径/建议中心一致
 
   const failedModules = (Object.keys(moduleErrors) as ModuleKey[]).filter((k) => moduleErrors[k]);

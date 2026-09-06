@@ -57,6 +57,7 @@ function makeData(): WorkspaceData {
     memories: [],
     candidates: [],
     v2Candidates: [],
+    v2CandidateTotal: 0,
     simulations: [],
     drafts: [],
     templates: [],
