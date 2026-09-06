@@ -9,6 +9,7 @@
 - [x] T01 固定登录/引导/dashboard/兼容聊天入口路由及验收基线。 — 证据见 [t01-baseline.md](t01-baseline.md)；失败清单：2 个 simulation 断言过期（T02 职责）。
 - [x] T02a 精确隔离 vendor lint，更新场景和评分语义断言。 — 证据见 [t02-baseline.md](t02-baseline.md)；vendor 已隔离，断言更新为第 6 场景与“综合得分”可访问名。
 - [x] T02b 修源码 lint，在正常隔离环境重跑 SQLite suite。 — lint 0/0；全量测试 125/125；SQLite contract 11 用例通过，EPERM 已消除。
+- [x] T03 统一客户端 HTTP/业务/JSON/网络错误契约。 — 证据见 [t03-baseline.md](t03-baseline.md)；可判别联合 `ApiResult<T>`、`ApiError`、`apiResultFromResponse`，17 用例覆盖 401/403/409/422/429/500/空/HTML/网络失败/取消。
 - [ ] T03 统一客户端 HTTP/业务/JSON/网络错误契约。
 - [ ] T04 初次加载与局部后台刷新分离，保留页面状态。
 - [x] T05 修复首次打开历史无对话框。 — 证据见 [t05-baseline.md](t05-baseline.md)；抽取 `kurisu-dialog-position` 纯函数，6 用例通过；`kurisu-chat-window` 存在 2 处 `react-hooks/refs` 误报待 T02b。
@@ -64,6 +65,7 @@
 | T01 | 执行 agent / 2026-09-06 | `page.tsx` 按画像完成度路由；`workspace-page`/`onboarding-routing` 统一 `homeDestination`；删 `workspace` dead chat 视图与过期文案；`View` 移除 chat；`/chat` 兼容跳转 | 路由用例 16 通过；`tsc --noEmit` 通过；改动文件 eslint 0；全量 122/124 通过，2 失败（simulation，T02 职责），未引入回归 | 无需浏览器（服务端守卫）；`/chat?assistant=open` 展开属 T07 | `chat-home.spec.ts` 基于旧聊天首页，待 T25 更新；OPEN_CHAT_ENTRY 仍保留读法 |
 | T05 | 执行 agent / 2026-09-06 | 抽取 `src/lib/kurisu-dialog-position.ts`；`kurisu-chat-window` 打开历史共用定位并补 loading/error/重试 | 位置用例 6 通过；`tsc --noEmit` 通过；全量 123/125 通过，2 失败（simulation，T02 职责），未引入回归 | 节点环境无真实浏览器，定位以纯函数回归验证 | `kurisu-chat-window` 2 处 `react-hooks/refs` 误报待 T02b；浏览器交互轮待 T07/T19 |
 | T02 | 执行 agent / 2026-09-06 | eslint 隔离 vendor `public/lib/*.min.js`；更新 simulation 场景/评分断言；清理源码 lint（unused vars、死代码、hook deps、2 处 refs 就地 disable） | `npm run lint` 0/0；`npm run test` 125/125（1085 全过，原 2 失败修复）；`tsc` 通过；`test:migrations` 通过；SQLite contract 11 用例通过 | 无浏览器改动 | `chat-home.tsx`（废弃死代码）已清理未使用声明，仍留待 T06 移除，未动其 readApiJson 迁移逻辑 |
+| T03 | 执行 agent / 2026-09-06 | `apiResultFromResponse`/`fetchApi`/`requireApiOk`/`ApiError`/`extractAiExecutionMeta`；`ApiResult` 判别联合 | `client-api.test` 17 用例通过；`npm run test` 125/125（1099 用例）；lint 0/0；`tsc` 通过 | 无浏览器改动 | 部分视图仍有局部 request/裸 fetch，属后续“裸 fetch 迁移”；workspace 仅 401 去登录属 T04 |
 | 评估与计划 | 当前评估 / 2026-09-06 | 仅 tasks/ 文档与截图 | baseline 见评估报告；非全绿 | 7 张本次截图 | 产品优化尚未执行 |
 
 ## 下一位 agent 从这里开始

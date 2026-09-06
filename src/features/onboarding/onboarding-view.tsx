@@ -7,7 +7,7 @@ import { canCompleteOnboarding, type OnboardingDraft } from "@/lib/onboarding-ut
 import { createOnboardingInitialState, type ActiveOnboardingConversation } from "@/lib/onboarding-resume";
 import type { AiRuntimeSnapshot } from "@/lib/ai-runtime";
 import type { OnboardingMessage } from "@/lib/workspace-types";
-import { fetchApi } from "@/lib/client-api";
+import { extractAiExecutionMeta, fetchApi } from "@/lib/client-api";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import { Button } from "@/components/ui/button";
 import { InlineAlert } from "@/components/ui/inline-alert";
@@ -37,7 +37,8 @@ export function OnboardingView({ refresh, setNotice, setAiExecution, activeConve
       if (!r.ok) throw new Error(r.error?.message ?? "画像对话失败");
       setConversationId(r.data.conversationId); setDraft(r.data.draft); setCompleteness(r.data.profileCompleteness);
       setMessages((cur) => [...cur, { role: "assistant", content: r.data.assistantMessage }]);
-      if (r.meta) setAiExecution(r.meta);
+      const aiMeta = extractAiExecutionMeta(r.meta);
+      if (aiMeta) setAiExecution(aiMeta);
       setNotice(`画像完整度已更新到 ${Math.round(r.data.profileCompleteness * 100)}%。`);
     } catch (caught: any) { setError(caught.message ?? "画像对话失败，请稍后重试"); setMessage(content); setNotice("画像对话失败，你的输入已保留，可以重试。"); }
     finally { setLoading(false); }

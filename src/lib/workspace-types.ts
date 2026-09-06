@@ -14,6 +14,28 @@ export interface ApiPayload<T> {
   meta?: AiExecutionMeta;
 }
 
+/** API 返回元信息：分页/requestId 与 AI 执行来源是不同的字段语义，勿混用。
+ * 当响应携带 AI 执行信息时，旧接口直接把这些字段铺在 meta 顶层；新接口应放 aiExecution。 */
+export interface ApiMeta {
+  requestId?: string;
+  page?: number;
+  nextCursor?: string | null;
+  degraded?: boolean;
+  aiExecution?: AiExecutionMeta;
+  requestedMode?: "api" | "mock" | "manual";
+  actualMode?: "api" | "mock" | "manual";
+  fallbackReason?: string | null;
+  source?: string;
+}
+
+/**
+ * 客户端 API 可判别联合（plan 2.4）：HTTP 状态与 body.ok 分离，不再把 HTTP 200 与业务失败混为一谈。
+ * 网络失败用 status=0 并明确 code；AbortError 走取消分支，不当作服务错误。
+ */
+export type ApiResult<T> =
+  | { ok: true; data: T; status: number; meta?: ApiMeta }
+  | { ok: false; status: number; error: { code: string; message: string; requestId?: string } };
+
 /** 岗位匹配数据 */
 export interface MatchData {
   score: number;
