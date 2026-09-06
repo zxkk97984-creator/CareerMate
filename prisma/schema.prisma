@@ -147,9 +147,13 @@ model ProgressLog {
   relatedPlanId String?
   relatedTaskId String?
   metadata      String   @default("{}")
+  /** T24：业务事件去重键（如来自候选 idempotencyKey），同一业务动作不重复计数 */
+  dedupeKey     String?
   createdAt     DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dedupeKey])
 }
 
 model MemoryItem {

@@ -169,7 +169,7 @@ export async function resolveAgentArtifactCandidate(
     }
 
     // 9. 类型投影
-    await applyProjection(tx, input.userId, candidateType, artifact);
+    await applyProjection(tx, input.userId, input.candidateId, candidateType, artifact);
 
     // 10. 标记已接受
     await tx.agentArtifactCandidate.update({
@@ -227,6 +227,7 @@ function validateCandidateData(
 async function applyProjection(
   tx: Omit<ResolutionTx, "$transaction">,
   userId: string,
+  candidateId: string,
   candidateType: AgentArtifactCandidateType,
   artifact: AgentArtifactV1,
 ): Promise<void> {
@@ -491,6 +492,8 @@ async function applyProjection(
             userId,
             eventType: "learning_route_accepted",
             title: `采纳学习路线：${targetRole}`,
+            // T24：业务事件去重键，来自候选结果（candidateId 唯一），同一候选重复确认不重复计数
+            dedupeKey: `accept:${candidateType}:${candidateId}`,
             summary: [
               weeklyHours,
               typeof data.period === "string" ? data.period : "",
