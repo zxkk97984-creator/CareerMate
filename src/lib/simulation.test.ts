@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   buildCareerInterviewScenario,
   canCompleteSimulation,
+  formatAbilityImpact,
   getSimulationScenario,
+  impactBarPercent,
   listSimulationScenarios,
   nextSimulationPrompt,
   parseSimulationTranscript,
@@ -103,5 +105,23 @@ describe("scenarioMetaForSession（T17a：brief 与会话场景对应）", () =>
 
   it("returns null when the session has no scenario key", () => {
     expect(scenarioMetaForSession({}, available)).toBeNull();
+  });
+});
+
+describe("报告展示（T17b：null 分数与实际来源）", () => {
+  it("formats ability impact so a negative value does not render '+-2'", () => {
+    expect(formatAbilityImpact(2)).toBe("+2");
+    expect(formatAbilityImpact(-2)).toBe("-2");
+    expect(formatAbilityImpact(0)).toBe("0");
+    expect(formatAbilityImpact(Number.NaN)).toBe("0");
+  });
+
+  it("maps impact magnitude to a non-negative bar width", () => {
+    expect(impactBarPercent(2)).toBe(40);
+    expect(impactBarPercent(-2)).toBe(40);
+    expect(impactBarPercent(Number.NaN)).toBe(0);
+    expect(impactBarPercent(0)).toBe(0);
+    // 超限截断
+    expect(impactBarPercent(100)).toBe(100);
   });
 });

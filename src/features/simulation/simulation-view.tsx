@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import { Button } from "@/components/ui/button";
-import { BarChart3, Bot, CheckCircle2, ListChecks, MessagesSquare, Sparkles, Timer, Users } from "lucide-react";
+import { ArrowLeft, BarChart3, Bot, CheckCircle2, ListChecks, MessagesSquare, Sparkles, Timer, Users } from "lucide-react";
 import { abilityLabels, type ProfileDto } from "@/lib/types";
 import { fetchApi } from "@/lib/client-api";
-import { listSimulationScenarios, scenarioMetaForSession, type SimulationScenarioMeta } from "@/lib/simulation";
+import { formatAbilityImpact, impactBarPercent, listSimulationScenarios, scenarioMetaForSession, type SimulationScenarioMeta } from "@/lib/simulation";
 
 interface TranscriptTurn { role: "user" | "assistant"; content: string }
 
@@ -43,9 +44,12 @@ const scenarioIcons: Record<string, typeof MessagesSquare> = {
   career_interview: Sparkles,
 };
 
-/** 大分数圆环 */
+/** 大分数圆环：null score 不渲染 0 分圆环，改显示“未产生正式评分”（T17b） */
 function ScoreRing({ score }: { score: number | null }) {
-  const value = Math.max(0, Math.min(100, score ?? 0));
+  if (score === null) {
+    return <div className="sim-report-score sim-report-score-none" role="img" aria-label="本次训练未评分"><span className="sim-report-score-num">—</span><span className="sim-report-score-label">未产生正式评分</span></div>;
+  }
+  const value = Math.max(0, Math.min(100, score));
   const R = 42;
   const C = 2 * Math.PI * R;
   return (
@@ -73,25 +77,33 @@ function ScoreRing({ score }: { score: number | null }) {
 function SimulationReport({ active, onRestart }: { active: SimulationSession; onRestart: () => void }) {
   const fb = active.feedback;
   const impacts = fb?.abilityImpact && typeof fb.abilityImpact === "object" ? Object.entries(fb.abilityImpact) : [];
+  const degraded = active.actualMode === "mock";
   return (
     <div className="sim-report">
       <div className="sim-report-head">
         <ScoreRing score={active.score} />
         <div className="sim-report-summary">
+          {/* 候选已生成/待确认，不声称已改画像（T17b） */}
           {active.candidateId ? <span className="sim-report-badge sim-report-badge-brand">画像候选已生成</span> : <span className="sim-report-badge">本次未生成画像候选</span>}
         </div>
       </div>
+      {/* AI 降级：结果旁持续标记，折叠详细原因（plan 4.4） */}
+      {degraded ? <p className="sim-report-degraded">本次使用演示数据（结果仅供参考）</p> : null}
       {impacts.length > 0 ? (
         <div className="sim-report-section">
           <div className="sim-report-section-title">能力影响</div>
           <div className="sim-impact-list">
-            {impacts.map(([key, value]) => (
-              <div key={key} className="sim-impact-row">
-                <span className="sim-impact-label">{abilityLabels[key as keyof typeof abilityLabels] ?? key}</span>
-                <span className="sim-impact-track"><span className="sim-impact-bar" style={{ width: Math.min(100, Math.max(0, Number(value) * 20)) + "%" }} /></span>
-                <span className="sim-impact-value">+{value}</span>
-              </div>
-            ))}
+            {impacts.map(([key, value]) => {
+              const num = Number(value);
+              return (
+                <div key={key} className="sim-impact-row">
+                  <span className="sim-impact-label">{abilityLabels[key as keyof typeof abilityLabels] ?? key}</span>
+                  <span className="sim-impact-track"><span className="sim-impact-bar" style={{ width: impactBarPercent(num) + "%" }} /></span>
+                  {/* 负向建议不渲染 +-2（T17b） */}
+                  <span className={`sim-impact-value ${num < 0 ? "sim-impact-value-neg" : ""}`}>{formatAbilityImpact(num)}</span>
+                </div>
+              );
+            })}
           </div>
         </div>
       ) : null}
@@ -120,10 +132,11 @@ function SimulationReport({ active, onRestart }: { active: SimulationSession; on
         </div>
       ) : null}
       <div className={active.candidateId ? "sim-report-cta" : "sim-report-note"}>
-        {active.candidateId ? <>画像更新候选已生成，可前往<a href="/memory">“记忆权限”</a>确认。</> : "本次未生成画像更新候选。"}
+        {active.candidateId ? <>画像更新候选已生成，可前往<a href="/memory">“记忆权限”</a>确认。候选未确认前不视为已更新画像。</> : "本次未生成画像更新候选。"}
       </div>
       <div className="sim-report-actions">
         <Button variant="secondary" onClick={onRestart}>再来一次</Button>
+        <Link href="/path" className="sim-report-back" aria-label="返回任务"><ArrowLeft size={14} /> 返回任务</Link>
       </div>
     </div>
   );
@@ -315,8 +328,6 @@ export function SimulationView({ simulations, refresh, setNotice }: { simulation
                   </div>
                   <p className="sim-round-hint">已完成 {active.turnCount}/6 轮，至少 3 轮后可评分。</p>
                 </>
-              ) : active.score === null ? (
-                <div className="sim-done-note">训练已完成，本次未产生正式评分。</div>
               ) : (
                 <SimulationReport active={active} onRestart={start} />
               )}

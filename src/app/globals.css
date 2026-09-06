@@ -3164,6 +3164,46 @@ select.cm-select {
   color: var(--cm-text-subtle);
 }
 
+/* null score：不渲染 0 分圆环，显示“未评分”（T17b） */
+.sim-report-score-none .sim-report-score-num {
+  color: var(--cm-text-subtle);
+  font-size: 24px;
+}
+.sim-report-score-none .sim-report-score-label {
+  color: var(--cm-text-subtle);
+}
+
+/* 负向能力影响：负值用 -N 而非 +-N（T17b） */
+.sim-impact-value-neg {
+  color: var(--cm-warning);
+}
+
+/* 结果生成的 AI 降级标记（plan 4.4） */
+.sim-report-degraded {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--cm-radius-control);
+  background: var(--cm-surface-soft);
+  color: var(--cm-text-muted);
+  font-size: 12.5px;
+}
+
+/* 训练完成可返回任务（T17b） */
+.sim-report-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: var(--cm-radius-control);
+  border: 1px solid var(--cm-border-strong);
+  background: var(--cm-surface);
+  color: var(--cm-text-strong);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
 .sim-report-summary {
   display: flex;
   flex-direction: column;

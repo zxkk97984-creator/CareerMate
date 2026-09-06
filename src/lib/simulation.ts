@@ -379,6 +379,20 @@ export function canCompleteSimulation(turnCount: number) {
   return turnCount >= 3 && turnCount <= 6;
 }
 
+/** T17b：能力影响值的展示——负值渲染 `-2` 而非 `+-2`，避免误导；绝对值用于条形。 */
+export function formatAbilityImpact(value: number): string {
+  if (!Number.isFinite(value)) return "0";
+  const rounded = Math.round(value);
+  return rounded > 0 ? `+${rounded}` : String(rounded);
+}
+
+/** T17b：条形宽度按绝对值折算，负值仅改变符号不改变长度。 */
+export function impactBarPercent(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  const magnitude = Math.min(100, Math.max(0, Math.abs(value) * 20));
+  return magnitude;
+}
+
 export function simulationDto(session: {
   id: string; scenarioKey: string; scenarioTitle: string; transcript: string; score: number | null;
   feedback: string; status: string; turnCount: number; requestedMode: string; actualMode: string;
