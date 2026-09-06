@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { Lightbulb, AlertTriangle } from "lucide-react";
 import { PlanSummaryCard } from "@/components/chat/plan-summary-card";
+import { TaskDetailPanel } from "@/components/path/task-detail";
 import { groupPlanTimeline } from "@/lib/path";
 import { taskStatuses, taskStatusLabels, type CareerPlanDto, type PlanMonth, type TaskStatus, type AiExecutionMeta } from "@/lib/types";
 import { fetchApi } from "@/lib/client-api";
@@ -24,6 +25,7 @@ export function PathView({ plan, pendingPlan, refresh, setNotice }: PathViewProp
   const [busyTaskId, setBusyTaskId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 
   async function generatePlan() {
     if (generating) return;
@@ -91,6 +93,7 @@ export function PathView({ plan, pendingPlan, refresh, setNotice }: PathViewProp
   const timeline = timelinePlan ? groupPlanTimeline(timelinePlan) : [];
   const months = (plan?.months ?? []) as unknown as PlanMonth[];
   const currentMonth = months.find((m) => m.monthIndex === plan?.currentMonthIndex);
+  const selectedTask = currentMonth?.learningTasks.find((t) => t.id === selectedTaskId) ?? null;
 
   return (
     <div className="path-layout" data-od-id="path-layout">
@@ -139,12 +142,12 @@ export function PathView({ plan, pendingPlan, refresh, setNotice }: PathViewProp
               </div>
               <ul className="path-task-list">
                 {currentMonth.learningTasks.map((task, ti) => (
-                  <li key={task.id} className="path-task-row">
-                    <div className="path-task-info">
+                  <li key={task.id} className="path-task-row" style={{ cursor: "pointer" }}>
+                    <button type="button" className="path-task-info" style={{ background: "transparent", border: "none", padding: 0, textAlign: "left", display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }} onClick={() => setSelectedTaskId(task.id)} aria-label={`查看 ${task.title} 详情`}>
                       <span className="path-task-index">{String(ti + 1).padStart(2, "0")}</span>
                       <span className="path-task-title">{task.title}</span>
                       <span className="path-task-meta">第 {task.dueWeek ?? "-"} 周前完成</span>
-                    </div>
+                    </button>
                     <select
                       className="cm-status-select"
                       aria-label={`更新 ${task.title} 状态`}
@@ -166,9 +169,7 @@ export function PathView({ plan, pendingPlan, refresh, setNotice }: PathViewProp
               <span className="path-eyebrow">Timeline</span>
               <h3 className="path-section-title">计划时间线</h3>
               <p className="path-section-sub">
-                {pendingPlan
-                  ? "以下为刚生成、待确认版本的时间线。"
-                  : "按年展开，查看季度里程碑与月度目标。"}
+                按年展开，查看当前执行版本的季度里程碑与月度目标。
               </p>
             </div>
             <div className="path-timeline">
@@ -227,6 +228,23 @@ export function PathView({ plan, pendingPlan, refresh, setNotice }: PathViewProp
               </ul>
             </div>
           </div>
+
+          {/* 任务详情抽屉：只读现有字段，缺失“让 AI 细化”，月份级交付物标“本阶段共同要求”（T14a） */}
+          {selectedTask && currentMonth ? (
+            <div className="task-detail-drawer" style={{ position: "fixed", top: 0, right: 0, bottom: 0, width: 380, maxWidth: "100vw", background: "var(--cm-surface)", borderLeft: "1px solid var(--cm-border)", boxShadow: "var(--cm-shadow-float)", padding: 20, overflowY: "auto", zIndex: 45 }}>
+              <TaskDetailPanel
+                taskId={selectedTask.id}
+                title={selectedTask.title}
+                taskType={selectedTask.type}
+                status={selectedTask.status}
+                dueWeek={selectedTask.dueWeek}
+                month={currentMonth}
+                busy={busyTaskId === selectedTask.id}
+                onStatusChange={async (id, status) => { await updateTask(id, status); }}
+              />
+              <button type="button" style={{ marginTop: 18, minHeight: 44, width: "100%", borderRadius: "var(--cm-radius-control)", border: "1px solid var(--cm-border-strong)", background: "var(--cm-surface)", color: "var(--cm-text-strong)", cursor: "pointer" }} onClick={() => setSelectedTaskId(null)}>关闭</button>
+            </div>
+          ) : null}
         </>
       )}
     </div>

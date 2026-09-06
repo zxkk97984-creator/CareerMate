@@ -30,6 +30,7 @@
 - [x] T11 行动优先概览与确定性下一步选择。 — 证据见 [t11-baseline.md](t11-baseline.md)；`selectNextAction` 纯函数覆盖 plan3.3 全分支（8 用例）、删虚构百分比、真实 completed/total。
 - [x] T12 参考分的可信表达与证据。 — 证据见 [t12-baseline.md](t12-baseline.md)；改名“成长参考分 /100”、null 不兜底为 0、权重校验防 NaN、按 weight*(100-score) 排序补弱项、中文解释（7 用例）。
 - [x] T13 当前计划与待确认版本分开。 — 证据见 [t13-baseline.md](t13-baseline.md)；`timelinePlan` 恒为 activePlan，pending 独立预览并标注“当前 vN · 建议 vN+1”，不混排跨版本。
+- [x] T14a 任务详情、真实完成标准与状态更新。 — 证据见 [t14a-baseline.md](t14a-baseline.md)；`task-detail` 纯函数 + 抽屉组件：只读现有字段、缺失“让 AI 细化”、月份级交付物标“本阶段共同要求”、状态复用现有 PATCH（5 用例）。
 - [ ] T12a 参考分命名、中文标签、缺失数据表现。
 - [ ] T12b 权重校验、解释、建议优先级与证据。
 - [ ] T13 当前计划与待确认版独立预览/对比。
