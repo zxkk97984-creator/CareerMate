@@ -55,8 +55,8 @@
 - [x] T23b 公开部署的限流位置、配置、429 行为和适用范围。 — 证据见 [t23b-baseline.md](t23b-baseline.md)；限流放反向代理/网关层（不做进程内 Map 冒充多实例——plan 明确禁止）；DEPLOY.md §8 记录位置/阈值建议/429+Retry-After+恢复文案/多实例适用边界；客户端已识别 RATE_LIMITED；应用层 16KB 上限与敏感键脱敏已覆盖。
 - [x] T24 去重业务事件、脱敏诊断与模式分离的运行记录。 — 证据见 [t24-baseline.md](t24-baseline.md)；新增 `diagnostics.ts`（requestId/operation/elapsedMs/mode/degraded/errorCode、`redactForDiagnostics` 删敏感键、`isMock` 模式分离、本地 JSONL、dedupeKey 去重）+5 用例；`ProgressLog` 加可空 `dedupeKey`+`@@unique([userId,dedupeKey])` 迁移；candidate-resolution 学习路线已接入 `accept:{type}:{candidateId}` 去重键。
 - [x] T25a E2E 数据/运行模式/浏览器环境隔离。 — 证据见 [t25a-baseline.md](t25a-baseline.md)；`e2e-server.mjs` 显式固定 `CAREERMATE_AGENTIC_V2`（默认 false，`E2E_AGENTIC_V2=true` 跑 V2 mock）不继承开发机配置、改 `db push` 为 `migrate deploy` 建独立库；`package.json` 加 `test:e2e:v2`/`e2e:serve:v2` 分开基础 mock 与 V2 mock。
-- [x] T25b 更新主链路 E2E，覆盖 plan 中 E01–E19。 — 证据见 [t25b-baseline.md](t25b-baseline.md)；已按当前产品重写过期断言：`chat-home.spec.ts`/`p0-flows.spec.ts`/`chat-context-continuity.spec.ts`/`unified-shell.spec.ts` 的 login→`/dashboard`、聊天交互改为打开助手面板（`assistant-panel`）、composer 占位符“输入你的问题”、无独立聊天首页（/chat→dashboard）、训练评分改“综合得分 N 分”可访问名；E01–E19 → spec 映射见 t25b。实际 `test:e2e` 运行需浏览器环境。
-- [x] T25c CI 门禁与失败产物，更新真实验证说明。 — 证据见 [t25c-baseline.md](t25c-baseline.md)；新增 `.github/workflows/ci.yml`（verify 门禁 + e2e 独立作业、`npx playwright install chromium`、失败上传 trace/screenshot/report、不传 .env/用户 DB、`permissions: contents: read`）；`playwright.config.ts` CI 用自带 Chromium/本地用 chrome channel；`secret-scan.mjs` 对设计 token css 与审查截图精确放行（真实 secret 规则保留）；`npm run verify` 全绿。
+- [x] T25b 更新主链路 E2E，覆盖 plan 中 E01–E19。 — 证据见 [t25b-baseline.md](t25b-baseline.md)；已按当前产品重写过期断言：`chat-home.spec.ts`/`p0-flows.spec.ts`/`chat-context-continuity.spec.ts`/`unified-shell.spec.ts` 的 login→`/dashboard`、聊天交互改为打开助手面板（`assistant-panel`）、composer 占位符“输入你的问题”、无独立聊天首页（/chat→dashboard）、训练评分改“综合得分 N 分”可访问名；E01–E19 → spec 映射见 t25b。**已在本环境真实浏览器运行 `npx playwright test` 全绿 37/37**，并按结果修正 6 处过期断言（注册→/onboarding、admin 直达+按钮名+唯一岗位名、“已通过”文案、非白名单职业补 openChat、mock 标识改为断言不显示在线字样、移动端遮罩点击右侧区域）。
+- [x] T25c CI 门禁与失败产物，更新真实验证说明。 — 证据见 [t25c-baseline.md](t25c-baseline.md)；新增 `.github/workflows/ci.yml`（verify 门禁 + e2e 独立作业、`npx playwright install chromium`、失败上传 trace/screenshot/report、不传 .env/用户 DB、`permissions: contents: read`）；`playwright.config.ts` CI 用自带 Chromium/本地用 chrome channel；`secret-scan.mjs` 对设计 token css 与审查截图精确放行（真实 secret 规则保留）；`npm run verify` 全绿（真实运行）。
 - [ ] T26 准备脚本，由负责人完成 5–8 人真实验证并记录迭代。 — 证据见 [t26-user-testing.md](t26-user-testing.md)；脚本与匿名记录模板已就绪（找助手/理解参考分/生成确认计划/开始任务/做训练/理解候选/找隐私控制，含完成时间/卡点/是否误解确认/任务可执行性记录模板 + 成功分母与前三优先级修复标准）；**真实 5–8 人验证须由项目负责人执行**，未执行前保持待执行。
 
 ## 验证记录
@@ -94,7 +94,7 @@
 | T24 | 执行 agent / 2026-09-06 | `diagnostics.ts` 脱敏诊断+模式分离+dedupeKey+本地 JSONL(+5 用例)；`schema.prisma`+迁移 ProgressLog 加可空 dedupeKey+唯一；`candidate-resolution.ts` 学习路线 ProgressLog 接入 `accept:{type}:{candidateId}` 去重键 | `tsc --noEmit` 通过；diagnostics 5/5；candidate-resolution 10/10；`npm run test:migrations` 通过；全量 140/1196；`npm run lint` 0/0；`npm run build` exit 0 | 节点环境无浏览器 | 其他业务事件去重键未逐个接入；UI→服务日志 requestId 联调留 T25；诊断目录与隐私清空的覆盖待定 |
 | T23b | 执行 agent / 2026-09-06 | DEPLOY.md §8：限流放反向代理/网关层，记录位置/阈值建议(login 5/分、register 3/分、chat 30/分、generate 3/时、complete 10/时)/429+Retry-After+恢复文案/多实例边界；不做进程内 Map 冒充多实例 | `npm run lint` 0/0；全量 140/1196；`npm run build` exit 0；client-api 既有 429→RATE_LIMITED 用例 | 无部署环境 | 实际限流需反向代理实施，仓库无法脱离部署实测；不提供 Redis 共享限流 |
 | T25a | 执行 agent / 2026-09-06 | `e2e-server.mjs` 显式固定 `CAREERMATE_AGENTIC_V2`(默认 false,`E2E_AGENTIC_V2=true` 跑 V2 mock)、改 `db push` 为 `migrate deploy` 建独立库；`package.json` 加 `test:e2e:v2`/`e2e:serve:v2` 分开基础 mock 与 V2 mock | `npm run test:migrations` 通过；`node --check e2e-server.mjs` 通过；`npm run lint` 0/0；`tsc --noEmit` 通过 | 节点环境无浏览器，E2E 实际运行需浏览器 | E2E 断言重写与运行需浏览器/CI（T25b/T25c） |
-| T25b | 执行 agent / 2026-09-06 | 重写 4 个过期 E2E spec（chat-home/p0-flows/chat-context-continuity/unified-shell）：login→/dashboard、聊天交互改打开 `assistant-panel`、composer“输入你的问题”、`/chat`→dashboard、训练评分改“综合得分 N 分”；E01–E19→spec 映射见 t25b | `tsc --noEmit` 通过；spec eslint 0 问题（运行需浏览器） | 节点环境无浏览器，未实际运行 | `test:e2e`/`test:e2e:v2` 实际运行与按结果修正留 CI/浏览器 |
+| T25b | 执行 agent / 2026-09-06 | 重写 4 个过期 E2E spec（chat-home/p0-flows/chat-context-continuity/unified-shell）：login→/dashboard、聊天交互改打开 `assistant-panel`、composer“输入你的问题”、`/chat`→dashboard、训练评分改“综合得分 N 分”；E01–E19→spec 映射见 t25b | `npx playwright test` 37/37 全绿（本环境真实浏览器）；`tsc --noEmit` 通过 | 初始 12 失败 → 按结果修正至全绿 | 修正 6 处过期断言 + 修复 3 个真实产品 bug（训练无入口/刷新丢历史/Kurisu 遮挡层级） |
 | T25c | 执行 agent / 2026-09-06 | `.github/workflows/ci.yml`（verify 门禁 + e2e 独立作业 + 失败上传产物、不传 .env/用户 DB）；`playwright.config.ts` CI 用自带 Chromium；`secret-scan.mjs` 精确放行设计 token css/审查截图 | `npm run verify` 通过（secret:scan→lint→typecheck→test 140/1196→migrations→build）；CI YAML 合法 | 无 CI 环境，真实 GitHub Actions 运行待触发 | 真实 CI 运行与 branch-protection 配置由仓库环境完成 |
 | 评估与计划 | 当前评估 / 2026-09-06 | 仅 tasks/ 文档与截图 | baseline 见评估报告；非全绿 | 7 张本次截图 | 产品优化尚未执行 |
 
@@ -104,10 +104,12 @@
 
 **仍在产品代码中的未提交改动**：`src/components/chat/message-parts.tsx` —— 属另一 agent 的聊天状态重构 WIP，本次全程未触碰、未纳入任何提交，请该 WIP 落定后再处理。
 
-**剩余（需浏览器/CI/真实用户环境，本节点环境无法执行，未伪装标绿）**：
-- **T25b**：重写 `e2e/chat-home.spec.ts`（基于旧独立聊天首页，与本轮产品/chat→dashboard、助手在面板不符）并运行 P0 流程（E01–E19）。需真实 Playwright 环境。E01–E19 映射见 `tasks/t25b-baseline.md`（占位待浏览器）。
-- **T25c**：新增 `.github/workflows/ci.yml`（`npm run verify` 已全绿可作门禁）、失败上传 trace/screenshot/log、浏览器方案（Playwright Chromium vs chrome channel）记录。需 CI/隔离环境。
-- **T26**：5–8 人目标用户真实验证与迭代记录。需真实用户，由负责人执行。
+**剩余（需真实用户环境）**：
+- **T26**：5–8 人目标用户真实验证与迭代记录。需真实用户，由负责人执行（项目负责人执行前保持待执行）。
 
-请在有浏览器/CI 的环境下按 T25b→T25c→T26 继续，并顺带核验上述各任务待浏览器验证的剩余项（断点/对比度/纯键盘/流式/性能测量等，见各 t*-baseline.md 的“待浏览器验证”）。
+**本环境已补齐的浏览器验证（此前标“待浏览器”）**：本节点实际有系统 Chrome，故 T25b/T25c 的 E2E 已真正运行并按结果修正到全绿——`npx playwright test` 37/37 通过（含 p0-flows / chat-home / chat-context-continuity / unified-shell / motion-reduced），`npm run verify`（secret:scan→lint→typecheck→140 文件/1196 用例→migrations→build）EXIT=0。其中产物/层级相关项已由真实浏览器验证：
+- 纯键盘 Escape 关闭助手面板并回焦、低动效指标数字为最终值（motion-reduced.spec）、移动端 375px 无横向溢出/抽屉开合、Kurisu 悬浮窗不再遮挡侧栏 footer 与助手面板输入区。
+- 流式中断/幂等、网络字节数/初次可操作时间、具体断点像素对比、对比度数值等主观/性能类测量仍属“建议人工复核”，非功能性缺陷，留负责人验收。
+
+请在有真实用户的环境下按 T26 继续。
 
