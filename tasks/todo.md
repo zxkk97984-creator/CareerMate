@@ -51,7 +51,7 @@
 - [x] T21a 计划版本约束：历史盘点、冲突映射、迁移与并发测试。 — 证据见 [t21a-baseline.md](t21a-baseline.md)；prisma 加 `@@unique([userId, version])`；迁移先对每用户按 (version,createdAt,id) 重编号去重（不删用户数据）再建唯一索引，node:sqlite 验证去重/唯一索引通过；generation-service 对 P2002 做有界重试（重读 latest 取下一版本），2 用例。
 - [x] T21b 列表分页、总数语义与用户隔离。 — 证据见 [t21b-baseline.md](t21b-baseline.md)；`/api/agentic-v2/candidates` 加有上限 limit(max100)+稳定游标(createdAt)+真实 total(count)，响应 `{items,total,nextCursor}`；侧栏/概览待确认计数改用 `v2CandidateTotal`（不误用页长）；跨用户隔离保留。
 - [x] T22 流式服务按职责小步拆分，兼容行为不变。 — 证据见 [t22-baseline.md](t22-baseline.md)；新增 `stream-helpers.ts` 等 3 个无副作用纯 helper（resolveSearchPolicy/buildProviderHistory/validateSourceRefs）并加 7 用例；stream-service 改为 import 同一逻辑并删除本地重复（-85 行），调用点不变；stateful/legacy 24 回归用例通过；不引入多层 pipeline、不删兼容模式。
-- [ ] T23a 认证请求体/错误/注册并发边界。
+- [x] T23a 认证请求体/错误/注册并发边界。 — 证据见 [t23a-baseline.md](t23a-baseline.md)；`api.ts` 加 `parseBodyJson`（16KB 上限→413、空体/坏体→400）；login/register 改用并归一化，schema 补长度上限；register 捕获 P2002 并发竞态转稳定 400“用户名已存在”；错误可分类、不暴露原始异常；无密码/哈希日志。
 - [ ] T23b 公开部署的限流位置、配置、429 行为和适用范围。
 - [ ] T24 去重业务事件、脱敏诊断与模式分离的运行记录。
 - [ ] T25a E2E 数据/运行模式/浏览器环境隔离。
@@ -90,6 +90,7 @@
 | T21a | 执行 agent / 2026-09-06 | `schema.prisma` `@@unique([userId,version])`；迁移先按每用户 (version,createdAt,id) 重编号去重（不删数据）再建唯一索引（node:sqlite 验证去重/唯一索引）；`generation-service.ts` ensureGenerationPlan 对 P2002 有界重试 | `tsc --noEmit` 通过；node:sqlite 去重 u1:1,1,2→1,2,3 / u2:1,5→1,2 + 唯一索引创建成功；`npm run test:migrations` 通过；generation 7/7（含 P2002 重试+非冲突不重试）；全量 135/1169；`npm run lint` 0/0；`npm run build` exit 0 | 节点环境无浏览器 | 副本上真实历史去重待数据演练；其他 careerPlan.create 写路径（replan/artifact/stream）版本并发待审计 |
 | T21b | 执行 agent / 2026-09-06 | `agentic-v2/candidates/route.ts`：limit(max100)+游标+total(count)；`workspace-types.ts` 加 `v2CandidateTotal`；`use-workspace-data.ts` 读 total+limit=100；`workspace.tsx`/`dashboard-view.tsx` 待确认计数改用 total；`route.test.ts` +4 用例 | `tsc --noEmit` 通过；candidates route 10/10；全量 135/1173；`npm run lint` 0/0；`npm run build` exit 0 | 节点环境无浏览器 | 客户端 load-more UI 未加（当前 limit=100 足够）；memories/simulations 未分页待后续 |
 | T22 | 执行 agent / 2026-09-06 | `stream-helpers.ts` 提取 3 纯 helper + `stream-helpers.test.ts`(+7 用例)；`stream-service.ts` import 同一逻辑删本地重复(-85 行)，调用点不变 | `tsc --noEmit` 通过；stream-helpers 7/7；既有 stream stateful/base 24/24；全量 136/1180；`npm run lint` 0/0；`npm run build` exit 0 | 节点环境无浏览器 | 未对控制流做更大重构（刻意避免无浏览器下的高风险重组）；一轮对话生命周期可读性/流式中断浏览器验证留 T25 |
+| T23a | 执行 agent / 2026-09-06 | `api.ts` 加 `parseBodyJson`+`RequestBodyError`+bodyTooLarge；`auth/login`、`auth/register` 改用并归一化、补 schema 长度上限、register 捕获 P2002 竞态转稳定 400；`api.test.ts`(+5)、login/register route.test(+2/+4) | `tsc --noEmit` 通过；auth/api 11/11；密码/哈希无日志；全量 139/1191；`npm run lint` 0/0；`npm run build` exit 0 | 节点环境无浏览器 | 部署层限流/日志脱敏审计部分属 T23b/T24；聊天大 body 上限未套用 |
 | 评估与计划 | 当前评估 / 2026-09-06 | 仅 tasks/ 文档与截图 | baseline 见评估报告；非全绿 | 7 张本次截图 | 产品优化尚未执行 |
 
 ## 下一位 agent 从这里开始
