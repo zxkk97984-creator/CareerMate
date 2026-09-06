@@ -17,6 +17,13 @@ interface AssistantState {
 }
 
 export interface AssistantController extends AssistantState {
+  /** 面板开合（页头按钮与 Kurisu 共享同一面板/控制器）。 */
+  panelOpen: boolean;
+  expanded: boolean;
+  openPanel: () => void;
+  closePanel: () => void;
+  togglePanel: () => void;
+  toggleExpanded: () => void;
   send: (text: string) => Promise<void>;
   newChat: () => void;
   openHistory: (id: string) => Promise<void>;
@@ -24,8 +31,6 @@ export interface AssistantController extends AssistantState {
   setDraft: (text: string) => void;
   /** 发送失败重试：复用同一 clientRequestId，避免重复写入。 */
   retry: (text: string) => Promise<void>;
-  /** 关闭面板：仅隐藏，不丢弃当前流或草稿。 */
-  closePanel: () => void;
 }
 
 /**
@@ -40,6 +45,8 @@ export function useAssistantController(): AssistantController {
   const [streaming, setStreaming] = useState(false);
   const [phase, setPhase] = useState<AssistantPhase>("idle");
   const [draft, setDraftState] = useState("");
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const requestIdRef = useRef<string | null>(null);
   const subSeqRef = useRef(0);
   const mountedRef = useRef(true);
@@ -200,9 +207,21 @@ export function useAssistantController(): AssistantController {
     if (mountedRef.current) setDraftState(text);
   }, []);
 
+  const openPanel = useCallback(() => {
+    if (mountedRef.current) setPanelOpen(true);
+  }, []);
+
   const closePanel = useCallback(() => {
-    // 仅隐藏：不丢弃当前流或草稿（状态保留在 provider）
-    setStreaming(false);
+    // 关闭仅隐藏，不丢弃当前流或草稿（状态保留在 provider）
+    if (mountedRef.current) setPanelOpen(false);
+  }, []);
+
+  const togglePanel = useCallback(() => {
+    if (mountedRef.current) setPanelOpen((prev) => !prev);
+  }, []);
+
+  const toggleExpanded = useCallback(() => {
+    if (mountedRef.current) setExpanded((prev) => !prev);
   }, []);
 
   return {
@@ -211,13 +230,18 @@ export function useAssistantController(): AssistantController {
     streaming,
     phase,
     draft,
+    panelOpen,
+    expanded,
+    openPanel,
+    closePanel,
+    togglePanel,
+    toggleExpanded,
     send,
     newChat,
     openHistory,
     switchConversation,
     setDraft,
     retry,
-    closePanel,
   };
 }
 

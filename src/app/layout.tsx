@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { GlobalKurisu } from "@/components/chat/global-kurisu";
 import { AssistantProvider } from "@/components/chat/assistant-provider";
+import { AssistantPanel } from "@/components/chat/assistant-panel";
 
 export const metadata: Metadata = {
   title: "CareerMate",
@@ -18,6 +19,7 @@ export default function RootLayout({
       <body>
         <AssistantProvider>
           {children}
+          <AssistantPanel />
           <GlobalKurisu />
         </AssistantProvider>
       </body>

@@ -11,6 +11,7 @@ import { ResourceView } from "@/features/resources/resource-view";
 import { MemoryView } from "@/features/memory/memory-view";
 import { AdminView } from "@/features/admin/admin-view";
 import { ProductSidebar } from "@/components/shell/product-sidebar";
+import { AssistantEntryButton } from "@/components/shell/assistant-entry-button";
 import { PageHeader } from "@/components/shell/page-header";
 import { useWorkspaceData, type ModuleKey } from "@/hooks/use-workspace-data";
 import type { View } from "@/lib/workspace-types";
@@ -127,6 +128,7 @@ export function Workspace({ initialView, isAdmin = false }: { initialView: View;
           <PageHeader
             title={`${data.profile.targetRoleLabel ?? "未设置目标岗位"} 成长工作台`}
             description={`${data.user.displayName} · ${data.profile.major || "未填写专业"} · 每周 ${data.profile.weeklyAvailableHours ?? 0} 小时`}
+            actions={<AssistantEntryButton />}
           />
 
           {/* 局部模块失败：就地提示 + 重试，不阻断其他模块、不伪装成空列表 */}

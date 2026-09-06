@@ -17,7 +17,7 @@
 - [x] T09 生成计划到待确认再到正式执行的完整反馈。 — 证据见 [t09-baseline.md](t09-baseline.md)；dashboard 改“新计划已准备好，确认后开始执行”、新增 pending 横条 + “审阅计划”、pending 计划纳入待确认计数（概览/侧栏一致）。
 - [x] T06a 提取唯一助手控制器，保证幂等、隔离与失败恢复。 — 证据见 [t06a-baseline.md](t06a-baseline.md)；新增 `use-assistant-controller`/`assistant-provider`/`assistant-controller-utils`，幂等 requestId + 订阅切换隔离 + 保留 parts/meta/draft；5 用例。
 - [x] T06b 挂载正文、引用、候选与执行来源渲染。 — 证据见 [t06b-baseline.md](t06b-baseline.md)；新增 `assistant-panel` 接 controller 复用 ChatThread/MemoizedMarkdown/MessageParts/ChatComposer；根 layout 挂 `AssistantProvider` 跨路由保持。
-- [ ] T07a 增加显式 AI 助手入口，角色共享 controller。
+- [x] T07a 增加显式 AI 助手入口，角色共享 controller。 — 证据见 [t07a-baseline.md](t07a-baseline.md)；新增 `assistant-entry-button` 页头入口 + controller 面板开合/展开（420/760px）；根 layout 渲染 panel，关闭返回 null。
 - [ ] T07b 手机 sheet、键盘焦点、角色收起与失败替代。
 - [ ] 检查点 A：核心链路与 P0 错误恢复有自动化/浏览器证据。
 - [ ] 检查点 A：核心链路与 P0 错误恢复有自动化/浏览器证据。
