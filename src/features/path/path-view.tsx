@@ -1,10 +1,11 @@
 "use client";
 
 /** 职业路径 —— 章节式版式：当前月任务、年度时间线、假设与风险 */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Lightbulb, AlertTriangle } from "lucide-react";
 import { PlanSummaryCard } from "@/components/chat/plan-summary-card";
 import { TaskDetailPanel } from "@/components/path/task-detail";
+import { LearningRouteDisplay } from "@/components/path/learning-route-view";
 import { groupPlanTimeline } from "@/lib/path";
 import { taskStatuses, taskStatusLabels, type CareerPlanDto, type PlanMonth, type TaskStatus, type AiExecutionMeta } from "@/lib/types";
 import { fetchApi } from "@/lib/client-api";
@@ -26,6 +27,17 @@ export function PathView({ plan, pendingPlan, refresh, setNotice }: PathViewProp
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  // 已确认学习路线（T15）：按需读取 /api/learning-routes/current，用展示 adapter 渲染，不直接渲染 z.unknown 数组
+  const [learningRoute, setLearningRoute] = useState<{ content: unknown; relatedPlan: { id: string; targetRoleLabel: string | null; version: number; status: string } | null; basePlanVersion: number | number[] | null } | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      const r = await fetchApi<{ route: { content: unknown; relatedPlan: { id: string; targetRoleLabel: string | null; version: number; status: string } | null; basePlanVersion: number | number[] | null } | null }>("/api/learning-routes/current");
+      if (active && r.ok && r.data.route) setLearningRoute(r.data.route);
+    })();
+    return () => { active = false; };
+  }, []);
 
   async function generatePlan() {
     if (generating) return;
@@ -228,6 +240,23 @@ export function PathView({ plan, pendingPlan, refresh, setNotice }: PathViewProp
               </ul>
             </div>
           </div>
+
+          {/* 学习安排：已确认学习路线 + 关联计划版本（T15） */}
+          <section className="path-section">
+            <div>
+              <span className="path-eyebrow">学习安排</span>
+              <h3 className="path-section-title">已确认的学习路线</h3>
+            </div>
+            {learningRoute ? (
+              <LearningRouteDisplay
+                content={learningRoute.content}
+                relatedPlan={learningRoute.relatedPlan}
+                basePlanVersion={learningRoute.basePlanVersion}
+              />
+            ) : (
+              <p style={{ margin: "8px 0 0", fontSize: 13.5, color: "var(--cm-text-muted)" }}>暂无已确认的学习路线，可让 AI 基于当前计划生成。</p>
+            )}
+          </section>
 
           {/* 任务详情抽屉：只读现有字段，缺失“让 AI 细化”，月份级交付物标“本阶段共同要求”（T14a） */}
           {selectedTask && currentMonth ? (

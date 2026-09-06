@@ -37,7 +37,7 @@
 - [ ] T13 当前计划与待确认版独立预览/对比。
 - [ ] T14a 任务详情、真实完成标准与状态更新。
 - [ ] T14b 近期任务内容质量、时间预算和历史兼容。
-- [ ] T15 展示已确认 LearningRoute 及关联版本。
+- [x] T15 展示已确认 LearningRoute 及关联版本。 — 证据见 [t15-baseline.md](t15-baseline.md)；`toLearningRouteView` 展示 adapter 不渲染 z.unknown 数组，null/损坏/空/归档降级，`path-view` 新增“学习安排”区块接入。
 - [ ] T16a 资源岗位标签、链接语义、空态和检索失败。
 - [ ] T16b 任务上下文到资源再返回任务。
 - [ ] T17a 选择/训练/完成三阶段，刷新与失败恢复。
@@ -78,6 +78,7 @@
 | T06b | 执行 agent / 2026-09-06 | `assistant-panel` 接 controller 复用 ChatThread/MemoizedMarkdown/MessageParts/ChatComposer；根 layout 挂 AssistantProvider | 全量 127/127；lint 0/0；`tsc` 通过；build exit 0 | 节点环境无浏览器 | 消息/候选/来源浏览器表现留 T19/T25 |
 | T07a | 执行 agent / 2026-09-06 | `assistant-entry-button` 页头入口；controller panelOpen/expanded + open/toggle；panel 420/760px；根 layout 渲染 panel | 全量 127/127；lint 0/0；`tsc` 通过；build exit 0 | 节点环境无浏览器 | Kurisu 本地状态并入 controller 属 chat 重构收敛；浏览器入口验证留 T19/T25 |
 | T07b | 执行 agent / 2026-09-06 | panel Escape 关闭回焦；手机 100dvh+safe-area sheet；Kurisu 失败静态替代 | 全量 127/127；lint 0/0；`tsc` 通过；build exit 0 | 节点环境无浏览器 | 手机/焦点/安全区浏览器实测留 T19/T25 |
+| T15 | 执行 agent / 2026-09-06 | `learning-route.ts` 展示 adapter + `learning-route-view.tsx`（LearningRouteDisplay/Body）+ `learning-route.test.ts`；`path-view.tsx` 新增“学习安排”区块接 `/api/learning-routes/current` | `tsc --noEmit` 通过；改动文件 eslint 0；全量 132/1145 通过；`npm run lint` 0/0；`npm run build` exit 0 | 节点环境无浏览器 | 空态/正常/归档三态视觉与接口联调留 T19/T25 |
 | 评估与计划 | 当前评估 / 2026-09-06 | 仅 tasks/ 文档与截图 | baseline 见评估报告；非全绿 | 7 张本次截图 | 产品优化尚未执行 |
 
 ## 下一位 agent 从这里开始
