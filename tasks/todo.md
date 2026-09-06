@@ -54,7 +54,7 @@
 - [x] T23a 认证请求体/错误/注册并发边界。 — 证据见 [t23a-baseline.md](t23a-baseline.md)；`api.ts` 加 `parseBodyJson`（16KB 上限→413、空体/坏体→400）；login/register 改用并归一化，schema 补长度上限；register 捕获 P2002 并发竞态转稳定 400“用户名已存在”；错误可分类、不暴露原始异常；无密码/哈希日志。
 - [x] T23b 公开部署的限流位置、配置、429 行为和适用范围。 — 证据见 [t23b-baseline.md](t23b-baseline.md)；限流放反向代理/网关层（不做进程内 Map 冒充多实例——plan 明确禁止）；DEPLOY.md §8 记录位置/阈值建议/429+Retry-After+恢复文案/多实例适用边界；客户端已识别 RATE_LIMITED；应用层 16KB 上限与敏感键脱敏已覆盖。
 - [x] T24 去重业务事件、脱敏诊断与模式分离的运行记录。 — 证据见 [t24-baseline.md](t24-baseline.md)；新增 `diagnostics.ts`（requestId/operation/elapsedMs/mode/degraded/errorCode、`redactForDiagnostics` 删敏感键、`isMock` 模式分离、本地 JSONL、dedupeKey 去重）+5 用例；`ProgressLog` 加可空 `dedupeKey`+`@@unique([userId,dedupeKey])` 迁移；candidate-resolution 学习路线已接入 `accept:{type}:{candidateId}` 去重键。
-- [ ] T25a E2E 数据/运行模式/浏览器环境隔离。
+- [x] T25a E2E 数据/运行模式/浏览器环境隔离。 — 证据见 [t25a-baseline.md](t25a-baseline.md)；`e2e-server.mjs` 显式固定 `CAREERMATE_AGENTIC_V2`（默认 false，`E2E_AGENTIC_V2=true` 跑 V2 mock）不继承开发机配置、改 `db push` 为 `migrate deploy` 建独立库；`package.json` 加 `test:e2e:v2`/`e2e:serve:v2` 分开基础 mock 与 V2 mock。
 - [ ] T25b 更新主链路 E2E，覆盖 plan 中 E01–E19。
 - [ ] T25c CI 门禁与失败产物，更新真实验证说明。
 - [ ] T26 准备脚本，由负责人完成 5–8 人真实验证并记录迭代。

@@ -13,6 +13,8 @@ const env = {
   OPEN_CHAT_ENTRY: "true",
   CAREERMATE_E2E: "true", // E2E 环境标记，seed 正常运行
   ALLOW_DESTRUCTIVE_SEED: "true", // E2E 需要全新数据库
+  // T25a：显式固定关键开关，不继承开发机真实配置；增量 V2 解耦见 e2e:serve:v2
+  CAREERMATE_AGENTIC_V2: process.env.E2E_AGENTIC_V2 ?? "false",
 };
 const windows = process.platform === "win32";
 const dbPath = "prisma/e2e.db";
@@ -23,12 +25,12 @@ if (existsSync(dbPath)) {
   try { unlinkSync(dbPath + "-journal"); } catch { /* ignore */ }
 }
 
-// 创建全新数据库
-const pushArgs = ["prisma", "db", "push", "--skip-generate"];
-const pushResult = windows
-  ? spawnSync("cmd.exe", ["/d", "/c", `npx.cmd ${pushArgs.join(" ")}`], { env, stdio: "inherit" })
-  : spawnSync("npx", pushArgs, { env, stdio: "inherit" });
-if (pushResult.status !== 0) process.exit(pushResult.status ?? 1);
+// 用迁移建立独立测试库（不能只 db push 后就说迁移验证通过）——T25a
+const migrateArgs = ["prisma", "migrate", "deploy"];
+const migrateResult = windows
+  ? spawnSync("cmd.exe", ["/d", "/c", `npx.cmd ${migrateArgs.join(" ")}`], { env, stdio: "inherit" })
+  : spawnSync("npx", migrateArgs, { env, stdio: "inherit" });
+if (migrateResult.status !== 0) process.exit(migrateResult.status ?? 1);
 
 // 种子数据
 const seedResult = windows
