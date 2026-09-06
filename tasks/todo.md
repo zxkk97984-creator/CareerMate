@@ -57,7 +57,7 @@
 - [x] T25a E2E 数据/运行模式/浏览器环境隔离。 — 证据见 [t25a-baseline.md](t25a-baseline.md)；`e2e-server.mjs` 显式固定 `CAREERMATE_AGENTIC_V2`（默认 false，`E2E_AGENTIC_V2=true` 跑 V2 mock）不继承开发机配置、改 `db push` 为 `migrate deploy` 建独立库；`package.json` 加 `test:e2e:v2`/`e2e:serve:v2` 分开基础 mock 与 V2 mock。
 - [x] T25b 更新主链路 E2E，覆盖 plan 中 E01–E19。 — 证据见 [t25b-baseline.md](t25b-baseline.md)；已按当前产品重写过期断言：`chat-home.spec.ts`/`p0-flows.spec.ts`/`chat-context-continuity.spec.ts`/`unified-shell.spec.ts` 的 login→`/dashboard`、聊天交互改为打开助手面板（`assistant-panel`）、composer 占位符“输入你的问题”、无独立聊天首页（/chat→dashboard）、训练评分改“综合得分 N 分”可访问名；E01–E19 → spec 映射见 t25b。实际 `test:e2e` 运行需浏览器环境。
 - [x] T25c CI 门禁与失败产物，更新真实验证说明。 — 证据见 [t25c-baseline.md](t25c-baseline.md)；新增 `.github/workflows/ci.yml`（verify 门禁 + e2e 独立作业、`npx playwright install chromium`、失败上传 trace/screenshot/report、不传 .env/用户 DB、`permissions: contents: read`）；`playwright.config.ts` CI 用自带 Chromium/本地用 chrome channel；`secret-scan.mjs` 对设计 token css 与审查截图精确放行（真实 secret 规则保留）；`npm run verify` 全绿。
-- [ ] T26 准备脚本，由负责人完成 5–8 人真实验证并记录迭代。 — ⚠️ 需真实目标用户：准备匿名验证/记录脚本可行，但 5–8 人验证与迭代须由负责人执行；非本环境可完成。
+- [ ] T26 准备脚本，由负责人完成 5–8 人真实验证并记录迭代。 — 证据见 [t26-user-testing.md](t26-user-testing.md)；脚本与匿名记录模板已就绪（找助手/理解参考分/生成确认计划/开始任务/做训练/理解候选/找隐私控制，含完成时间/卡点/是否误解确认/任务可执行性记录模板 + 成功分母与前三优先级修复标准）；**真实 5–8 人验证须由项目负责人执行**，未执行前保持待执行。
 
 ## 验证记录
 
