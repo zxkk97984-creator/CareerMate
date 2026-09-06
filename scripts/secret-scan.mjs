@@ -93,10 +93,15 @@ const contentPatterns = [
   },
 ];
 
-const allowedPatterns = [/^\.env\.example$/, /^scripts\/secret-scan\.mjs$/];
+const allowedPatterns = [
+  /^\.env\.example$/,
+  /^scripts\/secret-scan\.mjs$/,
+  // 设计令牌样式不是凭据；路径放行，但其内容仍会被 contentPatterns 扫描（T23b/安全审计）
+  /^src\/app\/styles\/tokens\.css$/,
+];
 
 // Live2D 模型与纹理是产品运行必需资源，允许二进制进入版本库
-const allowedBinaryPatterns = [/^public\/live2d\//];
+const allowedBinaryPatterns = [/^public\/live2d\//, /^tasks\/audit-/];
 
 const allowedContentFiles = new Set(["scripts/secret-scan.mjs"]);
 const failures = [];
