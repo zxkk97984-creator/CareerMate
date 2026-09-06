@@ -12,7 +12,7 @@ import { AgentArtifactCandidateCard } from "./agent-artifact-candidate-card";
 import { QuickActions } from "./quick-actions";
 import type { CareerPlanDto } from "@/lib/types";
 import type { ExplorationReport } from "@/lib/careers/exploration-schema";
-import { requireApiOk } from "@/lib/client-api";
+import { requireApiOk, readApiJson } from "@/lib/client-api";
 
 interface MessagePartsProps {
   parts: ChatMessagePart[];
@@ -68,10 +68,10 @@ function ProfileCandidateRef({ candidateId }: { candidateId: string }) {
 
   useEffect(() => {
     fetch("/api/profile/candidates")
-      .then((r) => r.json())
+      .then((r) => readApiJson<{ items?: Array<{ id: string }> }>(r))
       .then((body) => {
-        if (body.ok) {
-          const items = (body.data as { items?: Array<{ id: string }> })?.items ?? [];
+        if (body?.ok && body.data) {
+          const items = body.data.items ?? [];
           const found = items.find((c) => c.id === candidateId);
           if (found) setCandidate(found as Record<string, unknown>);
         }
@@ -246,17 +246,19 @@ function PlanRef({ planId, version }: { planId: string; version: number }) {
 
 type ReportCardData = ExplorationReport & { id: string; status: string };
 
+type ExplorationReportPayload = {
+  report: ReportCardData;
+  sourceLabel: "精品职业资料" | "实时联网调研" | "AI分析与推断";
+};
+
 function ExplorationReportRef({ reportId }: { reportId: string }) {
-  const [data, setData] = useState<{
-    report: ReportCardData;
-    sourceLabel: "精品职业资料" | "实时联网调研" | "AI分析与推断";
-  } | null>(null);
+  const [data, setData] = useState<ExplorationReportPayload | null>(null);
 
   useEffect(() => {
     fetch(`/api/careers/explorations/${encodeURIComponent(reportId)}`)
-      .then((response) => response.json())
+      .then((response) => readApiJson<ExplorationReportPayload>(response))
       .then((body) => {
-        if (body.ok) setData(body.data);
+        if (body?.ok && body.data) setData(body.data);
       })
       .catch(() => {});
   }, [reportId]);
@@ -294,9 +296,9 @@ function MemoryRef({ memoryId }: { memoryId: string }) {
 
   useEffect(() => {
     fetch(`/api/memory/${encodeURIComponent(memoryId)}`)
-      .then((r) => r.json())
+      .then((r) => readApiJson<{ id: string; content: string; kind: string; sensitivity: string; status: string }>(r))
       .then((body) => {
-        if (body.ok) setData((body.data as Record<string, unknown>)?.memory as typeof data ?? body.data as typeof data);
+        if (body?.ok && body.data) setData((body.data as Record<string, unknown>)?.memory as typeof data ?? body.data as typeof data);
       })
       .catch(() => {});
   }, [memoryId]);

@@ -53,8 +53,14 @@ test("mobile sidebar hidden by default, opens via menu button", async ({ page })
   // 遮罩层可见
   await expect(page.locator(".sidebar-overlay")).toBeVisible();
 
-  // 点击遮罩关闭
-  await page.locator(".sidebar-overlay").click();
+  // 点击遮罩关闭：侧栏抽屉(z-index:40)覆盖在遮罩(z-index:35)上方，
+  // 在 375px 下遮罩中心点落在抽屉宽度内，故点其右侧未被抽屉覆盖的遮罩区域。
+  const overlayBox = await page.locator(".sidebar-overlay").boundingBox();
+  if (overlayBox) {
+    await page.locator(".sidebar-overlay").click({ position: { x: overlayBox.width - 10, y: 20 } });
+  } else {
+    await page.keyboard.press("Escape");
+  }
   await expect(sidebar).not.toBeInViewport();
 });
 

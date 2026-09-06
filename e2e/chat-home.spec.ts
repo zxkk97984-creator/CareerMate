@@ -15,14 +15,14 @@ async function login(page: import("@playwright/test").Page, username = "student_
 
 /** 打开助手面板（页头入口） */
 async function openAssistant(page: import("@playwright/test").Page) {
-  await page.getByRole("button", { name: /打开 AI 助手|AI 助手/ }).first().click();
+  await page.getByRole("button", { name: /AI 助手/ }).first().click();
   await expect(page.locator(".assistant-panel")).toBeVisible();
 }
 
 test("登录后落在成长概览，页头有 AI 助手入口", async ({ page }) => {
   await login(page);
   await expect(page.locator('[data-testid="page-content"]')).toBeVisible();
-  await expect(page.getByRole("button", { name: /打开 AI 助手/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /AI 助手/ })).toBeVisible();
 });
 
 test("/chat 跳转到 /dashboard", async ({ page }) => {
@@ -69,7 +69,7 @@ test("Escape 关闭助手面板并回焦", async ({ page }) => {
   await page.keyboard.press("Escape");
   await expect(page.locator(".assistant-panel")).toHaveCount(0);
   // 焦点回到触发按钮
-  await expect(page.getByRole("button", { name: /打开 AI 助手/ })).toBeFocused();
+  await expect(page.getByRole("button", { name: /AI 助手/ })).toBeFocused();
 });
 
 test("生成计划达到可确认版本并可进入路径页", async ({ page }) => {

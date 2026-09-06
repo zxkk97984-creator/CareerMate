@@ -10,7 +10,7 @@ export default defineConfig({
   workers: 1,
   retries: 0,
   reporter: "line",
-  use: { baseURL: "http://127.0.0.1:3100", trace: "retain-on-failure", screenshot: "only-on-failure" },
+  use: { baseURL: "http://127.0.0.1:3100", trace: "retain-on-failure", screenshot: "only-on-failure", headless: true },
   projects: [
     {
       name: "chromium",
@@ -19,5 +19,5 @@ export default defineConfig({
         : { ...devices["Desktop Chrome"], channel: "chrome" },
     },
   ],
-  webServer: { command: "npm run e2e:serve", url: "http://127.0.0.1:3100/login", reuseExistingServer: false, timeout: 120_000 },
+  webServer: { command: "npm run e2e:serve", url: "http://127.0.0.1:3100/login", reuseExistingServer: true, timeout: 120_000 },
 });

@@ -105,9 +105,19 @@ export function KurisuChatWindow() {
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
 
-  // 首次挂载后再读取保存的窗口位置，避免服务端/客户端初始状态不一致导致人物瞬移
+  // 首次挂载后再读取保存的窗口位置，避免服务端/客户端初始状态不一致导致人物瞬移。
+  // 无保存位置时回落到视口右下角：左侧主区/侧栏常有交互入口，避免默认悬浮窗遮挡。
   useEffect(() => {
-    setRect(loadRect());
+    const saved = loadRect();
+    if (!localStorage.getItem(POSITION_KEY)) {
+      const w = Math.max(typeof window !== "undefined" ? window.innerWidth : 1280, 320);
+      const h = typeof window !== "undefined" ? window.innerHeight : 720;
+      const winW = Math.max(200, Math.min(420, saved.w));
+      const winH = Math.max(220, Math.min(520, saved.h));
+      saved.x = Math.max(8, w - winW - 16);
+      saved.y = Math.max(8, h - winH - 16);
+    }
+    setRect(saved);
   }, []);
 
   const loadConversations = useCallback(async () => {

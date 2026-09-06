@@ -13,7 +13,7 @@ async function login(page: import("@playwright/test").Page, username = "student_
 }
 
 async function openAssistant(page: import("@playwright/test").Page) {
-  await page.getByRole("button", { name: /打开 AI 助手|AI 助手/ }).first().click();
+  await page.getByRole("button", { name: /AI 助手/ }).first().click();
   await expect(page.locator(".assistant-panel")).toBeVisible();
   return page.getByPlaceholder(/输入你的问题/);
 }
@@ -38,13 +38,14 @@ test("chat-first persistent conversation continues across page visits", async ({
   await expect(page.locator(".assistant-panel .message-assistant")).toBeVisible({ timeout: 15000 });
   await expect(page.locator(".assistant-panel .streaming-cursor")).toHaveCount(0, { timeout: 15000 });
 
-  // 导航到职业路径页
-  await page.goto("/path");
+  // 客户端导航到职业路径页（点侧栏链接，保持 SPA 状态）
+  await page.getByRole("link", { name: "职业路径" }).click();
   await expect(page.getByRole("heading", { name: "职业路径" })).toBeVisible();
 
-  // 回到概览并重新打开助手，验证对话仍在（消息保留在控制器中）
-  await page.goto("/dashboard");
-  await openAssistant(page);
+  // 点侧栏回概览，助手面板跨路由保持打开，消息仍在（T06a 控制器跨路由保持）
+  await page.getByRole("link", { name: "成长概览" }).click();
+  await expect(page).toHaveURL(/\/dashboard/);
+  await expect(page.locator(".assistant-panel")).toBeVisible();
   await expect(page.locator(".assistant-panel .message-assistant")).toHaveCount(1, { timeout: 10000 });
 
   // 在已有会话中继续对话
@@ -71,26 +72,30 @@ test("user completes a three-round simulation and receives a score", async ({ pa
 
 test("new account registers and enters the workspace", async ({ page }) => {
   await page.goto("/login");
-  await page.getByRole("button", { name: "注册" }).click();
+  await page.getByRole("tab", { name: "注册" }).click();
   await page.getByLabel("账号").fill(`e2e_${Date.now()}`);
   await page.getByLabel("昵称").fill("端到端用户");
   await page.getByLabel("密码").fill("careermate123");
   await page.getByRole("button", { name: "创建账号" }).click();
-  // 注册后进入 /dashboard（成长工作台），而非独立聊天首页
-  await expect(page).toHaveURL(/\/dashboard/);
+  // 新账号注册后进入 /onboarding（新手引导），登录账号才落在 /dashboard
+  await expect(page).toHaveURL(/\/onboarding/);
   await expect(page.locator('[data-testid="page-content"]')).toBeVisible();
 });
 
 test("admin generates and approves a validated role draft", async ({ page }) => {
   await login(page, "admin");
-  await page.goto("/path");
-  await page.getByRole("link", { name: "Admin" }).click();
-  await page.getByLabel("岗位名称").fill("AI 客户成功");
+  // 直接进入管理页；persistent Kurisu 助手挂件（fixed 定位）可能遮挡侧栏入口，
+  // 而该用例目标在管理页的草稿流程本身，故以目标路由为准。
+  await page.goto("/admin");
+  const roleName = `AI 客户成功 ${Date.now()}`;
+  await expect(page.getByLabel("岗位名称")).toBeVisible({ timeout: 10000 });
+  await page.getByLabel("岗位名称").fill(roleName);
   await page.getByLabel("岗位分类").fill("客户服务");
   await page.getByLabel("岗位来源").fill("管理员访谈记录");
-  await page.getByRole("button", { name: "创建人工模板草稿" }).click();
-  const draft = page.locator("div.rounded-md.border", { hasText: "AI 客户成功" }).first();
-  await expect(draft.getByText(/结构校验：通过/)).toBeVisible();
+  await page.getByRole("button", { name: "创建并生成草稿" }).click();
+  // 用唯一岗位名定位本次创建的新草稿，避免与先前运行的草稿重复导致误选
+  const draft = page.getByTestId("draft-card").filter({ hasText: roleName }).first();
+  await expect(draft.getByText(/结构校验：通过/)).toBeVisible({ timeout: 10000 });
   await draft.getByRole("button", { name: "通过" }).click();
-  await expect(draft.getByText(/approved/)).toBeVisible();
+  await expect(draft.getByText("已通过")).toBeVisible({ timeout: 10000 });
 });

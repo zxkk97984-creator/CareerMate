@@ -287,6 +287,10 @@ export function SimulationView({ simulations, refresh, setNotice }: { simulation
               <div className="sim-brief-dims">
                 {briefScenario.scoringDimensions.map((d) => <span key={d} className="sim-brief-dim">{d}</span>)}
               </div>
+              <div style={{ marginTop: 14, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12 }}>
+                <Button disabled={busy || active?.status === "active"} onClick={start}>开始新训练</Button>
+                <span style={{ fontSize: 12, color: "var(--cm-text-subtle)" }}>完成至少 3 轮后可评分</span>
+              </div>
             </div>
           ) : (
             <p style={{ margin: "8px 0 0", fontSize: 13, color: "var(--cm-text-muted)" }}>该场景详情暂不可用，可在完成后重新选择。</p>

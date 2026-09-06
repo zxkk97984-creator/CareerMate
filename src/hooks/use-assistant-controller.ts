@@ -198,6 +198,28 @@ export function useAssistantController(): AssistantController {
     await openHistory(id);
   }, [openHistory]);
 
+  // 全量刷新后恢复最近会话：控制器挂在 app layout（跨路由不卸载），
+  // 但整页刷新会重置内存态；引导时若已有历史会话则载入其消息，避免面板打开即空白。
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/chat/conversations?limit=1");
+        const body = await res.json().catch(() => null);
+        if (cancelled || !res.ok || !body?.ok) return;
+        const items = (body?.data?.items ?? []) as Array<{ id: string }>;
+        const first = items[0];
+        if (first?.id) await openHistory(first.id);
+      } catch {
+        // 恢复失败不阻断；用户可直接新对话
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [openHistory]);
+
   const retry = useCallback(async (text: string) => {
     // 复用现有 requestId（resolveClientRequestId 用 retrying=true 分支），或重新发送
     await send(text);
