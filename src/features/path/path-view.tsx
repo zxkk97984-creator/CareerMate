@@ -86,7 +86,8 @@ export function PathView({ plan, pendingPlan, refresh, setNotice }: PathViewProp
     setNotice("新计划版本已确认，旧版本已保留。");
   }
 
-  const timelinePlan = pendingPlan ?? plan;
+  // 默认任务/时间线/假设全部来自同一个 activePlan（F08/T13）；pending 只作独立预览，不混入主线
+  const timelinePlan = plan;
   const timeline = timelinePlan ? groupPlanTimeline(timelinePlan) : [];
   const months = (plan?.months ?? []) as unknown as PlanMonth[];
   const currentMonth = months.find((m) => m.monthIndex === plan?.currentMonthIndex);
@@ -111,9 +112,12 @@ export function PathView({ plan, pendingPlan, refresh, setNotice }: PathViewProp
 
       {error ? <InlineAlert tone="error">{error}</InlineAlert> : null}
 
-      {/* 待确认的新版本 */}
+      {/* 待确认的新版本：独立预览，不替换当前计划（F08/T13） */}
       {pendingPlan ? (
         <div>
+          <div style={{ marginBottom: 8, fontSize: 13, color: "var(--cm-text-muted)" }}>
+            当前执行 <strong>v{plan?.version ?? "-"}</strong> · 建议 <strong>v{pendingPlan.version}</strong>（确认后执行，旧版本保留）
+          </div>
           <PlanSummaryCard plan={pendingPlan} onAcceptReplan={acceptPendingPlan} />
         </div>
       ) : null}
