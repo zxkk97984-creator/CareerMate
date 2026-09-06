@@ -11,6 +11,7 @@ import { createProfileMutationService } from "@/lib/profile/profile-mutation-ser
 import { createMemoryProposalService } from "@/lib/memory/proposal-service";
 import { convertV2ToV1Arrays } from "@/lib/plans/compatibility";
 import { getPrisma } from "@/lib/prisma";
+import { buildProviderHistory, resolveSearchPolicy, validateSourceRefs } from "@/lib/chat/stream-helpers";
 import type { RetrievalItem, TboxHistoryMessage } from "@/lib/tbox/types";
 import { classifyCareerChatIntent } from "./context";
 import { retrieveWithTbox } from "@/lib/tbox/retrieval";
@@ -825,52 +826,6 @@ function buildEnhancedQuestion(
     content: item.content.slice(0, 800),
   }));
   return `你是 CareerMate 职业规划助手。以下是已授权用户上下文：\n${trimmedContext}\n\n知识依据：${JSON.stringify(evidence)}\n\n回答策略：优先依据上方「知识依据」回答，知识库已覆盖的内容不要联网搜索；只有知识库没有、过时或不足（未知职业、薪资趋势、招聘市场、行业动态等时效信息）时才调用搜索工具补充。\n来源标注：知识库内容标注「已核验职业库」，联网搜索补充标注「实时联网调研」并给出真实链接，自行推断标注「AI分析与推断」，不得伪造URL。\n\n用户原始问题：${userMessage}`;
-}
-
-// ── 构建 provider_history 模式的历史消息（排除本轮消息）──
-
-function buildProviderHistory(
-  messages: Array<{ id: string; role: string; content: string; status: string }>,
-  excludeUserMsgId: string,
-): TboxHistoryMessage[] {
-  return messages
-    .filter((m) => m.status === "completed" && m.content && m.id !== excludeUserMsgId)
-    .slice(-12)
-    .map((m) => ({ role: m.role as "user" | "assistant", content: m.content.slice(0, 800) }));
-}
-
-// ── 确定搜索策略 ─────────────────────────────────────
-
-function resolveSearchPolicy(
-  userMessage: string,
-  ctx: { searchPolicy: string; scope: string },
-): "off" | "allowed" | "required" {
-  // 非职业 scope → off
-  if (ctx.scope === "general_minimal" || ctx.scope === "privacy") return "off";
-  // 显式联网请求、未知职业、薪资趋势等时效问题 → required
-  const msg = userMessage.toLowerCase();
-  if (/联网|搜索|查一下|最新|薪资|工资|趋势|招聘|行情|市场/.test(msg)) return "required";
-  if (/介绍|了解|什么是|怎么样|前景/.test(msg) && /岗位|职业|工作/.test(msg)) return "required";
-  return ctx.searchPolicy as "off" | "allowed" | "required";
-}
-
-// ── 辅助：校验 sourceRefs 与 citations 绑定 ──
-
-function validateSourceRefs(
-  sourceRefs: Array<{ citationIndex?: number; kind?: string }> | undefined,
-  _toolCalls: unknown[],
-  citations: unknown[],
-): Array<{ citationIndex: number; kind: string }> {
-  if (!sourceRefs || !Array.isArray(sourceRefs)) return [];
-  const valid: Array<{ citationIndex: number; kind: string }> = [];
-  for (const ref of sourceRefs) {
-    const r = ref as Record<string, unknown>;
-    const idx = typeof r.citationIndex === "number" ? r.citationIndex : -1;
-    if (idx >= 0 && idx < citations.length) {
-      valid.push({ citationIndex: idx, kind: (r.kind as string) ?? "ai_inference" });
-    }
-  }
-  return valid;
 }
 
 // ── 辅助：应用 AgentResponse.task/questions 到会话状态 ──
