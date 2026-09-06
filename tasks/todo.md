@@ -55,9 +55,9 @@
 - [x] T23b 公开部署的限流位置、配置、429 行为和适用范围。 — 证据见 [t23b-baseline.md](t23b-baseline.md)；限流放反向代理/网关层（不做进程内 Map 冒充多实例——plan 明确禁止）；DEPLOY.md §8 记录位置/阈值建议/429+Retry-After+恢复文案/多实例适用边界；客户端已识别 RATE_LIMITED；应用层 16KB 上限与敏感键脱敏已覆盖。
 - [x] T24 去重业务事件、脱敏诊断与模式分离的运行记录。 — 证据见 [t24-baseline.md](t24-baseline.md)；新增 `diagnostics.ts`（requestId/operation/elapsedMs/mode/degraded/errorCode、`redactForDiagnostics` 删敏感键、`isMock` 模式分离、本地 JSONL、dedupeKey 去重）+5 用例；`ProgressLog` 加可空 `dedupeKey`+`@@unique([userId,dedupeKey])` 迁移；candidate-resolution 学习路线已接入 `accept:{type}:{candidateId}` 去重键。
 - [x] T25a E2E 数据/运行模式/浏览器环境隔离。 — 证据见 [t25a-baseline.md](t25a-baseline.md)；`e2e-server.mjs` 显式固定 `CAREERMATE_AGENTIC_V2`（默认 false，`E2E_AGENTIC_V2=true` 跑 V2 mock）不继承开发机配置、改 `db push` 为 `migrate deploy` 建独立库；`package.json` 加 `test:e2e:v2`/`e2e:serve:v2` 分开基础 mock 与 V2 mock。
-- [ ] T25b 更新主链路 E2E，覆盖 plan 中 E01–E19。
-- [ ] T25c CI 门禁与失败产物，更新真实验证说明。
-- [ ] T26 准备脚本，由负责人完成 5–8 人真实验证并记录迭代。
+- [ ] T25b 更新主链路 E2E，覆盖 plan 中 E01–E19。 — ⚠️ 需浏览器环境执行：`chat-home.spec.ts` 基于旧独立聊天首页（`/` 渲染聊天 + `.new-chat-btn`/“你好，我是 CareerMate”/侧栏会话），与本轮产品（/chat→dashboard、助手在面板、root 按画像路由）已明显不符，需在真实浏览器/DOM 下重写断言后运行；本节点环境无浏览器无法实测。E01–E19 到现有 spec 的映射见 `tasks/t25b-baseline.md`（待浏览器）。
+- [ ] T25c CI 门禁与失败产物，更新真实验证说明。 — ⚠️ 需 CI/隔离环境：`npm run verify`（secret:scan+lint+typecheck+test+test:migrations+build）已全绿可作门禁脚本；需新增 `.github/workflows/ci.yml`、失败上传 trace/screenshot/log（禁 .env/用户 DB）、浏览器方案（Playwright Chromium vs chrome channel）在 CI 记录。本环境无 CI 无法建立真实 workflow。
+- [ ] T26 准备脚本，由负责人完成 5–8 人真实验证并记录迭代。 — ⚠️ 需真实目标用户：准备匿名验证/记录脚本可行，但 5–8 人验证与迭代须由负责人执行；非本环境可完成。
 
 ## 验证记录
 
@@ -93,10 +93,19 @@
 | T23a | 执行 agent / 2026-09-06 | `api.ts` 加 `parseBodyJson`+`RequestBodyError`+bodyTooLarge；`auth/login`、`auth/register` 改用并归一化、补 schema 长度上限、register 捕获 P2002 竞态转稳定 400；`api.test.ts`(+5)、login/register route.test(+2/+4) | `tsc --noEmit` 通过；auth/api 11/11；密码/哈希无日志；全量 139/1191；`npm run lint` 0/0；`npm run build` exit 0 | 节点环境无浏览器 | 部署层限流/日志脱敏审计部分属 T23b/T24；聊天大 body 上限未套用 |
 | T24 | 执行 agent / 2026-09-06 | `diagnostics.ts` 脱敏诊断+模式分离+dedupeKey+本地 JSONL(+5 用例)；`schema.prisma`+迁移 ProgressLog 加可空 dedupeKey+唯一；`candidate-resolution.ts` 学习路线 ProgressLog 接入 `accept:{type}:{candidateId}` 去重键 | `tsc --noEmit` 通过；diagnostics 5/5；candidate-resolution 10/10；`npm run test:migrations` 通过；全量 140/1196；`npm run lint` 0/0；`npm run build` exit 0 | 节点环境无浏览器 | 其他业务事件去重键未逐个接入；UI→服务日志 requestId 联调留 T25；诊断目录与隐私清空的覆盖待定 |
 | T23b | 执行 agent / 2026-09-06 | DEPLOY.md §8：限流放反向代理/网关层，记录位置/阈值建议(login 5/分、register 3/分、chat 30/分、generate 3/时、complete 10/时)/429+Retry-After+恢复文案/多实例边界；不做进程内 Map 冒充多实例 | `npm run lint` 0/0；全量 140/1196；`npm run build` exit 0；client-api 既有 429→RATE_LIMITED 用例 | 无部署环境 | 实际限流需反向代理实施，仓库无法脱离部署实测；不提供 Redis 共享限流 |
+| T25a | 执行 agent / 2026-09-06 | `e2e-server.mjs` 显式固定 `CAREERMATE_AGENTIC_V2`(默认 false,`E2E_AGENTIC_V2=true` 跑 V2 mock)、改 `db push` 为 `migrate deploy` 建独立库；`package.json` 加 `test:e2e:v2`/`e2e:serve:v2` 分开基础 mock 与 V2 mock | `npm run test:migrations` 通过；`node --check e2e-server.mjs` 通过；`npm run lint` 0/0；`tsc --noEmit` 通过 | 节点环境无浏览器，E2E 实际运行需浏览器 | E2E 断言重写与运行需浏览器/CI（T25b/T25c） |
 | 评估与计划 | 当前评估 / 2026-09-06 | 仅 tasks/ 文档与截图 | baseline 见评估报告；非全绿 | 7 张本次截图 | 产品优化尚未执行 |
 
 ## 下一位 agent 从这里开始
 
-已完成并各自提交：T01、T02(a/b)、T03、T04、T05、T08a、T08b、T09（见上表各证据的 t*-baseline.md）。当前 `npm run lint` 0/0、`npm run test` 126 文件/1106 用例全绿、`npm run build` exit 0。
+本 session 已完成并各自提交（提交记录见上表）：T03–T05、T06a/b、T07a/b、T08a/b、T09、T10a/b/c、T11–T15、T16a/b、T17a/b、T18、T19、T20、T21a/b、T22、T23a/b、T24、T25a。当前全绿：`npm run typecheck` 通过、`npm run test` 140 文件/1196 用例、`npm run lint` 0/0、`npm run build` exit 0、`npm run test:migrations` 通过。
 
-下一步：**T06a/T06b/T07a/T07b（助手控制器/面板/入口）**。⚠️ 这些任务与另一 agent 在 `src/components/chat/message-parts.tsx` 的未提交聊天状态重构存在重叠，plan §7.2 明确“不得两人同时重构聊天状态”；建议先让该 WIP 落定后再接 T06，并保留 T05 的历史回归测试。其余未执行项按 plan 顺序继续。
+**仍在产品代码中的未提交改动**：`src/components/chat/message-parts.tsx` —— 属另一 agent 的聊天状态重构 WIP，本次全程未触碰、未纳入任何提交，请该 WIP 落定后再处理。
+
+**剩余（需浏览器/CI/真实用户环境，本节点环境无法执行，未伪装标绿）**：
+- **T25b**：重写 `e2e/chat-home.spec.ts`（基于旧独立聊天首页，与本轮产品/chat→dashboard、助手在面板不符）并运行 P0 流程（E01–E19）。需真实 Playwright 环境。E01–E19 映射见 `tasks/t25b-baseline.md`（占位待浏览器）。
+- **T25c**：新增 `.github/workflows/ci.yml`（`npm run verify` 已全绿可作门禁）、失败上传 trace/screenshot/log、浏览器方案（Playwright Chromium vs chrome channel）记录。需 CI/隔离环境。
+- **T26**：5–8 人目标用户真实验证与迭代记录。需真实用户，由负责人执行。
+
+请在有浏览器/CI 的环境下按 T25b→T25c→T26 继续，并顺带核验上述各任务待浏览器验证的剩余项（断点/对比度/纯键盘/流式/性能测量等，见各 t*-baseline.md 的“待浏览器验证”）。
+
