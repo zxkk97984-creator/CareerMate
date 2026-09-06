@@ -5910,3 +5910,83 @@ body {
   position: relative;
   z-index: 1;
 }
+
+/* ── AI 助手面板（T06b/T07b） ─────────────────────────── */
+.assistant-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: var(--cm-surface, #fff);
+  border-left: 1px solid var(--cm-border, #e5e5e2);
+  box-shadow: var(--cm-shadow-float, 0 12px 40px rgba(0, 0, 0, 0.12));
+  z-index: 40;
+  max-width: 100vw;
+}
+.assistant-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.assistant-panel-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--cm-text-strong, #17181a);
+}
+.assistant-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.assistant-panel-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  border-radius: var(--cm-radius-control, 12px);
+  border: none;
+  background: transparent;
+  color: var(--cm-text-muted, #5f6b7a);
+  cursor: pointer;
+}
+.assistant-panel-actions button:hover {
+  background: var(--cm-surface-soft, #f2f3f1);
+  color: var(--cm-text-strong, #17181a);
+}
+.assistant-panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.assistant-panel-composer {
+  flex-shrink: 0;
+}
+.assistant-entry-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 手机：全屏 sheet（100dvh + safe-area），输入贴键盘上沿，消息区独立滚动 */
+@media (max-width: 767px) {
+  .assistant-panel {
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100vw !important;
+    height: 100dvh;
+    padding-top: calc(12px + env(safe-area-inset-top));
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    border-left: none;
+  }
+}
