@@ -52,7 +52,7 @@
 - [x] T21b 列表分页、总数语义与用户隔离。 — 证据见 [t21b-baseline.md](t21b-baseline.md)；`/api/agentic-v2/candidates` 加有上限 limit(max100)+稳定游标(createdAt)+真实 total(count)，响应 `{items,total,nextCursor}`；侧栏/概览待确认计数改用 `v2CandidateTotal`（不误用页长）；跨用户隔离保留。
 - [x] T22 流式服务按职责小步拆分，兼容行为不变。 — 证据见 [t22-baseline.md](t22-baseline.md)；新增 `stream-helpers.ts` 等 3 个无副作用纯 helper（resolveSearchPolicy/buildProviderHistory/validateSourceRefs）并加 7 用例；stream-service 改为 import 同一逻辑并删除本地重复（-85 行），调用点不变；stateful/legacy 24 回归用例通过；不引入多层 pipeline、不删兼容模式。
 - [x] T23a 认证请求体/错误/注册并发边界。 — 证据见 [t23a-baseline.md](t23a-baseline.md)；`api.ts` 加 `parseBodyJson`（16KB 上限→413、空体/坏体→400）；login/register 改用并归一化，schema 补长度上限；register 捕获 P2002 并发竞态转稳定 400“用户名已存在”；错误可分类、不暴露原始异常；无密码/哈希日志。
-- [ ] T23b 公开部署的限流位置、配置、429 行为和适用范围。
+- [x] T23b 公开部署的限流位置、配置、429 行为和适用范围。 — 证据见 [t23b-baseline.md](t23b-baseline.md)；限流放反向代理/网关层（不做进程内 Map 冒充多实例——plan 明确禁止）；DEPLOY.md §8 记录位置/阈值建议/429+Retry-After+恢复文案/多实例适用边界；客户端已识别 RATE_LIMITED；应用层 16KB 上限与敏感键脱敏已覆盖。
 - [x] T24 去重业务事件、脱敏诊断与模式分离的运行记录。 — 证据见 [t24-baseline.md](t24-baseline.md)；新增 `diagnostics.ts`（requestId/operation/elapsedMs/mode/degraded/errorCode、`redactForDiagnostics` 删敏感键、`isMock` 模式分离、本地 JSONL、dedupeKey 去重）+5 用例；`ProgressLog` 加可空 `dedupeKey`+`@@unique([userId,dedupeKey])` 迁移；candidate-resolution 学习路线已接入 `accept:{type}:{candidateId}` 去重键。
 - [ ] T25a E2E 数据/运行模式/浏览器环境隔离。
 - [ ] T25b 更新主链路 E2E，覆盖 plan 中 E01–E19。
@@ -92,6 +92,7 @@
 | T22 | 执行 agent / 2026-09-06 | `stream-helpers.ts` 提取 3 纯 helper + `stream-helpers.test.ts`(+7 用例)；`stream-service.ts` import 同一逻辑删本地重复(-85 行)，调用点不变 | `tsc --noEmit` 通过；stream-helpers 7/7；既有 stream stateful/base 24/24；全量 136/1180；`npm run lint` 0/0；`npm run build` exit 0 | 节点环境无浏览器 | 未对控制流做更大重构（刻意避免无浏览器下的高风险重组）；一轮对话生命周期可读性/流式中断浏览器验证留 T25 |
 | T23a | 执行 agent / 2026-09-06 | `api.ts` 加 `parseBodyJson`+`RequestBodyError`+bodyTooLarge；`auth/login`、`auth/register` 改用并归一化、补 schema 长度上限、register 捕获 P2002 竞态转稳定 400；`api.test.ts`(+5)、login/register route.test(+2/+4) | `tsc --noEmit` 通过；auth/api 11/11；密码/哈希无日志；全量 139/1191；`npm run lint` 0/0；`npm run build` exit 0 | 节点环境无浏览器 | 部署层限流/日志脱敏审计部分属 T23b/T24；聊天大 body 上限未套用 |
 | T24 | 执行 agent / 2026-09-06 | `diagnostics.ts` 脱敏诊断+模式分离+dedupeKey+本地 JSONL(+5 用例)；`schema.prisma`+迁移 ProgressLog 加可空 dedupeKey+唯一；`candidate-resolution.ts` 学习路线 ProgressLog 接入 `accept:{type}:{candidateId}` 去重键 | `tsc --noEmit` 通过；diagnostics 5/5；candidate-resolution 10/10；`npm run test:migrations` 通过；全量 140/1196；`npm run lint` 0/0；`npm run build` exit 0 | 节点环境无浏览器 | 其他业务事件去重键未逐个接入；UI→服务日志 requestId 联调留 T25；诊断目录与隐私清空的覆盖待定 |
+| T23b | 执行 agent / 2026-09-06 | DEPLOY.md §8：限流放反向代理/网关层，记录位置/阈值建议(login 5/分、register 3/分、chat 30/分、generate 3/时、complete 10/时)/429+Retry-After+恢复文案/多实例边界；不做进程内 Map 冒充多实例 | `npm run lint` 0/0；全量 140/1196；`npm run build` exit 0；client-api 既有 429→RATE_LIMITED 用例 | 无部署环境 | 实际限流需反向代理实施，仓库无法脱离部署实测；不提供 Redis 共享限流 |
 | 评估与计划 | 当前评估 / 2026-09-06 | 仅 tasks/ 文档与截图 | baseline 见评估报告；非全绿 | 7 张本次截图 | 产品优化尚未执行 |
 
 ## 下一位 agent 从这里开始
