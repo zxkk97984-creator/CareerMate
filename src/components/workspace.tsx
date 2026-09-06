@@ -1,11 +1,9 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
-import { Menu } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { useMemo, useState } from "react";
+import { Menu, RefreshCw } from "lucide-react";
 import { SimulationView } from "@/features/simulation/simulation-view";
-// 旧 ChatView 已废弃，请使用 src/components/chat/chat-home.tsx 的主聊天入口
-// import { ChatView } from "@/features/chat/chat-view";
 import { DashboardView } from "@/features/dashboard/dashboard-view";
 import { OnboardingView } from "@/features/onboarding/onboarding-view";
 import { PathView } from "@/features/path/path-view";
@@ -14,11 +12,8 @@ import { MemoryView } from "@/features/memory/memory-view";
 import { AdminView } from "@/features/admin/admin-view";
 import { ProductSidebar } from "@/components/shell/product-sidebar";
 import { PageHeader } from "@/components/shell/page-header";
-import type { AiRuntimeSnapshot } from "@/lib/ai-runtime";
-import type { ActiveOnboardingConversation } from "@/lib/onboarding-resume";
-import type { AiExecutionMeta, CareerPlanDto, ProfileDto, ResourceItemDto } from "@/lib/types";
-import { fetchApi } from "@/lib/client-api";
-import type { View, MatchData, ProgressLogData, WorkspaceData } from "@/lib/workspace-types";
+import { useWorkspaceData, type ModuleKey } from "@/hooks/use-workspace-data";
+import type { View } from "@/lib/workspace-types";
 
 /** URL 路径 → 视图标识映射（用于根据当前路由决定渲染哪个视图组件） */
 const VIEW_BY_PATH: Record<string, View> = {
@@ -31,118 +26,61 @@ const VIEW_BY_PATH: Record<string, View> = {
   "/admin": "admin",
 };
 
+const MODULE_LABEL: Record<ModuleKey, string> = {
+  plan: "计划",
+  resources: "资源",
+  memories: "记忆",
+  candidates: "建议",
+  v2Candidates: "建议",
+  simulations: "训练",
+  admin: "草稿",
+};
+
 export function Workspace({ initialView, isAdmin = false }: { initialView: View; isAdmin?: boolean }) {
-  const router = useRouter();
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [view] = useState<View>(initialView);
-  const [data, setData] = useState<WorkspaceData>({
-    user: null,
-    profile: null,
-    plan: null,
-    pendingPlan: null,
-    planExecutionMeta: null,
-    resources: [],
-    memories: [],
-    candidates: [],
-    simulations: [],
-    drafts: [],
-    templates: [],
-    match: null,
-    recentProgressLogs: [],
-    aiRuntime: {
-      requestedMode: "mock",
-      actualMode: "mock",
-      degraded: false,
-      fallbackReason: null,
-      source: "runtime-config",
-    },
-    activeOnboardingConversation: null,
-  });
-  const [loading, setLoading] = useState(true);
-  const [notice, setNotice] = useState("正在读取成长档案...");
-  const [aiExecution, setAiExecution] = useState<AiRuntimeSnapshot>({
-    requestedMode: "mock",
-    actualMode: "mock",
-    degraded: false,
-    fallbackReason: null,
-    source: "runtime-config",
-  });
+  const { state, setNotice, updateAiRuntime, refresh, refreshSlices, retryFatal } = useWorkspaceData();
+  const { data, initialLoading, refreshing, fatal, moduleErrors, notice } = state;
 
-  const activeView = useMemo(() => {
-    return VIEW_BY_PATH[pathname] ?? view;
-  }, [pathname, view]);
+  const activeView = useMemo(() => VIEW_BY_PATH[pathname] ?? view, [pathname, view]);
 
-  async function loadAll() {
-    setLoading(true);
-    const me = await fetchApi<{
-      user: WorkspaceData["user"];
-      profile: ProfileDto | null;
-      match: MatchData | null;
-      recentProgressLogs: ProgressLogData[];
-      aiRuntime: AiRuntimeSnapshot;
-      activeOnboardingConversation: ActiveOnboardingConversation | null;
-    }>("/api/me");
-    if (!me.ok) {
-      router.push("/login");
-      return;
-    }
-    const [plan, resources, memories, candidates, v2Candidates, simulations, admin] = await Promise.all([
-      fetchApi<{ plan: CareerPlanDto | null; pendingPlan: CareerPlanDto | null; executionMeta: AiExecutionMeta | null }>("/api/plans/current"),
-      fetchApi<{ items: ResourceItemDto[] }>("/api/resources"),
-      fetchApi<{ items: any[] }>("/api/memories"),
-      fetchApi<{ items: any[] }>("/api/profile/candidates"),
-      fetchApi<{ items: any[] }>("/api/agentic-v2/candidates?status=pending"),
-      fetchApi<{ items: any[] }>("/api/simulations"),
-      isAdmin ? fetchApi<{ drafts: any[]; templates: any[] }>("/api/admin/role-drafts") : Promise.resolve({ ok: true, data: { drafts: [], templates: [] } }),
-    ]);
-    setData({
-      user: me.data.user,
-      profile: me.data.profile,
-      plan: plan.ok ? plan.data.plan : null,
-      pendingPlan: plan.ok ? plan.data.pendingPlan : null,
-      planExecutionMeta: plan.ok ? plan.data.executionMeta : null,
-      resources: resources.ok ? resources.data.items : [],
-      memories: memories.ok ? memories.data.items : [],
-      candidates: candidates.ok ? candidates.data.items : [],
-      v2Candidates: v2Candidates.ok ? v2Candidates.data.items : [],
-      simulations: simulations.ok ? simulations.data.items : [],
-      drafts: admin.ok ? admin.data.drafts : [],
-      templates: admin.ok ? admin.data.templates : [],
-      match: me.data.match,
-      recentProgressLogs: me.data.recentProgressLogs,
-      aiRuntime: me.data.aiRuntime,
-      activeOnboardingConversation: me.data.activeOnboardingConversation,
-    });
-    setAiExecution(me.data.aiRuntime);
-    setLoading(false);
-    setNotice("CareerMate 已准备好，可以继续推进你的本月任务。");
-  }
-
-  useEffect(() => {
-    void loadAll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  if (loading || !data.user || !data.profile) {
+  // 首次加载且尚无数据：整页骨架；fatal 时保留壳并显示重试
+  if (initialLoading && !data.user) {
     return (
       <main style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--cm-canvas)" }}>
         <div className="cm-loading" style={{ borderRadius: "var(--cm-radius-card)", border: "1px solid var(--cm-border)", background: "var(--cm-surface)", padding: "20px 24px", fontSize: 14, color: "var(--cm-text-muted)", boxShadow: "var(--cm-shadow-card)" }}>
           <span className="cm-spinner" aria-hidden="true" />
-          正在加载 CareerMate 工作台...
+          正在读取你的成长记录...
         </div>
       </main>
     );
   }
 
-  const pendingCandidateCount = data.candidates.filter((c: any) => c.status === "pending").length
+  if (!data.user || !data.profile) {
+    return (
+      <main style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--cm-canvas)" }}>
+        <div className="cm-loading" style={{ borderRadius: "var(--cm-radius-card)", border: "1px solid var(--cm-border)", background: "var(--cm-surface)", padding: "24px 28px", fontSize: 14, color: "var(--cm-text-strong)", boxShadow: "var(--cm-shadow-card)", maxWidth: 420 }}>
+          <p>你的成长记录暂时未能加载。</p>
+          <p style={{ color: "var(--cm-text-muted)", margin: "8px 0 16px" }}>{fatal ?? "请检查网络后重试。"}</p>
+          <button type="button" className="cm-btn cm-btn-primary" onClick={() => void retryFatal()}>
+            重试加载
+          </button>
+        </div>
+      </main>
+    );
+  }
+
+  const pendingCandidateCount = (data.candidates || []).filter((c: any) => c.status === "pending").length
     + (data.v2Candidates ?? []).length; // V2 候选列表接口已按 status=pending 过滤
+
+  const failedModules = (Object.keys(moduleErrors) as ModuleKey[]).filter((k) => moduleErrors[k]);
 
   return (
     <div
       className="chat-home-layout"
       data-testid="app-shell"
-      data-ai-mode={aiExecution.actualMode}
+      data-ai-mode={data.aiRuntime.actualMode}
     >
       {/* 移动端遮罩 */}
       {sidebarOpen && (
@@ -179,6 +117,7 @@ export function Workspace({ initialView, isAdmin = false }: { initialView: View;
           <span className="topbar-title">
             {data.profile.targetRoleLabel ?? "未设置目标岗位"} 工作台
           </span>
+          {refreshing && <span className="workspace-refreshing" aria-live="polite">正在更新</span>}
         </header>
 
         {/* 可滚动主内容（移动端预留菜单按钮空间） */}
@@ -189,25 +128,39 @@ export function Workspace({ initialView, isAdmin = false }: { initialView: View;
             description={`${data.user.displayName} · ${data.profile.major || "未填写专业"} · 每周 ${data.profile.weeklyAvailableHours ?? 0} 小时`}
           />
 
+          {/* 局部模块失败：就地提示 + 重试，不阻断其他模块、不伪装成空列表 */}
+          {failedModules.length > 0 && (
+            <div className="workspace-module-error" role="alert">
+              <span>{failedModules.map((k) => MODULE_LABEL[k]).join("、")}未能加载。</span>
+              <button
+                type="button"
+                className="workspace-module-retry"
+                onClick={() => { void refreshSlices(failedModules); }}
+              >
+                <RefreshCw size={14} /> 重试
+              </button>
+            </div>
+          )}
+
           {/* 状态提示（辅助技术可见） */}
           <div className="sr-only" aria-live="polite" aria-atomic="true">{notice}</div>
 
           {/* 视图内容 */}
           <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-          {activeView === "dashboard" && <DashboardView data={data} refresh={loadAll} setNotice={setNotice} />}
+          {activeView === "dashboard" && <DashboardView data={data} refresh={refresh} setNotice={setNotice} />}
           {activeView === "onboarding" && (
             <OnboardingView
-              refresh={loadAll}
+              refresh={refresh}
               setNotice={setNotice}
-              setAiExecution={setAiExecution}
+              setAiExecution={updateAiRuntime}
               activeConversation={data.activeOnboardingConversation}
             />
           )}
-          {activeView === "path" && <PathView plan={data.plan} pendingPlan={data.pendingPlan} executionMeta={data.planExecutionMeta} refresh={loadAll} setNotice={setNotice} />}
-          {activeView === "simulation" && <SimulationView simulations={data.simulations} profile={data.profile} refresh={loadAll} setNotice={setNotice} />}
+          {activeView === "path" && <PathView plan={data.plan} pendingPlan={data.pendingPlan} executionMeta={data.planExecutionMeta} refresh={refresh} setNotice={setNotice} />}
+          {activeView === "simulation" && <SimulationView simulations={data.simulations} profile={data.profile} refresh={refresh} setNotice={setNotice} />}
           {activeView === "resources" && <ResourceView resources={data.resources} profile={data.profile} weakAbilities={data.match?.weakAbilities ?? []} />}
-          {activeView === "memory" && <MemoryView memories={data.memories} candidates={data.candidates} v2Candidates={data.v2Candidates} memoryEnabled={data.profile.memoryEnabled} refresh={loadAll} setNotice={setNotice} />}
-          {activeView === "admin" && <AdminView drafts={data.drafts} templates={data.templates} refresh={loadAll} setNotice={setNotice} />}
+          {activeView === "memory" && <MemoryView memories={data.memories} candidates={data.candidates} v2Candidates={data.v2Candidates} memoryEnabled={data.profile.memoryEnabled} refresh={refresh} setNotice={setNotice} />}
+          {activeView === "admin" && <AdminView drafts={data.drafts} templates={data.templates} refresh={refresh} setNotice={setNotice} />}
           </div>
         </div>
       </main>
