@@ -15,13 +15,14 @@ CareerMate 是一个基于 Next.js、Prisma、SQLite 和百宝箱 AI 适配层�
 | `/path` | 职业路径、计划版本、时间线和任务状态 |
 | `/simulation` | 多轮职场场景训练与评分 |
 | `/resources` | 本地资源筛选和百宝箱检索 |
-| `/memory` | 长期记忆、画像候选、隐私导出和清空 |
+| `/memory` | 待确认建议、画像与证据、长期记忆 |
+| `/settings` | 账号（头像、显示名、密码）、AI 陪伴形象、隐私导出与清空 |
 | `/admin` | 管理员岗位草稿审核和岗位模板库 |
 | `/chat` | 全屏 AI 对话、历史会话、成长档案 |
 
 登录后的主入口为 `/chat`；各业务页顶部的 AI 助手与全屏聊天共享会话、消息和草稿。支持历史恢复、重命名、删除、Markdown、引用、候选卡片和失败重试，继续使用现有百宝箱 API / SSE 链路。
 
-全局浮动 AI 桌宠参考 K12-Learning-platform 的可拖拽实现，默认霜铃精灵动画，可切换 Kurisu Live2D 或收起，动画跟随输入、等待和回复状态；减少动态效果偏好下保留静态姿态。桌宠可拖到任意位置、用方向键移动，选择与位置都会记忆。外观选择不影响业务数据或 AI 接入。
+全局浮动 AI 桌宠参考 K12-Learning-platform 的可拖拽实现，默认霜铃精灵动画，动画跟随输入、等待和回复状态；减少动态效果偏好下保留静态姿态。桌宠可拖到任意位置、用方向键移动，位置会记忆并保存在浏览器 localStorage。形象的切换统一在 `/settings → AI 陪伴形象` 完成（可切换 Kurisu Live2D 或收起），悬浮窗不再提供即时切换菜单；隐藏后可点“打开 AI 陪伴形象”恢复。外观选择只影响形象与位置，不影响业务数据或 AI 接入。
 
 ## 核心闭环
 
@@ -61,7 +62,7 @@ flowchart TB
 
 - `src/app/`：页面路由和 API Route Handler。
 - `src/components/`：工作台、聊天、Kurisu、候选卡片和通用 UI。
-- `src/features/`：dashboard、onboarding、path、simulation、resources、memory、admin 视图。
+- `src/features/`：dashboard、onboarding、path、simulation、resources、memory、settings、admin 视图。
 - `src/lib/chat/`：会话、消息、幂等轮次、上下文、SSE 和持久化。
 - `src/lib/tbox/`：百宝箱 HTTP/SSE、检索、Mock/Manual fallback 和结构化结果。
 - `src/lib/agentic-v2/`：ArtifactV1 契约、候选创建、候选接受和正式投影。
@@ -125,6 +126,32 @@ npm run dev
 
 如果本地数据库需要重建，请先备份 `prisma/dev.db`。E2E 测试会使用独立的 `prisma/e2e.db`，不会复用开发数据库。
 
+### 使用同伴提供的环境与数据（团队移交）
+
+若同伴给你的是 `careermate-handoff-config-*.zip`（包含 `.env` 与 `prisma/dev.db`），按以下步骤直接配置并运行：
+
+```bash
+# 1. 解压到仓库根目录，覆盖已有 .env，并确保 prisma/dev.db 存在
+unzip <你收到的压缩包名>.zip -d .
+
+# 2. 安装依赖 + 生成 Prisma Client
+npm install
+npm run prisma:generate
+
+# 3. 应用已有迁移（使用现成 dev.db 时通常为无操作）
+npm run db:migrate:deploy
+
+# 4. 启动
+npm run dev
+```
+
+重要约束：
+
+- **不要执行 `npm run seed`**——seed 会清空现有用户、画像、记忆、聊天等数据并重建演示数据。
+- `.env` 包含百宝箱 API Key 等密钥，`prisma/dev.db` 包含账号、头像、记忆和聊天等个人数据，两者都不得提交 Git 或公开分享，只能私密移交。
+- 数据库中的 `DATABASE_URL` 为相对路径 `file:./dev.db`，换机器无需修改；若开发浏览器插件/MCP，请在 `.env` 中按需配置 `CAREERMATE_MCP_ALLOWED_ORIGINS`、`CAREERMATE_PLUGIN_USER_ID` 和 `ALLOW_UNAUTHENTICATED_PLUGIN`。
+- 启动后可用移交账号登录（默认 `student_lin` / `careermate123`），发一条消息确认走的是“百宝箱 API · 真实链路”而非 Mock/演示回复。
+
 ## 常用命令
 
 | 命令 | 用途 |
@@ -158,6 +185,7 @@ Windows 可把 `npm` 替换为 `npm.cmd`。
 - `/api/resources`：资源查询和筛选。
 - `/api/memories`、`/api/memory/*`：记忆增删改、候选决策和记忆开关。
 - `/api/privacy/*`：数据导出和清空成长数据。
+- `/api/account`、`/api/account/password`：账号资料（显示名、头像 base64）更新和修改密码。
 - `/api/agentic-v2/candidates/*`：V2 候选查询、接受和拒绝。
 - `/api/admin/role-drafts/*`：管理员岗位草稿和岗位模板审核。
 
@@ -167,7 +195,7 @@ Windows 可把 `npm` 替换为 `npm.cmd`。
 
 核心模型位于 `prisma/schema.prisma`：
 
-- 用户与认证：`User`、`UserProfile`、`AuthSession`。
+- 用户与认证：`User`（含头像 `avatarDataUrl`）、`UserProfile`、`AuthSession`。
 - 画像引导：`OnboardingConversation`。
 - 聊天：`ChatConversation`、`ChatMessage`、`QuestionLedger`、`OperationExecution`。
 - 成长计划：`CareerPlan`、`LearningRoute`、`ProgressLog`。
@@ -186,7 +214,8 @@ SQLite 中的复杂字段以 JSON 字符串保存，边界转换统一经过 `sr
 - 画像、计划和学习路线候选使用 `baseVersion` 防止覆盖新数据。
 - 正式投影使用所有权检查、严格 Schema、幂等键和数据库事务。
 - V2 快照限制字段、数量、文本长度和总字节数；普通敏感度之外的记忆不会进入 V2 上下文。
-- 隐私导出不包含 `passwordHash`；清空成长数据保留账号和登录态。
+- 隐私导出不包含 `passwordHash`、头像 base64 和运行密钥；头像需随 `prisma/dev.db` 整体迁移。清空成长数据保留账号和登录态。
+- 陪伴形象选择和浮动宠物位置保存在浏览器 localStorage（`careermate-companion-appearance`、`careermate-companion-visible-appearance`、`careermate-companion-position`），不入数据库，换机器后在设置页重新选择即可。
 - 真实密钥只能放在未提交的 `.env` 或部署环境变量中。
 
 ## 文档与代码真源
