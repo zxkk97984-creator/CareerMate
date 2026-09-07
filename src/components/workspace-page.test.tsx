@@ -57,7 +57,7 @@ describe("WorkspacePage guards", () => {
   it("redirects a non-admin user away from the admin view to the home destination", async () => {
     mocks.getCurrentUser.mockResolvedValue({ profile: fullProfile, role: "user" });
     await expect(WorkspacePage({ view: "admin" })).rejects.toThrow("NEXT_REDIRECT");
-    expect(mocks.redirect).toHaveBeenCalledWith("/dashboard");
+    expect(mocks.redirect).toHaveBeenCalledWith("/chat");
   });
 
   it("allows an admin user to render the admin view", async () => {

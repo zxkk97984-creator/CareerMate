@@ -2,24 +2,28 @@
 
 import { useCallback, useRef, useState } from "react";
 import gsap from "gsap";
-import { Send, Square } from "lucide-react";
+import { ArrowUp, LoaderCircle } from "lucide-react";
 import { useMotionSafe } from "@/lib/motion/motion-safe";
 
 interface ChatComposerProps {
   onSend: (text: string) => void;
   disabled: boolean;
   activeConversationId: string | null;
+  value?: string;
+  onChange?: (text: string) => void;
 }
 
-export function ChatComposer({ onSend, disabled }: ChatComposerProps) {
-  const [text, setText] = useState("");
+export function ChatComposer({ onSend, disabled, value, onChange }: ChatComposerProps) {
+  const [localText, setLocalText] = useState("");
+  const text = value ?? localText;
+  const setText = useCallback((next: string) => { setLocalText(next); onChange?.(next); }, [onChange]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const sendBtnRef = useRef<HTMLButtonElement>(null);
   const motionSafe = useMotionSafe();
 
   const handleSend = useCallback(() => {
     const trimmed = text.trim();
-    if (!trimmed || trimmed.length > 8000) return;
+    if (!trimmed || trimmed.length > 8000 || disabled) return;
     onSend(trimmed);
     const btn = sendBtnRef.current;
     if (btn && motionSafe) {
@@ -30,11 +34,11 @@ export function ChatComposer({ onSend, disabled }: ChatComposerProps) {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
-  }, [text, onSend, motionSafe]);
+  }, [text, onSend, motionSafe, disabled, setText]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (e.key === "Enter" && !e.shiftKey) {
+      if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) {
         e.preventDefault();
         handleSend();
       }
@@ -71,7 +75,7 @@ export function ChatComposer({ onSend, disabled }: ChatComposerProps) {
           value={text}
           onChange={(e) => { setText(e.target.value); handleInput(); }}
           onKeyDown={handleKeyDown}
-          placeholder="输入你的问题，Enter 发送，Shift+Enter 换行"
+          placeholder="输入你的问题，聊聊目标、学习或面试…"
           rows={1}
           maxLength={8000}
           disabled={disabled}
@@ -85,14 +89,14 @@ export function ChatComposer({ onSend, disabled }: ChatComposerProps) {
           onPointerUp={releaseSend}
           onPointerLeave={releaseSend}
           disabled={!text.trim() || disabled || text.trim().length > 8000}
-          aria-label={disabled ? "停止生成" : "发送消息"}
+          aria-label={disabled ? "正在回复" : "发送消息"}
         >
-          {disabled ? <Square size={18} /> : <Send size={18} />}
+          {disabled ? <LoaderCircle className="cm-spinner-icon" size={19} /> : <ArrowUp size={20} />}
         </button>
       </div>
       <p className="composer-hint">
         {text.length > 0 && `${text.length}/8000 `}
-        CareerMate 的回答仅供参考，不构成职业建议
+        AI 建议仅供参考，重要变更由你确认。
       </p>
     </div>
   );

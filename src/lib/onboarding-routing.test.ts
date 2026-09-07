@@ -42,10 +42,10 @@ describe("onboarding routing", () => {
     expect(onboardingDestination({ onboardingCompleted: true }, "/dashboard")).toBe("/dashboard");
   });
 
-  it("sends completed profiles to the growth dashboard and incomplete ones to onboarding at the home entry", () => {
+  it("sends completed profiles to the primary chat and incomplete ones to onboarding at the home entry", () => {
     expect(homeDestination(null)).toBe("/onboarding");
     expect(homeDestination({ onboardingCompleted: false })).toBe("/onboarding");
-    expect(homeDestination({ onboardingCompleted: true })).toBe("/dashboard");
+    expect(homeDestination({ onboardingCompleted: true })).toBe("/chat");
   });
 
   it("creates registration profiles as incomplete and returns onboarding as the next path", async () => {

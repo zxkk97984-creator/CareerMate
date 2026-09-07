@@ -37,7 +37,7 @@ TBOX_API_KEY="<server-only-api-key>"
 TBOX_AGENT_ID="<validated-agent-id>"
 TBOX_AGENT_VERSION="<validated-agent-version>"
 CAREERMATE_AGENTIC_V2="true"
-TBOX_CONTEXT_TRANSPORT="business_data"
+TBOX_CONTEXT_TRANSPORT="question_prefix"
 TBOX_HISTORY_MODE="provider"
 STATEFUL_CHAT_TURNS="true"
 TBOX_SEARCH_ENGINE="false"
@@ -182,4 +182,3 @@ npm run build
 **多实例适用边界已记录：** 代理限流覆盖多实例（共享限流窗口）；若改为无代理的多实例直连，需另选共享存储的限流方案（如 Redis 令牌桶），本仓库不提供、也未宣称进程内方案多实例有效。
 
 **应用层不把原始密码/令牌/聊天正文写入诊断日志**（`src/lib/diagnostics.ts` 的 `redactForDiagnostics` 会删除敏感键，见 T24）。
-

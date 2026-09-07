@@ -9,7 +9,8 @@ async function login(page: import("@playwright/test").Page, username = "student_
   await page.getByLabel("账号").fill(username);
   await page.getByLabel("密码").fill("careermate123");
   await page.getByRole("button", { name: "进入 CareerMate" }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
+  await expect(page).toHaveURL(/\/chat/);
+  await page.goto("/dashboard");
 }
 
 async function openAssistant(page: import("@playwright/test").Page) {

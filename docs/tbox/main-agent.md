@@ -40,7 +40,12 @@ POST /api/chat/conversations/:id/stream
 
 ### Agentic V2 路径
 
-开启 `CAREERMATE_AGENTIC_V2=true` 后使用 `business_data`，数据结构为：
+开启 `CAREERMATE_AGENTIC_V2=true` 后仍按 `TBOX_CONTEXT_TRANSPORT` 选择传输方式：
+
+- `question_prefix`（当前默认）：把 `LoadAgenticV2SnapshotResult` 组装成的 `businessData` 快照嵌入用户不可见的问题前缀，请求字段不再单独发送 `business_data`。
+- `business_data`：把快照作为请求字段发送。
+
+两种方式使用相同快照结构，数据结构为：
 
 ```json
 {
@@ -109,6 +114,18 @@ nextActions: JSON array
 - source conversation 属于当前用户。
 
 无标签 JSON、多个 envelope、损坏 JSON 或 Schema 不匹配只能作为普通文本/警告处理，不得写入正式数据。
+
+### career_plan 精确契约
+
+聊天路径要求 Agent 在正文末尾输出 `taskType=career_plan` 的精确标签信封：
+
+```text
+data.plan = AiCareerPlanV2
+```
+
+`data` 顶层只能有 `plan` 字段，不允许把计划字段直接放在 `data` 顶层。Plan V2 必须包含 `schemaVersion=2`、`title`、`targetRole`、`summary`、`horizon`、`phases`、`immediateActions`、`assumptions`、`riskNotes`、`evidenceRefs`；`phases` 内与 `immediateActions` 的 `action.id` 必须全局唯一。
+
+`baseVersion` 使用 `historySnapshot.data.activePlan.version`；没有 active plan 时填 `0`。`status=pending_confirmation`，`requiresUserConfirmation=true`，后端只创建待确认候选，不直接改写正式计划。
 
 ## 四、旧 AgentResponse 路径
 

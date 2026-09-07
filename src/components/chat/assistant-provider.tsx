@@ -1,6 +1,7 @@
 "use client";
 
-import { createContext, useContext, type ReactNode } from "react";
+import { createContext, useContext, useEffect, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import { useAssistantController, type AssistantController } from "@/hooks/use-assistant-controller";
 
 const AssistantControllerContext = createContext<AssistantController | null>(null);
@@ -10,6 +11,12 @@ const AssistantControllerContext = createContext<AssistantController | null>(nul
  */
 export function AssistantProvider({ children }: { children: ReactNode }) {
   const controller = useAssistantController();
+  const pathname = usePathname();
+  const { initialize, reset } = controller;
+  useEffect(() => {
+    if (pathname === "/login" || pathname === "/") { reset(); return; }
+    void initialize();
+  }, [pathname, initialize, reset]);
   return (
     <AssistantControllerContext.Provider value={controller}>
       {children}

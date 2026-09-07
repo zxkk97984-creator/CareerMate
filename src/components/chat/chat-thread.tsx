@@ -7,7 +7,11 @@ import type { MessageItem } from "@/lib/chat/schemas";
 import type { ChatMessagePart } from "@/lib/chat/persistence";
 import { MessageParts } from "./message-parts";
 import { MemoizedMarkdown } from "./memoized-markdown";
-import { BrainCircuit, MessageSquareText, Sparkles, TrendingUp, UserRoundCheck } from "lucide-react";
+import Image from "next/image";
+import { ArrowUpRight, Check, Copy, Compass, Route, BookOpen, UserRoundCheck } from "lucide-react";
+import Link from "next/link";
+import { useCompanionAppearance } from "./companion-appearance-provider";
+import { companionAvatarUrl, companionDisplayName } from "./companion-appearance-options";
 
 interface ChatThreadProps {
   messages: MessageItem[];
@@ -22,28 +26,31 @@ interface ChatThreadProps {
   kurisuPhase?: "idle" | "waiting" | "speaking";
 }
 
-const SUGGESTED_QUESTIONS = [
-  "我想了解数据分析师需要哪些能力？",
-  "AI产品经理的日常工作是什么？",
-  "怎样评估我是否适合转行做内容运营？",
-  "帮我制定一个3个月的学习计划",
-];
+function CopyMessage({ content }: { content: string }) {
+  const [copied, setCopied] = useState(false);
+  const [failed, setFailed] = useState(false);
+  return <button className="message-copy" aria-label={copied ? "已复制回复" : "复制回复"} onClick={async () => {
+    try { await navigator.clipboard.writeText(content); setCopied(true); setFailed(false); } catch { setFailed(true); }
+  }}>{copied ? <Check size={15}/> : <Copy size={15}/>}<span>{failed ? "请选中文字复制" : copied ? "已复制" : "复制"}</span></button>;
+}
 
-/** 画像完善引导的快捷消息 */
-const PROFILE_GUIDANCE_MESSAGE = "我想完善我的职业画像";
-
-export function ChatThread({ messages, activeConversationId, onNewChat, onQuickAction, openChatEntry = true }: ChatThreadProps) {
+export function ChatThread({ messages, activeConversationId, onNewChat, onQuickAction }: ChatThreadProps) {
+  const { chatAppearance } = useCompanionAppearance();
+  const assistantName = companionDisplayName(chatAppearance);
+  const assistantAvatar = companionAvatarUrl(chatAppearance);
   const bottomRef = useRef<HTMLDivElement>(null);
   const threadRef = useRef<HTMLDivElement>(null);
   const seenIdsRef = useRef<Set<string>>(new Set());
   const prevLenRef = useRef(0);
   const firstRenderRef = useRef(true);
   const motionSafe = useMotionSafe();
-  const [profileGuidanceSent, setProfileGuidanceSent] = useState(false);
 
   // 自动滚动到底部
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const container = bottomRef.current?.closest(".chat-scroll-area") ?? threadRef.current;
+    if (!container) return;
+    const distance = container.scrollHeight - container.scrollTop - container.clientHeight;
+    if (distance < 220 || messages.at(-1)?.role === "user") bottomRef.current?.scrollIntoView({ behavior: "instant", block: "end" });
   }, [messages]);
 
   // 会话切换视为"首帧":重置入场状态,避免历史加载/整体替换触发入场动画
@@ -83,66 +90,25 @@ export function ChatThread({ messages, activeConversationId, onNewChat, onQuickA
     prevLenRef.current = len;
   }, [messages, motionSafe]);
 
-  // 空状态：欢迎页
   if (!activeConversationId && messages.length === 0) {
-    const handleStartProfileGuidance = () => {
-      if (profileGuidanceSent) return;
-      setProfileGuidanceSent(true);
-      // 发送画像引导消息，AI 会在会话中创建 profile_guidance task
-      onNewChat(PROFILE_GUIDANCE_MESSAGE);
-    };
-
-    return (
-      <div className="chat-welcome" data-od-id="chat-welcome">
-        <p className="welcome-eyebrow">CareerMate</p>
-        <h1 className="welcome-title">你好，我是 <span className="welcome-title-accent">CareerMate</span></h1>
-        <p className="welcome-subtitle">
-          你的 AI 职业成长伙伴。可以直接提问，也可以用 2 分钟完善画像，让我更懂你。
-        </p>
-        <div className="welcome-tags">
-          <span className="welcome-tag"><Sparkles size={14} />{"AI \u804c\u4e1a\u6210\u957f\u4f19\u4f34"}</span>
-          <span className="welcome-tag"><TrendingUp size={14} />{"成长档案持续更新"}</span>
-          <span className="welcome-tag"><BrainCircuit size={14} />{"模拟面试"}</span>
-        </div>
-
-        {/* 双入口：直接提问 + 完善画像 */}
-        {openChatEntry && (
-          <div className="welcome-actions">
-            <button
-              className="suggested-btn welcome-primary"
-              onClick={handleStartProfileGuidance}
-              disabled={profileGuidanceSent}
-            >
-              <UserRoundCheck size={18} />
-              {profileGuidanceSent ? "已发送…" : "用 2 分钟完善画像"}
-            </button>
-            <span className="welcome-or">
-              或直接提问 ↓
-            </span>
-          </div>
-        )}
-
-        <p className="suggested-title">
-          试试这些问题
-        </p>
-        <div className="suggested-questions">
-          {SUGGESTED_QUESTIONS.map((q, i) => (
-            <button
-              key={i}
-              className="suggested-btn"
-              onClick={() => onNewChat(q)}
-            >
-              <span className="suggested-btn-text">{q}</span>
-              <span className="suggested-btn-arrow" aria-hidden="true">{"\u2192"}</span>
-            </button>
-          ))}
-        </div>
+    return <div className="chat-welcome" data-od-id="chat-welcome">
+      <p className="welcome-eyebrow">{assistantName} · 你的职业成长伙伴</p>
+      <h1 className="welcome-title">把下一步，聊清楚。</h1>
+      <p className="welcome-subtitle">从你的目标出发，一起找到今天可以做的事。</p>
+      <div className="suggested-questions">
+        {[
+          { icon: Compass, title: "探索职业方向", text: "结合我的背景，帮我探索适合的职业方向" },
+          { icon: Route, title: "制定成长计划", text: "帮我制定一个3个月的学习计划" },
+          { icon: BookOpen, title: "寻找学习资源", text: "根据我的职业目标，推荐适合当前阶段的学习资源" },
+        ].map(item => <button className="suggested-btn" key={item.title} onClick={() => onNewChat(item.text)}><item.icon size={20}/><span>{item.title}</span><ArrowUpRight size={16}/></button>)}
       </div>
-    );
+      <Link href="/onboarding" className="welcome-profile-link"><UserRoundCheck size={16}/>完善职业画像，让建议更适合你<ArrowUpRight size={15}/></Link>
+    </div>;
   }
 
   return (
     <div ref={threadRef} className="chat-thread" role="log" aria-live="polite" aria-label="聊天消息">
+      <div className="conversation-intro"><p className="welcome-eyebrow">{assistantName}</p><h1>把下一步，聊清楚。</h1><p>从你的目标出发，一起找到今天可以做的事。</p></div>
       {messages.map(msg => (
         <div
           key={msg.id}
@@ -153,12 +119,11 @@ export function ChatThread({ messages, activeConversationId, onNewChat, onQuickA
             {msg.role === "user" ? (
               <div className="avatar-user">我</div>
             ) : (
-              <div className="avatar-assistant">
-                <MessageSquareText size={16} />
-              </div>
+                <Image className="assistant-portrait" src={assistantAvatar} width={40} height={40} alt="" />
             )}
           </div>
           <div className="message-body">
+            {msg.role === "assistant" && <span className="message-author">{assistantName}</span>}
             <div className="message-content">
               {msg.content ? (
                 msg.role === "assistant" ? (
@@ -175,9 +140,11 @@ export function ChatThread({ messages, activeConversationId, onNewChat, onQuickA
                 <MessageParts parts={msg.parts as ChatMessagePart[]} onQuickAction={onQuickAction} />
               )}
             </div>
+            {msg.role === "assistant" && msg.status === "completed" && msg.content && <CopyMessage content={msg.content}/>}
+            {msg.role === "assistant" && typeof msg.executionMeta === "object" && msg.executionMeta !== null && "actualMode" in msg.executionMeta && msg.executionMeta.actualMode !== "api" && <p className="message-source-note">{msg.executionMeta.actualMode === "mock" ? "演示回复" : "本地样例回复"} · 当前未使用实时 AI 结果</p>}
             {msg.status === "failed" && (
               <p className="message-error">
-                {((msg.parts as any[])?.find((p: any) => p.type === "error") as any)?.message || "回复失败，可以稍后重试"}
+                {"回复未完成，请使用输入框重试"}
               </p>
             )}
           </div>

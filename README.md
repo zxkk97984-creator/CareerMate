@@ -8,7 +8,7 @@ CareerMate 是一个基于 Next.js、Prisma、SQLite 和百宝箱 AI 适配层�
 
 | 地址 | 代码行为 |
 |---|---|
-| `/` | 未登录展示 Landing Page；已登录跳转 `/dashboard` |
+| `/` | 未登录展示 Landing Page；已完成画像的用户跳转 `/chat` |
 | `/login` | 登录和注册 |
 | `/onboarding` | 对话式职业画像引导 |
 | `/dashboard` | 成长概览、岗位匹配度、能力雷达和当前任务 |
@@ -17,9 +17,11 @@ CareerMate 是一个基于 Next.js、Prisma、SQLite 和百宝箱 AI 适配层�
 | `/resources` | 本地资源筛选和百宝箱检索 |
 | `/memory` | 长期记忆、画像候选、隐私导出和清空 |
 | `/admin` | 管理员岗位草稿审核和岗位模板库 |
-| `/chat` | 当前仅重定向到 `/dashboard` |
+| `/chat` | 全屏 AI 对话、历史会话、成长档案 |
 
-登录后的主要聊天入口是工作台页面中的全局 Kurisu 浮窗。它使用本地会话 API 和 SSE 流式接口，不依赖独立的 `/chat` 页面。主聊天组件仍保留在 `src/components/chat/chat-home.tsx`，但当前 App Router 没有直接挂载它。
+登录后的主入口为 `/chat`；各业务页顶部的 AI 助手与全屏聊天共享会话、消息和草稿。支持历史恢复、重命名、删除、Markdown、引用、候选卡片和失败重试，继续使用现有百宝箱 API / SSE 链路。
+
+全局浮动 AI 桌宠参考 K12-Learning-platform 的可拖拽实现，默认霜铃精灵动画，可切换 Kurisu Live2D 或收起，动画跟随输入、等待和回复状态；减少动态效果偏好下保留静态姿态。桌宠可拖到任意位置、用方向键移动，选择与位置都会记忆。外观选择不影响业务数据或 AI 接入。
 
 ## 核心闭环
 
@@ -49,7 +51,7 @@ flowchart TB
     S --> DB[(Prisma + SQLite)]
     S --> T[TBox 适配层]
     T --> M[Mock / Manual / API]
-    T --> V2[可选 Agentic V2 business_data]
+    T --> V2[可选 Agentic V2 快照上下文]
     V2 --> ART[CAREERMATE_ARTIFACT]
     ART --> C[候选校验与事务投影]
     C --> DB
@@ -81,7 +83,7 @@ flowchart TB
 
 ### Agentic V2
 
-设置 `CAREERMATE_AGENTIC_V2=true` 后，聊天请求会改用脱敏的 `business_data`：
+设置 `CAREERMATE_AGENTIC_V2=true` 后，聊天请求会按 `TBOX_CONTEXT_TRANSPORT` 发送脱敏业务快照。当前默认 `question_prefix` 会把快照嵌入用户不可见的问题前缀；配置为 `business_data` 时才通过请求字段发送：
 
 - `profileSnapshot`：当前用户画像和已确认能力证据。
 - `historySnapshot`：当前用户的计划、进度、模拟和记忆摘要。

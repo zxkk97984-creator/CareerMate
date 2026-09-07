@@ -4,6 +4,7 @@ import {
   BrainCircuit,
   Database,
   ShieldCheck,
+  Settings,
   MessageSquareText,
   UserCog,
   type LucideIcon,
@@ -20,11 +21,13 @@ export interface NavItem {
 
 /** 主功能导航 */
 export const mainNavItems: NavItem[] = [
+  { href: "/chat", label: "AI 对话", icon: MessageSquareText },
   { href: "/dashboard", label: "成长概览", icon: LayoutDashboard },
   { href: "/path", label: "职业路径", icon: Route },
   { href: "/simulation", label: "模拟训练", icon: BrainCircuit },
   { href: "/resources", label: "资源中心", icon: Database },
-  { href: "/memory", label: "记忆权限", icon: ShieldCheck },
+  { href: "/memory", label: "记忆", icon: ShieldCheck },
+  { href: "/settings", label: "设置", icon: Settings },
 ];
 
 /** 管理员专属导航 */
@@ -37,7 +40,7 @@ export const adminNavItem: NavItem = {
 
 /** 返回聊天入口 */
 export const chatNavItem: NavItem = {
-  href: "/",
+  href: "/chat",
   label: "返回 AI 对话",
   icon: MessageSquareText,
 };

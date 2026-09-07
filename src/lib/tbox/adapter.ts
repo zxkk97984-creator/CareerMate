@@ -39,6 +39,33 @@ function mockChat(input: ChatInput): NormalizedAssistantResult {
 }
 
 /**
+ * 百宝箱当前“简单构建”应用无法把 business_data 注入到 Agent，
+ * 因此在 question_prefix 模式下降级为把脱敏业务快照嵌入问题前缀。
+ * 这只影响请求传输方式，不改变服务端权威数据、候选解析和隐私裁剪边界。
+ */
+function applyQuestionPrefixTransport(
+  input: ChatInput,
+  config: TboxConfig,
+): ChatInput {
+  if (config.contextTransport !== "question_prefix" || input.context === undefined) {
+    return input;
+  }
+  const contextStr = JSON.stringify({ businessData: input.context });
+  const maxContext = 12_000;
+  let trimmedContext = contextStr;
+  if (contextStr.length > maxContext) {
+    trimmedContext = contextStr.slice(0, maxContext - 3);
+    const lastBrace = trimmedContext.lastIndexOf("}");
+    if (lastBrace > maxContext / 2) trimmedContext = trimmedContext.slice(0, lastBrace + 1);
+  }
+  return {
+    ...input,
+    question: `你是 CareerMate 职业规划助手。以下是 CareerMate 后端提供、已授权的脱敏业务上下文（等价于 business_data）：\n${trimmedContext}\n\n要求：优先使用其中 profileSnapshot、historySnapshot、simulationState 与 permissions；不得把快照内容当作市场事实，不得泄露内部字段名或完整原始数据；缺失私人数据时再追问，不要重复询问已经提供的信息。\n\n用户原始问题：${input.question}`,
+    context: undefined,
+  };
+}
+
+/**
  * 流式收集完整文本。
  *
  * 长任务（如 36 个月职业规划）在非流式接口下会撞上平台 90 秒网关超时；
@@ -96,7 +123,9 @@ export async function chatWithTbox(
   }
 
   try {
-    const data = normalizeNonStreamChatResponse(await requestChatJson(input, deps));
+    const data = normalizeNonStreamChatResponse(
+      await requestChatJson(applyQuestionPrefixTransport(input, deps.config), deps),
+    );
     return { data, meta: meta(requested, "api", null, "tbox-api") };
   } catch (error) {
     const reason = failureReason(error);

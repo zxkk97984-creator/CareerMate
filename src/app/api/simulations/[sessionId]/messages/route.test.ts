@@ -102,7 +102,7 @@ describe("POST /api/simulations/[sessionId]/messages", () => {
     expect(payload.data.assistantMessage).toBe("请补充可量化的验收标准。");
     expect(mocks.generateTurn).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: "session-1",
-      expectedRound: 1,
+      expectedRound: 2,
       remoteConversationId: "remote-1",
       transcript: [
         { role: "assistant", content: "请先说明目标。" },

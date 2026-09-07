@@ -18,11 +18,12 @@ interface PathViewProps {
   plan: CareerPlanDto | null;
   pendingPlan: CareerPlanDto | null;
   executionMeta: AiExecutionMeta | null;
+  profileRoleLabel?: string | null;
   refresh: () => Promise<void>;
   setNotice: (v: string) => void;
 }
 
-export function PathView({ plan, pendingPlan, refresh, setNotice }: PathViewProps) {
+export function PathView({ plan, pendingPlan, executionMeta, profileRoleLabel, refresh, setNotice }: PathViewProps) {
   const [busyTaskId, setBusyTaskId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
@@ -112,13 +113,32 @@ export function PathView({ plan, pendingPlan, refresh, setNotice }: PathViewProp
       {/* 页头：标题 + 主操作 */}
       <div className="path-head">
         <div>
-          <span className="path-eyebrow">Career Path</span>
-          <h2>职业路径</h2>
+          <span className="path-eyebrow">当前计划</span>
+
           <p className="path-head-desc">
             {plan
-              ? `目标岗位：${plan.targetRoleLabel ?? plan.targetRole} · 当前执行版本 v${plan.version}`
+              ? `目标岗位：${plan.targetRoleLabel ?? profileRoleLabel ?? plan.targetRole} · 当前执行版本 v${plan.version}`
               : "AI 会根据你的画像，生成一条可执行的成长路线。"}
           </p>
+          {executionMeta ? (
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                marginTop: 8,
+                padding: "3px 10px",
+                borderRadius: 999,
+                fontSize: 12,
+                fontWeight: 600,
+                color: executionMeta.actualMode === "api" ? "var(--cm-success)" : "var(--cm-warning)",
+                background: executionMeta.actualMode === "api" ? "var(--cm-success-bg)" : "var(--cm-warning-bg)",
+              }}
+            >
+              {executionMeta.actualMode === "api" ? "百宝箱 API · 真实链路" : `AI 来源：${executionMeta.actualMode}`}
+              {executionMeta.degraded ? "（已降级）" : ""}
+            </span>
+          ) : null}
         </div>
         <Button disabled={generating} onClick={generatePlan}>
           {generating ? "生成中..." : plan ? "重规划" : "生成路径"}
@@ -149,7 +169,7 @@ export function PathView({ plan, pendingPlan, refresh, setNotice }: PathViewProp
           {currentMonth ? (
             <section className="path-section">
               <div>
-                <span className="path-eyebrow">当前月 · Month {currentMonth.monthIndex}</span>
+                <span className="path-eyebrow">当前月 · 第 {currentMonth.monthIndex} 月</span>
                 <h3 className="path-section-title">{currentMonth.goal}</h3>
               </div>
               <ul className="path-task-list">
@@ -178,7 +198,7 @@ export function PathView({ plan, pendingPlan, refresh, setNotice }: PathViewProp
           {/* 计划时间线 */}
           <section className="path-section">
             <div>
-              <span className="path-eyebrow">Timeline</span>
+              <span className="path-eyebrow">长期方向</span>
               <h3 className="path-section-title">计划时间线</h3>
               <p className="path-section-sub">
                 按年展开，查看当前执行版本的季度里程碑与月度目标。

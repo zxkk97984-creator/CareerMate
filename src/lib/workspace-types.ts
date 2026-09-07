@@ -5,7 +5,7 @@ import type { CandidateDto } from "@/lib/types";
 import { abilityKeys } from "@/lib/types";
 
 /** 工作台视图标识 */
-export type View = "onboarding" | "dashboard" | "path" | "simulation" | "resources" | "memory" | "admin";
+export type View = "onboarding" | "dashboard" | "path" | "simulation" | "resources" | "memory" | "settings" | "admin";
 
 /** 通用 API 响应 */
 export interface ApiPayload<T> {
@@ -126,7 +126,7 @@ export interface RoleTemplateDto {
 
 /** 工作台聚合状态 */
 export interface WorkspaceData {
-  user: { id: string; displayName: string; username: string; role: string } | null;
+  user: { id: string; displayName: string; username: string; avatarDataUrl: string | null; role: string } | null;
   profile: ProfileDto | null;
   plan: CareerPlanDto | null;
   pendingPlan: CareerPlanDto | null;

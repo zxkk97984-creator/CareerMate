@@ -5741,17 +5741,17 @@ select.cm-select {
 /* ── AI 助手面板（T06b/T07b） ─────────────────────────── */
 .assistant-panel {
   position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
   padding: 16px;
   background: var(--cm-surface, #fff);
-  border-left: 1px solid var(--cm-border, #e5e5e2);
+  border: 1px solid var(--cm-border, #e5e5e2);
+  border-radius: 18px;
   box-shadow: var(--cm-shadow-float, 0 12px 40px rgba(0, 0, 0, 0.12));
-  z-index: 90;
+  box-sizing: border-box;
+  overflow: hidden;
+  z-index: 80;
   max-width: 100vw;
 }
 .assistant-panel-head {
@@ -5803,17 +5803,9 @@ select.cm-select {
   gap: 6px;
 }
 
-/* 手机：全屏 sheet（100dvh + safe-area），输入贴键盘上沿，消息区独立滚动 */
-@media (max-width: 767px) {
+/* 手机：底部抽屉（placePanel 提供尺寸），输入贴键盘上沿，消息区独立滚动 */
+@media (max-width: 720px) {
   .assistant-panel {
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    width: 100vw !important;
-    height: 100dvh;
-    padding-top: calc(12px + env(safe-area-inset-top));
-    padding-bottom: calc(12px + env(safe-area-inset-bottom));
-    border-left: none;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
   }
 }

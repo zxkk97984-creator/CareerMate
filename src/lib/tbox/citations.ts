@@ -93,11 +93,46 @@ interface ParsedResultRef {
   url?: string;
 }
 
+/** 夸克搜索（含正文）返回 resultSummary 为 JSON 对象，data 是文章数组。 */
+function parseQuarkResultSummary(summary: string): ParsedResultRef[] | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(summary);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object") return null;
+  const data = (parsed as { data?: unknown }).data;
+  if (!Array.isArray(data)) return null;
+
+  const refs: ParsedResultRef[] = [];
+  for (let index = 0; index < data.length; index++) {
+    const item = data[index];
+    if (!item || typeof item !== "object") continue;
+    const record = item as Record<string, unknown>;
+    const title = String(record.title ?? record.extraTitle ?? record.source ?? "").trim();
+    const url = String(record.url ?? record.extraUrl ?? "").trim();
+    const content = String(record.content ?? record.summary ?? "").replace(/\s+/g, " ").trim();
+    if (!title && !url) continue;
+    refs.push({
+      title: title || `夸克搜索结果 ${index + 1}`,
+      content: content.slice(0, 500),
+      relevance: typeof record.score === "number" ? record.score : 0.8,
+      refIndex: index + 1,
+      url: url || undefined,
+    });
+  }
+  return refs.length > 0 ? refs : null;
+}
+
 /**
  * 从 agentic_tool_end.resultSummary 解析引用
  * 格式: [参考资料 N] (相关度: 0.XX)\n标题\n内容…
  */
 function parseResultSummary(summary: string): ParsedResultRef[] {
+  const quarkRefs = parseQuarkResultSummary(summary);
+  if (quarkRefs) return quarkRefs;
+
   const refs: ParsedResultRef[] = [];
   // 匹配 [参考资料 N] (相关度: X.XX)
   const refPattern = /\[参考资料\s+(\d+)\]\s*\(相关度:\s*([\d.]+)\)\s*\n/g;
@@ -216,7 +251,7 @@ export function normalizeCitationsFromToolCalls(
       results.push({
         id: `citation_${tc.toolType}_${ref.refIndex}`,
         title: ref.title,
-        source: hasKnowledge ? "CareerMate 知识库" : ref.url ? "联网搜索" : "未知来源",
+        source: ref.url ? "联网搜索" : hasKnowledge ? "CareerMate 知识库" : "未知来源",
         url: hasValidUrl ? ref.url : undefined,
         accessedAt: new Date().toISOString(),
         label: determineCitationLabel({

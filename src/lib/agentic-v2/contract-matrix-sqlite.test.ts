@@ -9,7 +9,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { PrismaClient } from "@prisma/client";
-import { existsSync, unlinkSync } from "node:fs";
+import { existsSync, unlinkSync, writeFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
@@ -67,6 +67,8 @@ function baseArtifact(taskType: string, data: Record<string, unknown>, overrides
 
 beforeAll(async () => {
   testDbPath = join(PRISMA_DIR, `itest-${process.pid}-${Date.now()}.db`);
+  // Match the E2E harness: initialize the empty SQLite file before schema push.
+  writeFileSync(testDbPath, "", { flag: "wx" });
   const url = `file:${testDbPath}`;
   execSync(
     `npx prisma db push --skip-generate --accept-data-loss --schema="${join(PRISMA_DIR, "schema.prisma")}"`,

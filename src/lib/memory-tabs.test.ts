@@ -9,7 +9,7 @@ describe("resolveMemoryTab（T18 深链接标签）", () => {
 
   it("accepts a known tab id", () => {
     expect(resolveMemoryTab("profile")).toBe("profile");
-    expect(resolveMemoryTab("privacy")).toBe("privacy");
+    expect(resolveMemoryTab("memory")).toBe("memory");
     expect(resolveMemoryTab("candidates")).toBe("candidates");
   });
 
@@ -19,6 +19,6 @@ describe("resolveMemoryTab（T18 深链接标签）", () => {
   });
 
   it("exposes the three documented tabs", () => {
-    expect(memoryTabs.map((t) => t.id)).toEqual(["candidates", "profile", "privacy"]);
+    expect(memoryTabs.map((t) => t.id)).toEqual(["candidates", "profile", "memory"]);
   });
 });

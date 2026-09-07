@@ -20,7 +20,8 @@ async function login(page: import("@playwright/test").Page, username = "student_
   await page.getByLabel("账号").fill(username);
   await page.getByLabel("密码").fill("careermate123");
   await page.getByRole("button", { name: "进入 CareerMate" }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
+  await expect(page).toHaveURL(/\/chat/);
+  await page.goto("/dashboard");
 }
 
 /** 登录后打开助手面板，返回输入框 */
@@ -155,7 +156,8 @@ test.describe("DBA 开放主聊天回归（mock模式）", () => {
 
     // 刷新页面
     await page.reload();
-    await expect(page).toHaveURL(/\/dashboard/);
+    await expect(page).toHaveURL(/\/chat/);
+  await page.goto("/dashboard");
 
     // 重新打开助手面板，会话消息由控制器/远端绑定恢复
     await openChat(page);

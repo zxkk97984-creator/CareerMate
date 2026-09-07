@@ -5,7 +5,7 @@ import type { WorkspaceData } from "@/lib/workspace-types";
 
 function makeData(): WorkspaceData {
   return {
-    user: { id: "u1", displayName: "测试用户", username: "tester", role: "user" },
+    user: { id: "u1", displayName: "测试用户", username: "tester", avatarDataUrl: null, role: "user" },
     profile: {
       id: "p1",
       userId: "u1",

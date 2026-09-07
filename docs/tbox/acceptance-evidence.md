@@ -96,7 +96,7 @@ npm.cmd run test:e2e
 
 - 真实百宝箱 history：**未验证**。当前请求未发送本地历史消息到百宝箱 `history` 字段。
 - 真实百宝箱 business_data：**字段可发送但语义未验证**。`business_data` 字段存在于请求体中，但未验证百宝箱是否会读取并使用其中的画像信息。
-- 真实百宝箱联网搜索/citation：**未验证**。当前 `TBOX_SEARCH_ENGINE` 默认为 false，未测试搜索工具调用和 citation 事件的真伪。
+- 真实百宝箱联网搜索/citation：**已验证（v26）**。平台「联网搜索」开关与夸克搜索 MCP 插件均已启用；真实请求返回 `quark_article_search_content` 工具、外部 URL 和「实时联网调研」引用。
 - 当前产品请求：**依赖 conversation_id 维持多轮上下文**，未发送本地 history/context 作为权威状态源。
 - 结构化输出（variables.result）：**agent_response 结构未验证**。未知百宝箱是否能在同轮 SSE 流中同时返回正文和结构化 JSON。
 
@@ -154,3 +154,31 @@ TBOX_STRUCTURED_MODE="terminal"        # 同轮和 followup 均失败，结构�
 - **结构化输出**：百宝箱主 Agent 当前不返回 `variables.result`，结构化业务操作不可用
 - **联网搜索**：`TBOX_SEARCH_ENGINE=true` 时返回 5xx，需确认平台是否已启用搜索插件
 - **无效会话错误码**：异常被统一脱敏后无法提取精确 HTTP 状态码，`invalid_conversation` 探针需要更细粒度的错误信息提取
+
+## 2026-09-07 真实链路回归（最新）
+
+> 环境：本地 dev server，`TBOX_MODE=api`，百宝箱应用已发布至 v26，三个上架渠道均已更新到 v26。
+> 结论：聊天、联网搜索、知识库检索、模拟训练和职业路径生成均已走真实 `tbox-api`；Skill/工作流/子智能体由平台已发布 Agent 的提示词、工具和工作流绑定统一消费。
+
+| 场景 | 结果 | 关键证据 |
+|------|------|----------|
+| 聊天 | ✅ `actualMode=api`，`degraded=false` | SSE 返回 `context -> delta -> artifact -> done`；Agent 能读到画像、计划和长期记忆，并创建 `memory_item` 待确认候选 |
+| 联网搜索 | ✅ 真实 `quark_article_search_content` | 平台 v26 开启联网搜索；`/chat` 返回「实时联网调研」，含百度百科、职友集、矿大就业网、CSDN 等外部 URL |
+| 模拟训练 | ✅ `actualMode=api` | 会话 `cmtr6il8u0001tyawf1p7f8wk` 三轮均 API；最终报告评分 78，并创建 `ability_evidence` 候选 |
+| 知识库检索 | ✅ `actualMode=api` | `/api/tbox/retrieve` 五个知识库 ID 均配置；学习资源检索返回 `learning-resources-core`，没有再回退本地 mock |
+| 职业路径 | ✅ `actualMode=api` | 计划候选 v5 `cmtr6zstz0007tyaw56uml964`：3 年、12 季度、36 个月，`degraded=false` |
+| 聊天生成职业规划 | ✅ `actualMode=api` | 会话 `cmtr861iw000ltyawae1ik4s7` 返回合法 `career_plan` artifact，创建待确认候选 `cmtr8alf3000rtyaw3obmhbem`，`baseVersion=1` |
+| 页面渲染 | ✅ | `/dashboard`、`/path`、`/resources`、`/memory` 均能加载真实数据；`/path` 和 `/dashboard` 显示“百宝箱 API · 真实链路”；`/resources` 展示简明卡片和可展开原文 |
+
+### 本轮修复
+
+- `TBOX_CONTEXT_TRANSPORT="question_prefix"`：由于平台“简单构建”应用无法把 `business_data` 注入 Agent，聊天和普通适配层统一在用户不可见前缀中透传脱敏业务快照。
+- 模拟轮次编号修正为“下一轮追问编号”，并增加严格的 `simulation_turn` / `simulation_report` 解析与一次重试；只有无效信封、重复问题或 Schema 不匹配时才降级。
+- `/path` 计划生成使用分年流式生成，单次约 3.5 分钟；客户端超时不应判定服务端失败，服务端完成后会正常落库。
+
+### 已知待办
+
+- `/resources` 已改为“标题 + 简介 + 可展开原文”，知识库 chunk 仍保留在 `<details>` 中便于审计。
+- `/dashboard` 是本地聚合视图，本身不直接调用百宝箱 Agent；页头已展示最新计划候选的 `actualMode` 徽标。
+- 平台发布状态已同步：百宝箱、智能体 SDK、WebSDK 三个渠道均已开启版本 26.0，无待更新渠道。
+- 发布 v26 后三个渠道已再次同步，无待更新渠道；聊天联网搜索与 `career_plan` 候选端点端到端测试通过。

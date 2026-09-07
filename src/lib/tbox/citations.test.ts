@@ -3,6 +3,7 @@ import {
   isValidExternalUrl,
   determineCitationLabel,
   normalizeCitations,
+  normalizeCitationsFromToolCalls,
   detectSearchToolCall,
   isSearchToolCall,
   resolveSearchPolicy,
@@ -93,6 +94,35 @@ describe("normalizeCitations", () => {
     expect(result).toHaveLength(1);
     expect(result[0].url).toBeUndefined();
     expect(result[0].label).toBe("AI分析与推断");
+  });
+});
+
+describe("normalizeCitationsFromToolCalls", () => {
+  it("解析夸克搜索 JSON，识别为实时联网调研并保留 URL", () => {
+    const result = normalizeCitationsFromToolCalls([
+      {
+        toolType: "tool",
+        tool: "quark_article_search_content",
+        toolId: "fc-1",
+        resultSummary: JSON.stringify({
+          traceId: "trace-1",
+          msg: "操作成功",
+          code: 0,
+          data: [{
+            title: "2026 AI 产品经理招聘要求",
+            url: "https://example.com/jobs",
+            extraTitle: "招聘要求",
+            extraUrl: "https://example.com/jobs",
+            content: "招聘要求正文",
+          }],
+        }),
+      },
+    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0].title).toBe("2026 AI 产品经理招聘要求");
+    expect(result[0].source).toBe("联网搜索");
+    expect(result[0].url).toBe("https://example.com/jobs");
+    expect(result[0].label).toBe("实时联网调研");
   });
 });
 

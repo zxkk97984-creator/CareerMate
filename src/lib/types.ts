@@ -72,6 +72,7 @@ export interface CurrentUserDto {
   id: string;
   username: string;
   displayName: string;
+  avatarDataUrl: string | null;
   role: string;
 }
 

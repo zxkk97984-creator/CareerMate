@@ -41,10 +41,10 @@ describe("home (/) routing", () => {
     expect(renderToStaticMarkup(element as ReactElement)).toContain("landing");
   });
 
-  it("routes a logged-in user with a completed profile to the dashboard", async () => {
+  it("routes a logged-in user with a completed profile to the primary chat", async () => {
     mocks.getCurrentUser.mockResolvedValue({ profile: completedProfile() });
     await renderHome();
-    expect(mocks.redirect).toHaveBeenCalledWith("/dashboard");
+    expect(mocks.redirect).toHaveBeenCalledWith("/chat");
   });
 
   it("routes a logged-in user with an incomplete profile to onboarding", async () => {

@@ -20,8 +20,10 @@ export async function GET() {
     orderBy: { createdAt: "desc" },
   });
 
-  const generationLog = plan ? await getPrisma().progressLog.findFirst({
-    where: { userId: user.id, relatedPlanId: plan.id, eventType: "plan_generated" },
+  // 存在待确认计划时优先显示它的执行元信息，避免“已生成但看不到真实/降级状态”。
+  const metaPlan = pendingPlan ?? plan;
+  const generationLog = metaPlan ? await getPrisma().progressLog.findFirst({
+    where: { userId: user.id, relatedPlanId: metaPlan.id, eventType: "plan_generated" },
     orderBy: { createdAt: "desc" },
     select: { metadata: true },
   }) : null;

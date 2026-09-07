@@ -1,10 +1,10 @@
 /** 成长档案标签 id（T18） */
-export type MemoryTab = "candidates" | "profile" | "privacy";
+export type MemoryTab = "candidates" | "profile" | "memory";
 
 export const memoryTabs: Array<{ id: MemoryTab; label: string }> = [
   { id: "candidates", label: "待确认建议" },
   { id: "profile", label: "画像与证据" },
-  { id: "privacy", label: "记忆与隐私" },
+  { id: "memory", label: "长期记忆" },
 ];
 
 /**

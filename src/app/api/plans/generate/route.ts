@@ -63,6 +63,7 @@ export async function POST(request: Request) {
         data: {
           userId: user.id,
           targetRole: targetRole,
+          targetRoleLabel: profile.targetRoleLabel,
           version: (latest?.version ?? 0) + 1,
           status: "pending",
           ...serializePlan(generated.data),

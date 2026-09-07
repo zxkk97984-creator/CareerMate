@@ -9,11 +9,18 @@ import type {
 import { parseJson } from "@/lib/json";
 import { convertV2ToV1Arrays } from "@/lib/plans/compatibility";
 
-export function userDto(user: { id: string; username: string; displayName: string; role: string }): CurrentUserDto {
+export function userDto(user: {
+  id: string;
+  username: string;
+  displayName: string;
+  avatarDataUrl?: string | null;
+  role: string;
+}): CurrentUserDto {
   return {
     id: user.id,
     username: user.username,
     displayName: user.displayName,
+    avatarDataUrl: user.avatarDataUrl ?? null,
     role: user.role,
   };
 }

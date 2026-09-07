@@ -14,6 +14,7 @@ const VIEW_PAGE_MODULES: Partial<Record<View, ModuleKey[]>> = {
   simulation: ["simulations"],
   resources: ["resources"],
   memory: ["memories"],
+  settings: [],
   admin: ["admin"],
   onboarding: [],
 };

@@ -24,7 +24,7 @@ beforeEach(() => {
 });
 
 describe("GET /api/plans/current", () => {
-  it("returns persisted generation execution metadata for the active plan", async () => {
+  it("returns persisted generation execution metadata for the latest pending plan", async () => {
     const payload = await (await GET()).json();
 
     expect(payload.data).toEqual({
@@ -42,7 +42,7 @@ describe("GET /api/plans/current", () => {
       orderBy: { createdAt: "desc" },
     });
     expect(mocks.findLog).toHaveBeenCalledWith({
-      where: { userId: "user-1", relatedPlanId: "plan-1", eventType: "plan_generated" },
+      where: { userId: "user-1", relatedPlanId: "plan-pending", eventType: "plan_generated" },
       orderBy: { createdAt: "desc" },
       select: { metadata: true },
     });

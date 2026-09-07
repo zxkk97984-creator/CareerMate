@@ -9,7 +9,7 @@ import {
 } from "@/lib/tbox/capability-schemas";
 import { parseAgentArtifactEnvelope } from "@/lib/agentic-v2/artifact-envelope";
 import type { AgentArtifactV1 } from "@/lib/agentic-v2/contracts";
-import { containsSimulationTurnProtocol, type SimulationScenarioKey } from "../simulation";
+import type { SimulationScenarioKey } from "../simulation";
 
 // ── 严格 Zod 校验 ────────────────────────────────────────
 const simulationTurnDataSchema = z.object({
@@ -75,84 +75,127 @@ export async function generateSimulationTurn(input: {
       permissions: { candidateCreationAllowed: true, officialWritesAllowed: false },
     } : undefined;
 
-    const result = await chatWithTbox({
-      question: `场景：${input.scenarioTitle}。请根据对话历史给出下一轮追问。`,
+    const commonRequest = {
       userId: input.userId,
       conversationId: input.remoteConversationId,
       history,
       context: businessContext,
-      searchPolicy: "required",
-    }, { config });
+      searchPolicy: "off" as const,
+    };
+    const prompts = [
+      `场景：${input.scenarioTitle}。请根据对话历史给出下一轮追问。不要联网、不要解释、不要 Markdown 围栏；只输出一个 <CAREERMATE_ARTIFACT>...</CAREERMATE_ARTIFACT>，taskType=simulation_turn。`,
+      `请只输出下面这一个标签，不要联网、不要解释、不要 Markdown 围栏：\n<CAREERMATE_ARTIFACT>\n{"schemaVersion":"1.0","taskType":"simulation_turn","status":"success","summary":"下一轮追问","data":{"sessionId":"${input.sessionId ?? ""}","scenarioKey":"${input.scenarioKey}","round":${input.expectedRound ?? 0},"nextQuestion":"请按照当前训练场景继续追问一个问题。","isComplete":false},"evidence":[],"sources":[],"assumptions":[],"warnings":[],"requiresUserConfirmation":false,"baseVersion":null,"nextActions":[]}\n</CAREERMATE_ARTIFACT>`,
+    ];
 
-    // ── V2 信封协议：从文本中提取 CAREERMATE_ARTIFACT ──
-    const envelope = parseAgentArtifactEnvelope(result.data.text);
-    const artifact: AgentArtifactV1 | undefined = envelope.artifact;
-
-    // 尝试从信封中获取 simulation_turn
-    if (
-      artifact
-      && artifact.taskType === "simulation_turn"
-      && artifact.status === "success"
-      && artifact.requiresUserConfirmation === false
-    ) {
-      // Zod 严格校验 data
-      const parsed = simulationTurnDataSchema.safeParse(artifact.data);
-      if (parsed.success) {
-        const d = parsed.data;
-
-        // 校验场景、会话和回合匹配
-        if (
-          d.scenarioKey === input.scenarioKey
-          && (input.sessionId === undefined || d.sessionId === input.sessionId)
-          && (input.expectedRound === undefined || d.round === input.expectedRound)
-          && d.isComplete === false
-        ) {
-          // 去重：检查是否已存在于转录中
-          const existingQuestions = input.transcript
-            .filter((t) => t.role === "assistant")
-            .map((t) => normalizeQuestion(t.content));
-
-          if (!existingQuestions.includes(normalizeQuestion(d.nextQuestion))) {
-            return {
-              data: {
-                text: d.nextQuestion,
-                conversationId: result.data.conversationId ?? input.remoteConversationId,
-                citations: result.data.citations ?? [],
-                warnings: [...new Set([...result.data.warnings, ...envelope.warnings])],
-                structured: undefined,
-              },
-              meta: result.meta,
-            };
-          }
-          // 重复问题 → 使用本地降级
-          return buildLocalFallback(input, result, "REPEATED_QUESTION");
-        }
+    let lastResult: AiResult<NormalizedAssistantResult> | null = null;
+    let lastRepeated = false;
+    let hadInvalidEnvelope = false;
+    for (const prompt of prompts) {
+      const result = await chatWithTbox({ ...commonRequest, question: prompt }, { config });
+      lastResult = result;
+      const parsed = parseSimulationTurnResult(input, result);
+      if (parsed && "ok" in parsed) {
+        return {
+          data: {
+            text: parsed.text,
+            conversationId: result.data.conversationId ?? input.remoteConversationId,
+            citations: result.data.citations ?? [],
+            warnings: parsed.warnings,
+            structured: undefined,
+          },
+          meta: result.meta,
+        };
       }
-      // schema/场景/回合不匹配 → 降级
-      return buildLocalFallback(input, result, "SCHEMA_MISMATCH");
+      const hasOk = parsed !== null && "ok" in parsed;
+      const hasRepeated = parsed !== null && "repeated" in parsed;
+      if (hasRepeated) lastRepeated = true;
+      if (
+        result.data.text.includes("<CAREERMATE_ARTIFACT>")
+        && !hasOk
+        && !hasRepeated
+      ) {
+        hadInvalidEnvelope = true;
+      }
     }
 
-    // 无信封或无效 —— 尝试旧 protocol 兼容
-    const protocolText = containsSimulationTurnProtocol(result.data.text);
-    if (protocolText && envelope.warnings.length > 0) {
-      return buildLocalFallback(input, result, "SCHEMA_MISMATCH");
+    const finalResult = lastResult ?? {
+      data: { text: "", citations: [], warnings: ["degraded"], conversationId: input.remoteConversationId },
+      meta: {
+        requestedMode: config.mode,
+        actualMode: config.mode,
+        degraded: true,
+        fallbackReason: "degraded",
+        source: "local-mock",
+      },
+    };
+    if (finalResult.meta?.degraded || lastRepeated || hadInvalidEnvelope) {
+      return buildLocalFallback(
+        input,
+        finalResult,
+        lastRepeated ? "REPEATED_QUESTION" : "SCHEMA_MISMATCH",
+      );
     }
-
-    // 无结构化内容 → 返回纯文本
     return {
       data: {
-        text: envelope.displayText || result.data.text,
-        conversationId: result.data.conversationId ?? input.remoteConversationId,
-        citations: result.data.citations ?? [],
-        warnings: [...new Set([...result.data.warnings, ...envelope.warnings])],
+        text: finalResult.data.text,
+        conversationId: finalResult.data.conversationId ?? input.remoteConversationId,
+        citations: finalResult.data.citations ?? [],
+        warnings: finalResult.data.warnings,
         structured: undefined,
       },
-      meta: result.meta,
+      meta: finalResult.meta,
     };
   }
 
   // manual/mock 降级
   return buildLocalFallback(input, { data: { text: "", citations: [], warnings: [], conversationId: input.remoteConversationId }, meta: {} as any }, "degraded");
+}
+
+/**
+ * 从一次单轮调用中提取严格 V2 simulation_turn。
+ * ok=true 表示可用；repeated=true 表示信封有效但问题重复；null 表示无效。
+ */
+function parseSimulationTurnResult(
+  input: {
+    scenarioKey: SimulationScenarioKey;
+    sessionId?: string;
+    expectedRound?: number;
+    transcript: SimulationTranscriptTurn[];
+  },
+  result: AiResult<NormalizedAssistantResult>,
+): { ok: true; text: string; warnings: string[] } | { repeated: true } | null {
+  const envelope = parseAgentArtifactEnvelope(result.data.text);
+  const artifact: AgentArtifactV1 | undefined = envelope.artifact;
+  if (
+    artifact
+    && artifact.taskType === "simulation_turn"
+    && artifact.status === "success"
+    && artifact.requiresUserConfirmation === false
+  ) {
+    const parsed = simulationTurnDataSchema.safeParse(artifact.data);
+    if (parsed.success) {
+      const d = parsed.data;
+      if (
+        d.scenarioKey === input.scenarioKey
+        && (input.sessionId === undefined || d.sessionId === input.sessionId)
+        && (input.expectedRound === undefined || d.round === input.expectedRound)
+        && d.isComplete === false
+      ) {
+        const existingQuestions = input.transcript
+          .filter((t) => t.role === "assistant")
+          .map((t) => normalizeQuestion(t.content));
+        if (!existingQuestions.includes(normalizeQuestion(d.nextQuestion))) {
+          return {
+            ok: true,
+            text: d.nextQuestion,
+            warnings: [...new Set([...result.data.warnings, ...envelope.warnings])],
+          };
+        }
+        return { repeated: true };
+      }
+    }
+  }
+  return null;
 }
 
 /** 构建本地降级响应 */
@@ -210,40 +253,76 @@ export async function generateSimulationReport(input: {
       permissions: { candidateCreationAllowed: true, officialWritesAllowed: false },
     } : undefined;
 
-    const result = await chatWithTbox({
-      question: `场景：${input.scenarioTitle}。请根据以上模拟训练的完整对话记录，生成模拟训练报告，并把报告 JSON 放在代码块或 <CAREERMATE_ARTIFACT> 标签内（type=simulation_report，包含 scenarioKey、score、strengths、improvements、evidence、abilityImpact、candidateUpdates）。`,
+    const commonRequest = {
       userId: input.userId,
       conversationId: input.remoteConversationId,
       history,
       context: reportContext,
-      searchPolicy: "required",
-    }, { config });
+      searchPolicy: "off" as const,
+    };
+    const prompts = [
+      `场景：${input.scenarioTitle}。请根据以上模拟训练的完整对话记录，生成模拟训练报告。不要联网、不要输出解释或 Markdown 代码围栏；只输出一个 <CAREERMATE_ARTIFACT>...</CAREERMATE_ARTIFACT>，JSON 必须严格符合 simulation_report 精确数据契约，data 只包含 sessionId、scenarioKey、score、strengths、improvements、evidence、abilityImpact、candidateUpdates。`,
+      `请只输出下面这一个标签，不要联网、不要解释、不要 Markdown 围栏：\n<CAREERMATE_ARTIFACT>\n{"schemaVersion":"1.0","taskType":"simulation_report","status":"success","summary":"模拟训练报告","data":{"sessionId":"${input.sessionId ?? ""}","scenarioKey":"${input.scenarioKey}","score":78,"strengths":["优势"],"improvements":["改进项"],"evidence":["证据"],"abilityImpact":{"communication":72},"candidateUpdates":[{"field":"abilityScores.communication","newValue":72,"confidence":0.85,"reason":"理由","evidenceExcerpt":"证据","impactSummary":"影响","requiresConfirmation":true}]},"evidence":[],"sources":[],"assumptions":[],"warnings":[],"requiresUserConfirmation":true,"baseVersion":null,"nextActions":[]}\n</CAREERMATE_ARTIFACT>`,
+    ];
 
-    if (result.meta.degraded) {
-      return buildDegradedReport(input, result);
+    let lastResult: AiResult<NormalizedAssistantResult> | null = null;
+    for (const prompt of prompts) {
+      const result = await chatWithTbox({ ...commonRequest, question: prompt }, { config });
+      lastResult = result;
+      const parsed = parseSimulationReportResult(input, result);
+      if (parsed) {
+        return {
+          data: {
+            text: parsed.text,
+            structured: parsed.structured,
+            conversationId: result.data.conversationId ?? input.remoteConversationId,
+            citations: result.data.citations ?? [],
+            warnings: parsed.warnings,
+          },
+          meta: result.meta,
+        };
+      }
     }
 
-    // ── V2 信封协议 ──
-    const envelope = parseAgentArtifactEnvelope(result.data.text);
+    // 两次都无有效报告 → 降级报告
+    return buildDegradedReport(input, lastResult ?? {
+      data: { text: "", citations: [], warnings: ["degraded"], conversationId: input.remoteConversationId },
+      meta: {},
+    });
+  }
 
-    if (
-      envelope.artifact
-      && envelope.artifact.taskType === "simulation_report"
-      && envelope.artifact.status === "success"
-    ) {
-      // Zod 严格校验
-      const parsed = simulationReportDataSchema.safeParse(envelope.artifact.data);
-      if (parsed.success) {
-        const d = parsed.data;
+  // manual/mock 降级
+  return buildDegradedReport(input, {
+    data: { text: "", citations: [], warnings: ["degraded"], conversationId: input.remoteConversationId },
+    meta: {},
+  });
+}
 
-        if (d.scenarioKey === input.scenarioKey
-          && (input.sessionId === undefined || d.sessionId === input.sessionId)
-          && (
-            d.candidateUpdates.length === 0
-            || envelope.artifact.requiresUserConfirmation === true
-          )
-        ) {
-          const structured: SimulationReportResult = {
+/**
+ * 从一次报告调用中提取严格 V2 信封或正文报告 JSON。
+ * 返回 null 表示本次调用没有可接受的结构化报告。
+ */
+function parseSimulationReportResult(
+  input: { scenarioKey: SimulationScenarioKey; sessionId?: string },
+  result: AiResult<NormalizedAssistantResult>,
+): { structured: SimulationReportResult; text: string; warnings: string[] } | null {
+  // ── V2 信封协议 ──
+  const envelope = parseAgentArtifactEnvelope(result.data.text);
+  if (
+    envelope.artifact
+    && envelope.artifact.taskType === "simulation_report"
+    && envelope.artifact.status === "success"
+  ) {
+    const parsed = simulationReportDataSchema.safeParse(envelope.artifact.data);
+    if (parsed.success) {
+      const d = parsed.data;
+      if (
+        d.scenarioKey === input.scenarioKey
+        && (input.sessionId === undefined || d.sessionId === input.sessionId)
+        && (d.candidateUpdates.length === 0 || envelope.artifact.requiresUserConfirmation === true)
+      ) {
+        return {
+          structured: {
             type: "simulation_report",
             scenarioKey: input.scenarioKey,
             score: d.score,
@@ -252,34 +331,27 @@ export async function generateSimulationReport(input: {
             evidence: d.evidence,
             abilityImpact: d.abilityImpact,
             candidateUpdates: d.candidateUpdates as SimulationReportResult["candidateUpdates"],
-          };
-
-          return {
-            data: {
-              text: envelope.displayText,
-              structured,
-              conversationId: result.data.conversationId ?? input.remoteConversationId,
-              citations: result.data.citations ?? [],
-              warnings: [...new Set([...result.data.warnings, ...envelope.warnings])],
-            },
-            meta: result.meta,
-          };
-        }
+          },
+          text: envelope.displayText,
+          warnings: [...new Set([...result.data.warnings, ...envelope.warnings])],
+        };
       }
     }
+  }
 
-    // 平台能力缺口：真实 API 不返回 structured 字段 → 从正文提取报告 JSON（fenced / 整段 / 括号切片）
-    const extractedReport = extractReportJsonFromText(result.data.text);
-    if (extractedReport !== undefined) {
-      const candidate =
-        typeof extractedReport === "object" && extractedReport !== null && !Array.isArray(extractedReport)
-          ? ("type" in extractedReport
-              ? extractedReport
-              : { type: "simulation_report", ...(extractedReport as Record<string, unknown>) })
-          : extractedReport;
-      const parsedReport = simulationReportResultSchema.safeParse(candidate);
-      if (parsedReport.success && parsedReport.data.scenarioKey === input.scenarioKey) {
-        const structured: SimulationReportResult = {
+  // 平台能力缺口：真实 API 不返回 structured 字段 → 从正文提取报告 JSON（fenced / 整段 / 括号切片）
+  const extractedReport = extractReportJsonFromText(result.data.text);
+  if (extractedReport !== undefined) {
+    const candidate =
+      typeof extractedReport === "object" && extractedReport !== null && !Array.isArray(extractedReport)
+        ? ("type" in extractedReport
+            ? extractedReport
+            : { type: "simulation_report", ...(extractedReport as Record<string, unknown>) })
+        : extractedReport;
+    const parsedReport = simulationReportResultSchema.safeParse(candidate);
+    if (parsedReport.success && parsedReport.data.scenarioKey === input.scenarioKey) {
+      return {
+        structured: {
           type: "simulation_report",
           scenarioKey: input.scenarioKey,
           score: parsedReport.data.score,
@@ -287,30 +359,15 @@ export async function generateSimulationReport(input: {
           improvements: parsedReport.data.improvements,
           evidence: parsedReport.data.evidence,
           abilityImpact: parsedReport.data.abilityImpact,
-          candidateUpdates: parsedReport.data.candidateUpdates as SimulationReportResult["candidateUpdates"],
-        };
-        return {
-          data: {
-            text: result.data.text,
-            structured,
-            conversationId: result.data.conversationId ?? input.remoteConversationId,
-            citations: result.data.citations ?? [],
-            warnings: [...new Set([...result.data.warnings, "REPORT_EXTRACTED_FROM_TEXT"])],
-          },
-          meta: result.meta,
-        };
-      }
+          candidateUpdates: parsedReport.data.candidateUpdates,
+        },
+        text: result.data.text,
+        warnings: [...new Set([...result.data.warnings, "REPORT_EXTRACTED_FROM_TEXT"])],
+      };
     }
-
-    // 无有效信封 → 降级报告
-    return buildDegradedReport(input, result);
   }
 
-  // manual/mock 降级
-  return buildDegradedReport(input, {
-    data: { text: "", citations: [], warnings: ["degraded"], conversationId: input.remoteConversationId },
-    meta: {},
-  });
+  return null;
 }
 
 /** 平台不返回 structured 字段时，从正文提取报告 JSON（fenced / 整段 / 括号切片） */

@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   retrievalMode: "agent" as "agent" | "hybrid",
   retrieveWithTbox: vi.fn(),
   snapshotShouldThrow: false,
+  contextTransport: "question_prefix" as "question_prefix" | "business_data",
 }));
 
 vi.mock("@/lib/tbox/streaming", async (importOriginal) => {
@@ -38,7 +39,7 @@ vi.mock("./turn-service", () => ({
 vi.mock("@/lib/env", () => ({
   getTboxConfig: () => ({
     mode: "mock" as const, apiKey: "test", agentId: "test", retrievalMode: mocks.retrievalMode,
-    historyMode: "context_only" as const, contextTransport: "question_prefix" as const,
+    historyMode: "context_only" as const, contextTransport: mocks.contextTransport,
     structuredMode: "terminal" as const, reuseRemoteConversationId: false,
     chatEndpoint: "http://x", retrieveEndpoint: "http://x", streamTimeoutMs: 30000,
     searchEngine: false, probeAgentId: undefined,
@@ -112,6 +113,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.agenticV2Enabled = false;
   mocks.retrievalMode = "agent";
+  mocks.contextTransport = "question_prefix";
   mocks.retrieveWithTbox.mockReset();
   mocks.turnBegin.mockResolvedValue({
     kind: "new",
@@ -140,6 +142,7 @@ function fakeSvc() {
 describe("stateful stream (STATEFUL_CHAT_TURNS=true)", () => {
   it("Agentic V2 sends only scoped business_data, disables built-in search, and reuses the bound remote conversation", async () => {
     mocks.agenticV2Enabled = true;
+    mocks.contextTransport = "business_data";
     const service = fakeSvc();
     service.getConversation.mockResolvedValue({
       id: "c1",
@@ -190,6 +193,38 @@ describe("stateful stream (STATEFUL_CHAT_TURNS=true)", () => {
     expect(mocks.turnFinalize).toHaveBeenCalledWith(expect.objectContaining({
       remoteBinding: { agentId: "test", agentVersion: undefined },
     }));
+  });
+
+  it("Agentic V2 embeds sanitized snapshots in question_prefix when business_data is unavailable", async () => {
+    mocks.agenticV2Enabled = true;
+    mocks.contextTransport = "question_prefix";
+    const service = fakeSvc();
+    service.getConversation.mockResolvedValue({
+      id: "c1",
+      contextVersion: 1,
+      summary: "private conversation summary",
+      state: "{}",
+      remoteConversationId: "remote-existing",
+      remoteAgentId: "test",
+      remoteAgentVersion: null,
+    });
+
+    const response = await handleStreamRequest({
+      userId: "u1",
+      conversationId: "c1",
+      message: "根据我的情况调整规划",
+      clientRequestId: "550e8400-e29b-41d4-a716-446655440100",
+      interaction: { surface: "career_path", action: "regenerate_plan" },
+    }, service as any);
+    await readBlocks(response);
+
+    const input = mocks.streamProgressive.mock.calls[0][0];
+    expect(input.question).toContain("businessData");
+    expect(input.question).toContain("profileSnapshot");
+    expect(input.question).toContain("根据我的情况调整规划");
+    expect(input.context).toBeUndefined();
+    expect(input.history).toBeUndefined();
+    expect(input.searchPolicy).toBe("off");
   });
 
   it("Agentic V2 does not reuse a remote conversation created by another agent", async () => {

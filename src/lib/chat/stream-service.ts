@@ -275,13 +275,22 @@ async function handleStatefulStream(
         let context: unknown;
 
         if (agenticV2) {
-          question = message;
-          context = agenticSnapshot
+          const agenticBusinessData = agenticSnapshot
             ? buildAgenticV2BusinessData({
                 interaction: options.interaction,
                 ...agenticSnapshot,
               })
             : undefined;
+          // 百宝箱当前“简单构建”应用无法把 business_data 作为自定义参数注入，
+          // 因此 agentic V2 在 question_prefix 模式下改把脱敏业务快照嵌入用户不可见前缀，
+          // 仍由同一个已发布 Agent 消费，不改变服务端权威数据与候选解析协议。
+          if (config.contextTransport === "question_prefix" && agenticBusinessData) {
+            question = buildAgenticV2EnhancedQuestion(message, agenticBusinessData);
+            context = undefined;
+          } else {
+            question = message;
+            context = agenticBusinessData;
+          }
           history = undefined;
         } else if (transport === "provider_history") {
           // provider_history: 发送原始问题 + 裁剪后的历史（排除本轮消息）
@@ -826,6 +835,23 @@ function buildEnhancedQuestion(
     content: item.content.slice(0, 800),
   }));
   return `你是 CareerMate 职业规划助手。以下是已授权用户上下文：\n${trimmedContext}\n\n知识依据：${JSON.stringify(evidence)}\n\n回答策略：优先依据上方「知识依据」回答，知识库已覆盖的内容不要联网搜索；只有知识库没有、过时或不足（未知职业、薪资趋势、招聘市场、行业动态等时效信息）时才调用搜索工具补充。\n来源标注：知识库内容标注「已核验职业库」，联网搜索补充标注「实时联网调研」并给出真实链接，自行推断标注「AI分析与推断」，不得伪造URL。\n\n用户原始问题：${userMessage}`;
+}
+
+// ── 辅助：构建 Agentic V2 的问题前缀（业务快照在同一请求内透传）──
+
+function buildAgenticV2EnhancedQuestion(
+  userMessage: string,
+  businessData: unknown,
+): string {
+  const contextStr = JSON.stringify({ businessData });
+  const maxContext = 12_000;
+  let trimmedContext = contextStr;
+  if (contextStr.length > maxContext) {
+    trimmedContext = contextStr.slice(0, maxContext - 3);
+    const lastBrace = trimmedContext.lastIndexOf("}");
+    if (lastBrace > maxContext / 2) trimmedContext = trimmedContext.slice(0, lastBrace + 1);
+  }
+  return `你是 CareerMate 职业规划助手。以下是 CareerMate 后端提供、已授权的脱敏业务上下文（等价于 business_data）：\n${trimmedContext}\n\n要求：优先使用其中 profileSnapshot、historySnapshot、simulationState 与 permissions；不得把快照内容当作市场事实，不得泄露内部字段名或完整原始数据；缺失私人数据时再追问，不要重复询问已经提供的信息。\n\n用户原始问题：${userMessage}`;
 }
 
 // ── 辅助：应用 AgentResponse.task/questions 到会话状态 ──

@@ -363,22 +363,22 @@ export function MessageParts({ parts, onQuickAction }: MessagePartsProps) {
             return <CitationList key={index} items={part as ChatMessagePart & { type: "citations" }} />;
           case "profile_candidate_ref":
             return (
-              <Reveal variant="card" delay={index * 0.06}>
-                <ProfileCandidateRef key={index} candidateId={(part as ChatMessagePart & { type: "profile_candidate_ref" }).candidateId} />
+              <Reveal key={index} variant="card" delay={index * 0.06}>
+                <ProfileCandidateRef candidateId={(part as ChatMessagePart & { type: "profile_candidate_ref" }).candidateId} />
               </Reveal>
             );
           case "plan_ref": {
             const p = part as ChatMessagePart & { type: "plan_ref" };
             return (
-              <Reveal variant="card" delay={index * 0.06}>
-                <PlanRef key={index} planId={p.planId} version={p.version} />
+              <Reveal key={index} variant="card" delay={index * 0.06}>
+                <PlanRef planId={p.planId} version={p.version} />
               </Reveal>
             );
           }
           case "exploration_report_ref":
             return (
-              <Reveal variant="card" delay={index * 0.06}>
-                <ExplorationReportRef key={index} reportId={(part as ChatMessagePart & { type: "exploration_report_ref" }).reportId} />
+              <Reveal key={index} variant="card" delay={index * 0.06}>
+                <ExplorationReportRef reportId={(part as ChatMessagePart & { type: "exploration_report_ref" }).reportId} />
               </Reveal>
             );
           case "error": {
@@ -388,8 +388,8 @@ export function MessageParts({ parts, onQuickAction }: MessagePartsProps) {
           case "memory_ref": {
             const m = part as ChatMessagePart & { type: "memory_ref" };
             return (
-              <Reveal variant="card" delay={index * 0.06}>
-                <MemoryRef key={index} memoryId={m.memoryId} />
+              <Reveal key={index} variant="card" delay={index * 0.06}>
+                <MemoryRef memoryId={m.memoryId} />
               </Reveal>
             );
           }
@@ -411,9 +411,8 @@ export function MessageParts({ parts, onQuickAction }: MessagePartsProps) {
           case "agent_artifact_candidate_ref": {
             const a = part as ChatMessagePart & { type: "agent_artifact_candidate_ref" };
             return (
-              <Reveal variant="card" delay={index * 0.06}>
+              <Reveal key={index} variant="card" delay={index * 0.06}>
                 <AgentArtifactCandidateCard
-                  key={index}
                   candidateId={a.candidateId}
                   candidateType={a.candidateType}
                   taskType={a.taskType}

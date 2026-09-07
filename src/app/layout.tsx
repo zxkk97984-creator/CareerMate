@@ -1,8 +1,11 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { GlobalKurisu } from "@/components/chat/global-kurisu";
+import "./styles/redesign.css";
+import "./styles/workspace-redesign.css";
 import { AssistantProvider } from "@/components/chat/assistant-provider";
 import { AssistantPanel } from "@/components/chat/assistant-panel";
+import { CompanionDock } from "@/components/chat/companion-dock";
+import { CompanionAppearanceProvider } from "@/components/chat/companion-appearance-provider";
 
 export const metadata: Metadata = {
   title: "CareerMate",
@@ -18,9 +21,11 @@ export default function RootLayout({
     <html lang="zh-CN">
       <body>
         <AssistantProvider>
-          {children}
-          <AssistantPanel />
-          <GlobalKurisu />
+          <CompanionAppearanceProvider>
+            {children}
+            <AssistantPanel />
+            <CompanionDock />
+          </CompanionAppearanceProvider>
         </AssistantProvider>
       </body>
     </html>

@@ -5,7 +5,8 @@ async function login(page: import("@playwright/test").Page, username = "student_
   await page.getByLabel("账号").fill(username);
   await page.getByLabel("密码").fill("careermate123");
   await page.getByRole("button", { name: "进入 CareerMate" }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
+  await expect(page).toHaveURL(/\/chat/);
+  await page.goto("/dashboard");
 }
 
 /* ── 统一外壳：侧栏存在与 active 状态 ── */
@@ -71,7 +72,7 @@ test("logout redirects to login page", async ({ page }) => {
   await page.goto("/dashboard");
 
   // 点击退出按钮
-  await page.locator(".logout-link").click();
+  await page.getByRole("button", { name: "退出登录" }).click();
   await expect(page).toHaveURL("/login");
   // 确认已退出：再次访问需要登录的页面应重定向
   await page.goto("/dashboard");
@@ -126,7 +127,7 @@ test("mobile menu button does not overlap page title", async ({ page }) => {
 
   // 获取菜单按钮和标题的边界矩形
   const menuRect = await menuBtn.boundingBox();
-  const heading = page.getByRole("heading", { name: /成长工作台/ }).first();
+  const heading = page.getByRole("heading", { name: "成长概览", exact: true }).first();
   const headingRect = await heading.boundingBox();
 
   if (menuRect && headingRect) {

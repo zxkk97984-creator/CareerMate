@@ -10,7 +10,8 @@ async function login(page: import("@playwright/test").Page, username = "student_
   await page.getByLabel("账号").fill(username);
   await page.getByLabel("密码").fill("careermate123");
   await page.getByRole("button", { name: "进入 CareerMate" }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
+  await expect(page).toHaveURL(/\/chat/);
+  await page.goto("/dashboard");
 }
 
 async function openAssistant(page: import("@playwright/test").Page) {
@@ -100,13 +101,13 @@ test.describe("T26 七项真实用户任务的可执行性走查", () => {
     await expect(page.getByText(/待确认|确认后|候选/).first()).toBeVisible().catch(() => {});
   });
 
-  test("任务7 找到隐私控制（记忆开关/导出/清空）", async ({ page }) => {
+  test("任务7 找到隐私控制（账号/导出/清空）", async ({ page }) => {
     await login(page);
-    await page.goto("/memory");
-    // 隐私控制在"记忆与隐私"标签（独立危险区，不与候选挨在一起）
-    await page.getByRole("tab", { name: "记忆与隐私" }).click();
-    await expect(page.getByText("隐私与数据")).toBeVisible();
-    await expect(page.getByText("导出 JSON")).toBeVisible();
+    await page.goto("/settings?tab=privacy");
+    // 导出/清空已迁到设置页；长期记忆开关仍在 /memory 的“长期记忆”标签
+    await expect(page.getByRole("tab", { name: "隐私与数据" }).first()).toBeVisible();
+    await expect(page.getByText("隐私与数据").first()).toBeVisible();
+    await expect(page.getByText("导出 JSON").first()).toBeVisible();
     await expect(page.getByText(/清空|清除成长/).first()).toBeVisible();
   });
 });

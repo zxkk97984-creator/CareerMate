@@ -56,7 +56,7 @@ interface ResolutionTx {
     update(args: { where: { id: string }; data: { status: string; resolvedAt: Date } }): Promise<unknown>;
   };
   careerPlan: {
-    findFirst(args: { where: { userId: string; status: string }; orderBy: { version: "desc" } }): Promise<{ id: string; version: number } | null>;
+    findFirst(args: { where: { userId: string; status?: string }; orderBy: { version: "desc" } }): Promise<{ id: string; version: number } | null>;
     updateMany(args: { where: { userId: string; status: string }; data: { status: string } }): Promise<unknown>;
     create(args: { data: Record<string, unknown> }): Promise<{ id: string }>;
   };
@@ -365,6 +365,13 @@ async function applyProjection(
         ? (data as Record<string, unknown>).planPatch as Record<string, unknown> | undefined
         : undefined;
       const parentPlanId = planPatch?.parentPlanId ? String(planPatch.parentPlanId) : null;
+      // 计划版本是用户级单调递增号：pending/rejected 的历史版本也会占用编号，
+      // 必须取所有历史计划的最大版本，否则会撞上 @@unique([userId, version]).
+      const latestPlan = await tx.careerPlan.findFirst({
+        where: { userId },
+        orderBy: { version: "desc" },
+      });
+      const nextVersion = (latestPlan?.version ?? 0) + 1;
 
       const phases = (plan?.phases as Array<Record<string, unknown>> | undefined) ?? [];
       const years = phases.slice(0, 3).map((p, i) => ({
@@ -399,7 +406,7 @@ async function applyProjection(
         data: {
           userId,
           targetRole: String(targetRole?.key ?? "unknown"),
-          version: (artifact.baseVersion ?? 1) + 1,
+          version: nextVersion,
           status: "active",
           schemaVersion: 2,
           content: JSON.stringify(plan ?? data),

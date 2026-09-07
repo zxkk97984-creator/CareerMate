@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, unlinkSync } from "node:fs";
+import { existsSync, unlinkSync, writeFileSync } from "node:fs";
 
 const env = {
   ...process.env,
@@ -24,6 +24,9 @@ if (existsSync(dbPath)) {
   try { unlinkSync(dbPath); } catch { /* ignore */ }
   try { unlinkSync(dbPath + "-journal"); } catch { /* ignore */ }
 }
+
+// Some SQLite engine builds require the empty file before migration initialization.
+if (!existsSync(dbPath)) writeFileSync(dbPath, "", { flag: "wx" });
 
 // 用迁移建立独立测试库（不能只 db push 后就说迁移验证通过）——T25a
 const migrateArgs = ["prisma", "migrate", "deploy"];

@@ -172,6 +172,35 @@ describe("Tbox fallback adapter", () => {
     );
   });
 
+  it("embeds context into question_prefix and omits business_data when required", async () => {
+    const fetchImpl = vi.fn(async (_url: URL | RequestInfo, _init?: RequestInit) => {
+      void _url;
+      void _init;
+      return new Response(
+        JSON.stringify({
+          conversation_id: "conversation-1",
+          messages: [{ type: "answer", content_type: "text", content: "answer" }],
+        }),
+        { status: 200 },
+      );
+    });
+
+    await chatWithTbox(
+      {
+        question: "继续模拟训练",
+        userId: "user-1",
+        context: { profileSnapshot: { available: true }, simulationState: { round: 2 } },
+      },
+      { config: { ...baseConfig, contextTransport: "question_prefix" }, fetchImpl },
+    );
+
+    const body = JSON.parse(String(fetchImpl.mock.calls[0][1]?.body));
+    expect(body).not.toHaveProperty("business_data");
+    expect(body.question).toContain("businessData");
+    expect(body.question).toContain("profileSnapshot");
+    expect(body.question).toContain("继续模拟训练");
+  });
+
   it("falls back on timeout using an injected clock", async () => {
     const fetchImpl = vi.fn(async (_url: URL | RequestInfo, init?: RequestInit) => {
       if (init?.signal?.aborted) throw new DOMException("timed out", "AbortError");

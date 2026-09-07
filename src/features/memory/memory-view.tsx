@@ -1,6 +1,6 @@
 "use client";
 
-/** 成长档案 —— 待确认建议 / 画像与证据 / 记忆与隐私 三标签（T18） */
+/** 成长档案 —— 待确认建议 / 画像与证据 / 长期记忆 三标签（T18） */
 import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { fetchApi } from "@/lib/client-api";
@@ -64,7 +64,6 @@ export function MemoryView({ memories, candidates, v2Candidates = [], profile, m
   const router = useRouter();
   const searchParams = useSearchParams();
   const [content, setContent] = useState("");
-  const [clearConfirmation, setClearConfirmation] = useState("");
 
   // 内联编辑状态
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -170,27 +169,6 @@ export function MemoryView({ memories, candidates, v2Candidates = [], profile, m
     // 文案与实际语义一致：关闭=不再写入新的长期记忆（已有记忆仍被保留）
     setNotice(r.data.enabled ? "长期记忆已开启，AI 会继续提炼并保存事实、偏好与目标。" : "长期记忆已关闭，AI 不再写入新的长期记忆；已有记忆仍被保留。");
     await refresh();
-  }
-
-  async function exportData() {
-    const r = await fetchApi<Record<string, unknown>>("/api/privacy/export");
-    if (!r.ok) return setNotice(r.error?.message ?? "数据导出失败。");
-    const url = URL.createObjectURL(new Blob([JSON.stringify(r.data, null, 2)], { type: "application/json" }));
-    const a = document.createElement("a"); a.href = url; a.download = "careermate-data.json"; a.click(); URL.revokeObjectURL(url);
-    setNotice("账号成长数据已导出，敏感凭据未包含在文件中。");
-  }
-
-  async function clearData(): Promise<boolean> {
-    const r = await fetchApi<{ cleared: boolean }>("/api/privacy/account-data", { method: "DELETE", body: JSON.stringify({ confirmation: clearConfirmation }) });
-    if (!r.ok) {
-      setNotice(r.error?.message ?? "成长数据清空失败。");
-      return false;
-    }
-    setClearConfirmation("");
-    setNotice("成长数据已清空，正在跳转画像引导...");
-    router.push("/onboarding");
-    router.refresh();
-    return true;
   }
 
   // 画像基础信息 + 能力（只读，不直接编辑分数；T18）
@@ -315,7 +293,7 @@ export function MemoryView({ memories, candidates, v2Candidates = [], profile, m
         </SurfaceCard>
       )}
 
-      {activeTab === "privacy" && (
+      {activeTab === "memory" && (
         <div className="memory-stack">
           <SurfaceCard
             title="长期记忆"
@@ -376,43 +354,6 @@ export function MemoryView({ memories, candidates, v2Candidates = [], profile, m
             </div>
           </SurfaceCard>
 
-          <SurfaceCard title="隐私与数据" description="导出与清空，数据完全由你掌控">
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "4px 0" }}>
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 500, color: "var(--cm-text-strong)" }}>导出 JSON</div>
-                  <p style={{ margin: "2px 0 0", fontSize: 12.5, color: "var(--cm-text-subtle)" }}>下载全部成长数据，敏感凭据不会包含在内</p>
-                </div>
-                <Button variant="secondary" onClick={exportData}>导出</Button>
-              </div>
-
-              {/* 清空成长数据：独立危险区域，不与候选确认操作挨在一起（T18） */}
-              <div style={{ borderTop: "1px solid var(--cm-border)", paddingTop: 14, background: "var(--cm-danger-bg)", borderRadius: "var(--cm-radius-control)", padding: "16px" }}>
-                <div style={{ fontSize: 14, fontWeight: 500, color: "var(--cm-danger)" }}>清空成长数据</div>
-                <p style={{ margin: "4px 0 0", fontSize: 12.5, lineHeight: 1.6, color: "var(--cm-text-muted)" }}>
-                  清空会删除画像成长数据并重新进入引导，但保留账号、角色和当前登录态。请输入确认词{" "}
-                  <code style={{ background: "var(--cm-danger-bg)", color: "var(--cm-danger)", padding: "2px 6px", borderRadius: 4 }}>CLEAR_MY_DATA</code>。
-                </p>
-                <div style={{ marginTop: 12, display: "flex", gap: 10 }}>
-                  <input
-                    aria-label="清空确认词"
-                    className="cm-input"
-                    placeholder="输入确认词以启用"
-                    value={clearConfirmation}
-                    onChange={(e) => setClearConfirmation(e.target.value)}
-                  />
-                  <Button
-                    variant="danger"
-                    disabled={clearConfirmation !== "CLEAR_MY_DATA"}
-                    onClick={clearData}
-                    style={{ flexShrink: 0 }}
-                  >
-                    清空成长数据
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </SurfaceCard>
         </div>
       )}
 

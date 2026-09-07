@@ -101,15 +101,22 @@ export function AgentArtifactCandidateCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ decision }),
       });
-      const body = await res.json();
+      const body = await res.json().catch(() => null);
       if (!body.ok) {
-        setError(res.status === 409 ? "数据版本已变化，请重新生成候选" : (body.error?.message ?? "操作失败"));
+        setError(
+          body?.error?.message ??
+            (res.status === 409
+              ? "数据版本已变化，请重新生成候选"
+              : res.status >= 500
+                ? "服务端处理失败，请稍后重试"
+                : "操作失败"),
+        );
         return;
       }
       setStatus(body.data.status);
       playSettle(rootRef.current);
     } catch {
-      setError("网络错误，请重试");
+      setError("网络连接失败，请重试");
     } finally {
       setDeciding(false);
     }

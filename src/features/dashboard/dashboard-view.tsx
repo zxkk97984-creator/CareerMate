@@ -66,6 +66,7 @@ export function DashboardView({ data, refresh, setNotice }: DashboardViewProps) 
     tasks: currentTasks.map((t, i) => ({ id: t.id, title: t.title, status: t.status, dueWeek: t.dueWeek, order: i })),
     hasCompleted: doneTasks > 0,
   });
+  const latestAiMeta = data.planExecutionMeta;
 
   async function generatePlan() {
     if (generating) return;
@@ -96,6 +97,24 @@ export function DashboardView({ data, refresh, setNotice }: DashboardViewProps) 
     <>
       {/* 下一步主区：行动优先（plan 3.3 / T11）——状态短标签 → 任务标题 → 推荐原因 → 一个主按钮 */}
       <section className="dash-next-action" data-od-id="dashboard-next-action" style={{ borderRadius: "var(--cm-radius-card)", border: "1px solid var(--cm-border)", background: "var(--cm-surface)", boxShadow: "var(--cm-shadow-card)", padding: "20px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 20, flexWrap: "wrap" }}>
+        {latestAiMeta ? (
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "3px 10px",
+              borderRadius: 999,
+              fontSize: 12,
+              fontWeight: 600,
+              color: latestAiMeta.actualMode === "api" ? "var(--cm-success)" : "var(--cm-warning)",
+              background: latestAiMeta.actualMode === "api" ? "var(--cm-success-bg)" : "var(--cm-warning-bg)",
+            }}
+          >
+            {latestAiMeta.actualMode === "api" ? "百宝箱 API · 真实链路" : `AI 来源：${latestAiMeta.actualMode}`}
+            {latestAiMeta.degraded ? "（已降级）" : ""}
+          </span>
+        ) : null}
         <div style={{ minWidth: 0 }}>
           <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--cm-brand-ink, #0E76FF)" }}>下一步</span>
           <div style={{ marginTop: 6, fontSize: 18, fontWeight: 600, lineHeight: 1.4, color: "var(--cm-text-strong)" }}>{nextAction.title}</div>
@@ -162,7 +181,7 @@ export function DashboardView({ data, refresh, setNotice }: DashboardViewProps) 
 
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           <Metric title="本月任务" value={totalTasks} unit="项" tone="brand" />
-          <Metric title="待确认画像" value={pendingCandidateCount} unit="条" tone="warning" />
+          <Metric title="待确认建议" value={pendingCandidateCount} unit="条" tone="warning" />
         </div>
       </div>
 
@@ -237,12 +256,6 @@ export function DashboardView({ data, refresh, setNotice }: DashboardViewProps) 
 
       {/* 第三行：匹配度说明 + 近期成长记录（简洁列表） */}
       <div className="dash-row-3" data-od-id="dashboard-row-notes">
-        <SurfaceCard title="匹配度说明">
-          <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.75, color: "var(--cm-text-muted)" }}>
-            {data.match?.explanation ?? "完成画像后将生成岗位匹配度说明。"}
-          </p>
-        </SurfaceCard>
-
         <SurfaceCard title="近期成长记录">
           {data.recentProgressLogs.length === 0 ? (
             <p style={{ margin: 0, fontSize: 13.5, color: "var(--cm-text-muted)" }}>还没有成长记录，完成第一个任务后这里会出现。</p>

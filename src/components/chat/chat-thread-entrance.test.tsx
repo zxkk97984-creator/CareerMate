@@ -1,11 +1,13 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { ChatThread } from "./chat-thread";
+import { CompanionAppearanceProvider } from "./companion-appearance-provider";
 
 function renderThread() {
   return renderToStaticMarkup(
-    <ChatThread
-      messages={[
+    <CompanionAppearanceProvider>
+      <ChatThread
+        messages={[
         {
           id: "m1",
           conversationId: "c1",
@@ -28,10 +30,11 @@ function renderThread() {
           contextMeta: {},
           createdAt: "2026-09-03T00:00:01.000Z",
         },
-      ]}
-      activeConversationId="c1"
-      onNewChat={vi.fn()}
-    />,
+        ]}
+        activeConversationId="c1"
+        onNewChat={vi.fn()}
+      />
+    </CompanionAppearanceProvider>,
   );
 }
 
@@ -46,5 +49,11 @@ describe("ChatThread 入场标记", () => {
     const html = renderThread();
     expect(html).toContain("你好");
     expect(html).not.toContain("opacity:0");
+  });
+
+  it("uses the Shuangling sprite as the assistant avatar by default", () => {
+    const html = renderThread();
+    expect(html).toContain("shuangling-avatar.png");
+    expect(html).not.toContain("kurisu-avatar.png");
   });
 });

@@ -22,6 +22,9 @@ export async function POST(request: Request, context: { params: Promise<{ sessio
   if (!scenarioKey.success) return fail("INVALID_SESSION", "训练场景无效", 400);
   const previousTranscript = parseSimulationTranscript(session.transcript);
   const nextTurn = session.turnCount + 1;
+  // 百宝箱 simulation_turn 的 round 表示“下一轮追问编号”：
+  // 开场白不算用户轮次，第一轮用户回答后的下一轮追问编号为 2。
+  const nextRound = nextTurn + 1;
   // 先构造包含本轮用户回答的 transcript，再传给 Agent
   const transcript: { role: "user" | "assistant"; content: string }[] = [
     ...previousTranscript,
@@ -35,7 +38,7 @@ export async function POST(request: Request, context: { params: Promise<{ sessio
     transcript,
     remoteConversationId: session.remoteConversationId ?? undefined,
     sessionId: session.id,
-    expectedRound: nextTurn,
+    expectedRound: nextRound,
   });
 
   // V2 协议：result.data.text 包含信封中的 nextQuestion；structured 已被淘汰

@@ -15,7 +15,8 @@ async function login(page: import("@playwright/test").Page, username = "student_
   await page.getByLabel("密码").fill("careermate123");
   await page.getByRole("button", { name: "进入 CareerMate" }).click();
   // 登录后重定向到 /dashboard(对话板块已迁移)
-  await expect(page).toHaveURL(/\/dashboard/);
+  await expect(page).toHaveURL(/\/chat/);
+  await page.goto("/dashboard");
 }
 
 test.describe("动效降级(reduced motion)", () => {

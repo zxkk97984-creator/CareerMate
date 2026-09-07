@@ -170,6 +170,31 @@ describe("候选解析服务 (严格 Zod)", () => {
     ).rejects.toMatchObject({ code: "BASE_VERSION_CONFLICT", status: 409 });
   });
 
+  it("career_plan 接受时使用全局最大版本，避免与 pending 历史版本冲突", async () => {
+    const findFirst = vi.fn()
+      .mockResolvedValueOnce({ id: "active-plan", version: 3 })
+      .mockResolvedValueOnce({ id: "latest-plan", version: 6 });
+    const tx = makeTx({
+      careerPlan: {
+        findFirst,
+        updateMany: vi.fn(),
+        create: vi.fn().mockResolvedValue({ id: "plan-new" }),
+      },
+    });
+
+    const result = await resolveAgentArtifactCandidate(
+      { userId: "u1", candidateId: "c1", decision: "accept" },
+      { db: tx as any },
+    );
+
+    expect(result.status).toBe("accepted");
+    expect(tx.careerPlan.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ version: 7 }),
+      }),
+    );
+  });
+
   it("profile_patch 比较画像版本", async () => {
     const tx = makeTx({
       agentArtifactCandidate: { findFirst: vi.fn().mockResolvedValue({ id: "c1", userId: "u1", candidateType: "profile_patch", status: "pending", artifact: JSON.stringify(validProfileArtifact), baseVersion: 3, sourceSessionId: "s1", sourceConversationId: "c1", resolvedAt: null }), updateMany: vi.fn().mockResolvedValue({ count: 1 }), update: vi.fn() },

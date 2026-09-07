@@ -20,6 +20,30 @@ const selectClass = "cm-select";
 
 interface TaskContext { taskId: string | null; planId: string | null; taskTitle: string | null; roleKey: string | null; }
 
+interface TboxSummary {
+  title: string;
+  description: string;
+}
+
+function summarizeTboxContent(content: string): TboxSummary {
+  const lines = content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const titleLine = lines.find((line) => /^- title[:：]/i.test(line));
+  const title = titleLine
+    ? titleLine.replace(/^- title[:：]\s*/i, "")
+    : lines[0]?.replace(/^#+\s*/, "") || "学习资源";
+  const descriptionLine = lines.find((line) => /^- description[:：]/i.test(line));
+  const description = descriptionLine
+    ? descriptionLine.replace(/^- description[:：]\s*/i, "")
+    : content.replace(/\s+/g, " ").slice(0, 280);
+  return {
+    title: title.slice(0, 160) || "学习资源",
+    description: description.slice(0, 320) || "点击展开查看完整资源内容。",
+  };
+}
+
 export function ResourceView({ resources, profile, weakAbilities }: ResourceViewProps) {
   const searchParams = useSearchParams();
   const [roleKey, setRoleKey] = useState(profile.targetRole ?? "");
@@ -30,6 +54,7 @@ export function ResourceView({ resources, profile, weakAbilities }: ResourceView
   const [tboxItems, setTboxItems] = useState<Array<{ content: string; source: string; score: number }>>([]);
   const [tboxLoading, setTboxLoading] = useState(false);
   const [tboxSearched, setTboxSearched] = useState(false);
+  const [tboxMeta, setTboxMeta] = useState<{ actualMode?: string; degraded?: boolean } | null>(null);
   // 检索失败与零结果分开：null=未失败；"x"=失败文案
   const [tboxError, setTboxError] = useState<string | null>(null);
   // request sequence 防结果竞态：仅接受最新一次查询的返回（T16a）
@@ -74,6 +99,7 @@ export function ResourceView({ resources, profile, weakAbilities }: ResourceView
     const seq = ++tboxSeq.current;
     setTboxLoading(true);
     setTboxError(null);
+    setTboxMeta(null);
     setNotice("");
     const r = await fetchApi<{ items?: Array<{ content: string; source: string; score: number }> }>("/api/tbox/retrieve", {
       method: "POST",
@@ -85,6 +111,7 @@ export function ResourceView({ resources, profile, weakAbilities }: ResourceView
     setTboxLoading(false);
     if (r.ok) {
       setTboxItems(r.data.items ?? []);
+      setTboxMeta(r.meta ?? null);
       setTboxError(null);
     } else {
       setTboxItems([]);
@@ -101,7 +128,7 @@ export function ResourceView({ resources, profile, weakAbilities }: ResourceView
 
   return (
     <div data-od-id="resources-layout">
-    <SurfaceCard title="资源中心" description="按目标岗位、能力方向与资源类型筛选">
+    <SurfaceCard title="查找学习资源" description="按目标岗位、能力方向与资源类型筛选">
       {/* T16b：由任务进入时显示上下文 + 返回任务 */}
       {(taskId || planId) ? (
         <div style={{ marginBottom: 16, padding: 14, borderRadius: "var(--cm-radius-control)", background: "var(--cm-canvas)", border: "1px solid var(--cm-border)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
@@ -175,7 +202,14 @@ export function ResourceView({ resources, profile, weakAbilities }: ResourceView
 
       {tboxSearched ? (
         <div style={{ margin: "16px 0 0" }}>
-          <h4 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "var(--cm-text-strong)" }}>百宝箱检索结果</h4>
+          <h4 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "var(--cm-text-strong)", display: "flex", alignItems: "center", gap: 8 }}>
+            百宝箱检索结果
+            {tboxMeta?.actualMode === "api" ? (
+              <span style={{ padding: "2px 8px", borderRadius: 999, fontSize: 11.5, fontWeight: 600, color: "var(--cm-success)", background: "var(--cm-success-bg)" }}>
+                真实 API
+              </span>
+            ) : null}
+          </h4>
           {tboxError ? (
             // 检索失败（网络/业务/超时）：与“零结果”分开的信息
             <InlineAlert tone="error">{tboxError}</InlineAlert>
@@ -185,11 +219,31 @@ export function ResourceView({ resources, profile, weakAbilities }: ResourceView
             <div className="resource-grid" style={{ marginTop: 10 }}>
               {tboxItems.map((item, i) => (
                 <article key={`${item.source}-${i}`} className="resource-card">
-                  <div style={{ fontSize: 13.5, lineHeight: 1.7, color: "var(--cm-text-strong)" }}>{item.content}</div>
-                  <div style={{ marginTop: 8, display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--cm-text-subtle)" }}>
-                    <span>{item.source}</span>
-                    <span>相关度 {Math.round(item.score * 100)}%</span>
-                  </div>
+                  {(() => {
+                    const summary = summarizeTboxContent(item.content);
+                    return (
+                      <>
+                        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, lineHeight: 1.5, color: "var(--cm-text-strong)" }}>
+                          {summary.title}
+                        </h3>
+                        <p style={{ margin: "10px 0 0", fontSize: 13.5, lineHeight: 1.7, color: "var(--cm-text-muted)" }}>
+                          {summary.description}
+                        </p>
+                        <details style={{ marginTop: 10 }}>
+                          <summary style={{ cursor: "pointer", fontSize: 12.5, color: "var(--cm-brand-ink)", fontWeight: 500 }}>
+                            查看完整内容
+                          </summary>
+                          <pre style={{ margin: "8px 0 0", whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 12.5, lineHeight: 1.7, color: "var(--cm-text-muted)", background: "var(--cm-canvas)", padding: 12, borderRadius: "var(--cm-radius-control)", overflow: "auto" }}>
+                            {item.content}
+                          </pre>
+                        </details>
+                        <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--cm-text-subtle)" }}>
+                          <span>{item.source}</span>
+                          <span>相关度 {Math.round(item.score * 100)}%</span>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </article>
               ))}
             </div>
