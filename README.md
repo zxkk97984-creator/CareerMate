@@ -93,6 +93,54 @@ flowchart TB
 
 V2 返回可读正文和可选的精确 `CAREERMATE_ARTIFACT` 信封。只有 `pending_confirmation` 且通过任务类型、业务数据和版本校验的 artifact 才能创建候选。
 
+### 百宝箱 Agentic V2 架构
+
+百宝箱 Agentic V2 是真实链路中的唯一 AI 决策中枢。前端描述用户请求和页面状态，CareerMate 后端提供经过裁剪和脱敏的业务快照；主 Agent 自主决定是否检索知识库、联网、调用工作流、Skill 或专业子智能体。
+
+```mermaid
+flowchart TB
+    U["用户"] --> UI["CareerMate 前端<br/>页面状态与自然语言请求"]
+    UI --> API["CareerMate 后端<br/>登录、权限、会话与 SSE"]
+
+    DB[("CareerMate 权威数据库<br/>画像、证据、计划、进度、训练、记忆")]
+    DB --> SNAP["脱敏业务快照<br/>profileSnapshot<br/>historySnapshot<br/>simulationState"]
+    SNAP --> API
+
+    API -->|"一个 agent_id<br/>business_data + conversation_id"| AGENT["百宝箱 Agentic V2<br/>唯一 AI 大脑"]
+
+    subgraph TBOX["百宝箱能力层"]
+        AGENT --> KB["职业知识库<br/>稳定基线"]
+        AGENT --> WF["确定性工作流<br/>结构化业务任务"]
+        AGENT --> SKILL["Skill<br/>解析、计算、标准化"]
+        AGENT --> SUB["专业子智能体<br/>研究与伦理审查"]
+        AGENT --> SEARCH["夸克搜索 MCP<br/>当前市场证据"]
+        AGENT --> PMEM["百宝箱长期记忆<br/>低敏感度偏好"]
+    end
+
+    AGENT --> ENVELOPE["一次最终答复<br/>可选 CAREERMATE_ARTIFACT 信封"]
+    ENVELOPE --> VALIDATE["后端严格校验<br/>Schema、所有权、权限、baseVersion"]
+    VALIDATE --> CARD["待确认候选卡片"]
+    CARD -->|"接受"| PROJECT["事务化正式投影"]
+    CARD -->|"拒绝"| REJECT["保留原正式数据"]
+    PROJECT --> DB
+```
+
+#### 职责边界
+
+| 层级 | 负责 | 不负责 |
+|---|---|---|
+| 百宝箱 Agentic V2 | 意图理解、工具路由、联网判断、证据融合、候选生成 | 登录鉴权、直接覆盖正式业务数据 |
+| CareerMate 后端 | 用户身份、数据隔离、脱敏快照、会话绑定、Schema/版本校验、确认与正式写入 | 建立第二套 AI 决策逻辑 |
+| CareerMate 前端 | 用户交互、页面上下文、流式展示、候选确认 | 指定 Agent 必须调用哪个工作流 |
+| CareerMate 数据库 | 保存已确认画像、能力证据、计划、进度、训练和正式记忆 | 将未确认的模型推断视为事实 |
+
+当前真实 API 路径约定：
+
+- 后端只调用一个 V2 `agent_id`，并按本地会话复用百宝箱 `conversation_id`。
+- `business_data` 携带裁剪后的 `profileSnapshot`、`historySnapshot` 和可选 `simulationState`，不携带完整简历、联系方式或无关敏感信息。
+- 页面上下文只描述 `surface`、`action` 和可选目标引用，不能覆盖用户自然语言意图。
+- `TBOX_SEARCH_ENGINE=false`，避免内置搜索和 Agent 已挂载的夸克搜索 MCP 重复执行。
+
 本地默认值见 `.env.example`：
 
 ```env
