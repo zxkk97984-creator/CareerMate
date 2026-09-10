@@ -8,12 +8,13 @@ beforeEach(() => vi.clearAllMocks());
 describe("primary chat entry", () => {
   it("requires authentication", async () => {
     mocks.user.mockResolvedValue(null);
-    await expect(ChatPage()).rejects.toThrow("/login");
+    await expect(ChatPage({ searchParams: Promise.resolve({}) })).rejects.toThrow("/login");
   });
   it("renders the current user's chat page", async () => {
     mocks.user.mockResolvedValue({ id: "u1", displayName: "小林", role: "user", profile: { onboardingCompleted: true } });
-    const page = await ChatPage();
+    const page = await ChatPage({ searchParams: Promise.resolve({ jobId: "job-1", intent: "job-gap" }) });
     expect(page.props).toMatchObject({ userId: "u1", displayName: "小林" });
+    expect(page.props).toMatchObject({ jobId: "job-1", jobIntent: "job-gap" });
     expect(mocks.redirect).not.toHaveBeenCalled();
   });
 });

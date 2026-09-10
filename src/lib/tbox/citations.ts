@@ -173,17 +173,6 @@ function parseResultSummary(summary: string): ParsedResultRef[] {
     });
   }
 
-  // 如果没有找到标准格式，尝试简单提取
-  if (refs.length === 0 && summary.trim()) {
-    const lines = summary.split("\n");
-    const titleLine = lines.find((l) => l.trim() && !l.startsWith("|")) ?? "";
-    refs.push({
-      title: titleLine.replace(/^#+\s*/, "").trim().slice(0, 240) || "知识库参考资料",
-      content: summary.slice(0, 500),
-      relevance: 0.5,
-      refIndex: 1,
-    });
-  }
 
   return refs;
 }
@@ -239,17 +228,18 @@ export function normalizeCitationsFromToolCalls(
   toolCalls: ToolCallRecord[],
 ): NormalizedCitation[] {
   const results: NormalizedCitation[] = [];
-  const hasSearch = isSearchToolCall(toolCalls);
-  const hasKnowledge = isKnowledgeToolCall(toolCalls);
 
   for (const tc of toolCalls) {
     if (!tc.resultSummary) continue;
+    const hasSearch = isSearchToolCall([tc]);
+    const hasKnowledge = isKnowledgeToolCall([tc]);
+    if (!hasSearch && !hasKnowledge) continue;
 
     const refs = parseResultSummary(tc.resultSummary);
     for (const ref of refs) {
       const hasValidUrl = ref.url ? isValidExternalUrl(ref.url) : false;
       results.push({
-        id: `citation_${tc.toolType}_${ref.refIndex}`,
+        id: `citation_${tc.toolId}_${ref.refIndex}`,
         title: ref.title,
         source: ref.url ? "联网搜索" : hasKnowledge ? "CareerMate 知识库" : "未知来源",
         url: hasValidUrl ? ref.url : undefined,

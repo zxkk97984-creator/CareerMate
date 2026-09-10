@@ -397,7 +397,25 @@ describe("AgentArtifact V1 discriminated union (per-taskType data schema)", () =
     const r = validatedAgentArtifactV1Schema.safeParse(artifactFixture("learning_route", {
       targetRole: "data_analyst",
       weeklyBudgetHours: 10,
-      stages: [{ name: "SQL 基础", weeks: 4 }],
+      period: "4周",
+      stages: [{
+        title: "SQL 基础",
+        description: "第 1-4 周完成查询练习",
+        tasks: [{
+          title: "完成 10 道 SQL 聚合查询",
+          description: "使用公开销售数据完成查询并记录过滤逻辑",
+          estimatedHours: 4,
+          outputs: ["10 道查询结果"],
+          acceptanceCriteria: ["能解释分组和过滤条件"],
+        }],
+      }],
+      tasks: [{
+        title: "完成 10 道 SQL 聚合查询",
+        description: "使用公开销售数据完成查询并记录过滤逻辑",
+        estimatedHours: 4,
+        outputs: ["10 道查询结果"],
+        acceptanceCriteria: ["能解释分组和过滤条件"],
+      }],
       baseRouteVersion: null,
     }));
     expect(r.success).toBe(true);

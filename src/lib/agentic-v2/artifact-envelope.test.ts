@@ -54,6 +54,8 @@ describe("CAREERMATE_ARTIFACT 信封解析器", () => {
     const result = parseAgentArtifactEnvelope(`${block}\n${block}`);
     expect(result.artifact).toBeUndefined();
     expect(result.warnings).toContain("MULTIPLE_ARTIFACT_ENVELOPES");
+    expect(result.displayText).toBe("");
+    expect(result.displayText).not.toContain("三年计划候选");
   });
 
   it("对无效 JSON 或 schema 保留可读文本，不执行 artifact 操作", () => {
@@ -65,12 +67,53 @@ describe("CAREERMATE_ARTIFACT 信封解析器", () => {
     expect(result.warnings).toContain("INVALID_ARTIFACT_ENVELOPE");
   });
 
+  it("修复字符串值中未转义的引号后继续执行严格 schema 校验", () => {
+    const raw = '{"schemaVersion":"1.0","taskType":"career_plan","status":"needs_input","summary":"需要补充"目标"信息","data":{"question":"请提供"目标岗位""},"evidence":[],"sources":[],"assumptions":[],"warnings":[],"requiresUserConfirmation":false,"baseVersion":null,"nextActions":[]}';
+    const result = parseAgentArtifactEnvelope(
+      `可读答案\n<CAREERMATE_ARTIFACT>${raw}</CAREERMATE_ARTIFACT>`,
+    );
+    expect(result.displayText).toBe("可读答案");
+    expect(result.artifact).toBeDefined();
+    expect(result.artifact?.taskType).toBe("career_plan");
+    expect(result.artifact?.data).toEqual({ question: "请提供\"目标岗位\"" });
+    expect(result.warnings).toContain("REPAIRED_ARTIFACT_JSON");
+  });
+
+  it("仅在缺失时补齐协议 schemaVersion，不覆盖错误版本", () => {
+    const withoutSchemaVersion = {
+      taskType: "career_plan",
+      status: "needs_input",
+      summary: "需要更多信息",
+      data: { question: "请提供你的目标岗位" },
+      evidence: [],
+      sources: [],
+      assumptions: [],
+      warnings: [],
+      requiresUserConfirmation: false,
+      baseVersion: null,
+      nextActions: [],
+    };
+    const repaired = parseAgentArtifactEnvelope(
+      `<CAREERMATE_ARTIFACT>${JSON.stringify(withoutSchemaVersion)}</CAREERMATE_ARTIFACT>`,
+    );
+    expect(repaired.artifact?.schemaVersion).toBe("1.0");
+    expect(repaired.warnings).toContain("NORMALIZED_ARTIFACT_SCHEMA_VERSION");
+
+    const wrongVersion = parseAgentArtifactEnvelope(
+      `<CAREERMATE_ARTIFACT>${JSON.stringify({ ...withoutSchemaVersion, schemaVersion: "2.0" })}</CAREERMATE_ARTIFACT>`,
+    );
+    expect(wrongVersion.artifact).toBeUndefined();
+    expect(wrongVersion.warnings).toContain("INVALID_ARTIFACT_SCHEMA");
+  });
+
   it("处理缺失闭合标签", () => {
     const result = parseAgentArtifactEnvelope(
       `文本\n<CAREERMATE_ARTIFACT>${JSON.stringify(validArtifact)}`,
     );
     expect(result.artifact).toBeUndefined();
     expect(result.warnings).toContain("INVALID_ARTIFACT_ENVELOPE");
+    expect(result.displayText).toBe("文本");
+    expect(result.displayText).not.toContain("三年计划候选");
   });
 
   it("处理空可视文本", () => {

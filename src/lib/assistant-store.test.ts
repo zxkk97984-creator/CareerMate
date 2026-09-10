@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAssistantStore } from "./assistant-store";
 const json = (data: unknown) => new Response(JSON.stringify({ ok: true, data }), { headers: { "Content-Type": "application/json" } });
 const conv = { id: "c1", title: "职业计划", status: "active", lastMessageAt: "2026-09-07", createdAt: "2026-09-07" };
@@ -21,6 +21,25 @@ describe("shared assistant state", () => {
     expect(calls).toHaveLength(1);
     expect(JSON.parse(calls[0][1].body)).toMatchObject({ actionId: "explore", interaction: { action: "quick_action" } });
   });
+  it("passes an explicit page interaction such as a job sample reference", async () => {
+    const fetcher = vi.fn().mockImplementation((url: string) => url.endsWith("/stream")
+      ? Promise.resolve(stream())
+      : Promise.resolve(json(conv)));
+    const store = createAssistantStore(fetcher);
+
+    await store.send("分析这个岗位", undefined, {
+      surface: "resources",
+      action: "analyze_job_gap",
+      targetRef: "job-123",
+    });
+
+    const call = fetcher.mock.calls.find(([url]) => url.endsWith("/stream"));
+    expect(JSON.parse(call![1].body).interaction).toEqual({
+      surface: "resources",
+      action: "analyze_job_gap",
+      targetRef: "job-123",
+    });
+  });
   it("ignores history that finishes after starting a new chat and preserves the new draft", async () => {
     let resolve!: (r: Response) => void;
     const store = createAssistantStore(() => new Promise<Response>(r => { resolve = r; }));
@@ -38,6 +57,27 @@ describe("shared assistant state", () => {
     store.newChat(); store.setDraft("新问题");
     resolve(stream("旧回复")); await sending;
     expect(store.getSnapshot()).toMatchObject({ messages: [], draft: "新问题", streaming: false });
+  });
+  it("does not abort an in-flight stream when starting a new chat", async () => {
+    let resolve!: (r: Response) => void;
+    let streamSignal: AbortSignal | undefined;
+    const fetcher = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url.endsWith("/stream")) {
+        streamSignal = init?.signal ?? undefined;
+        return new Promise<Response>(r => { resolve = r; });
+      }
+      return Promise.resolve(json(conv));
+    });
+    const store = createAssistantStore(fetcher);
+    const sending = store.send("长任务");
+    await vi.waitFor(() => expect(streamSignal).toBeDefined());
+
+    store.newChat();
+    expect(streamSignal?.aborted).toBe(false);
+
+    resolve(stream("后台完成"));
+    await sending;
+    expect(store.getSnapshot()).toMatchObject({ messages: [], streaming: false });
   });
   it("preserves failed text and retries the same logical request without duplicate bubbles", async () => {
     const fetcher = vi.fn().mockResolvedValue(json(conv));
@@ -65,5 +105,32 @@ describe("assistant initialization", () => {
     store.newChat(); store.setDraft("我自己的新问题");
     resolve(json({ items: [conv] })); await loading;
     expect(store.getSnapshot()).toMatchObject({ activeConversationId: null, draft: "我自己的新问题" });
+  });
+});
+
+
+describe("recovery after reload", () => {
+  afterEach(() => vi.useRealTimers());
+  it("polls an existing running turn to completion without submitting it again", async () => {
+    vi.useFakeTimers();
+    const pending = { id: "a1", conversationId: "c1", role: "assistant", content: "已开始", status: "streaming", parts: [], executionMeta: {}, contextMeta: {}, createdAt: new Date().toISOString() };
+    const fetcher = vi.fn().mockResolvedValueOnce(json([pending])).mockResolvedValueOnce(json([{ ...pending, content: "完整回答", status: "completed" }]));
+    const store = createAssistantStore(fetcher);
+    await store.openHistory("c1");
+    expect(store.getSnapshot()).toMatchObject({ streaming: true });
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(store.getSnapshot()).toMatchObject({ streaming: false, messages: [{ content: "完整回答" }] });
+    expect(fetcher.mock.calls.every(([, init]) => !init?.method || init.method === "GET")).toBe(true);
+    store.reset();
+  });
+  it("stops polling when switching to a new conversation", async () => {
+    vi.useFakeTimers();
+    const fetcher = vi.fn().mockResolvedValue(json([{ id: "a1", status: "streaming", role: "assistant" }]));
+    const store = createAssistantStore(fetcher);
+    await store.openHistory("c1");
+    store.newChat();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(store.getSnapshot().streaming).toBe(false);
   });
 });

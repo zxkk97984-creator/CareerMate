@@ -47,6 +47,7 @@ export const profileSnapshotSchema = z.object({
       targetRole: z.string().optional(),
       targetRoleLabel: z.string().optional(),
     })
+    .nullable()
     .optional(),
 });
 
@@ -67,7 +68,7 @@ export const abilityChangeSchema = z.object({
   initialScore: z.number(),
   currentScore: z.number(),
   delta: z.number(),
-  direction: z.enum(["up", "down", "stable"]),
+  direction: z.enum(["up", "down", "stable", "insufficient_data"]),
   dataPoints: z.number().int().nonnegative(),
 });
 
@@ -80,9 +81,10 @@ export const simulationProgressSchema = z.object({
 
 export const trendsSchema = z.object({
   abilityChanges: z.array(abilityChangeSchema),
-  planCompletionRate: z.number().min(0).max(1),
+  planCompletionRate: z.number().min(0).max(1).nullable(),
   totalCompletedPlans: z.number().int().nonnegative(),
   totalActivePlans: z.number().int().nonnegative(),
+  totalArchivedPlans: z.number().int().nonnegative(),
   simulationProgress: z.array(simulationProgressSchema),
   continuousTrainingDays: z.number().int().nonnegative(),
   totalProgressEvents: z.number().int().nonnegative(),
@@ -93,7 +95,7 @@ export const summarySchema = z.object({
   overallDirection: z.enum(["improving", "stable", "declining", "insufficient_data"]),
   strongAreas: z.array(z.string()),
   weakAreas: z.array(z.string()),
-  consistencyScore: z.number().min(0).max(1),
+  consistencyScore: z.number().min(0).max(1).nullable(),
 });
 
 export const growthAnalysisSchema = z.object({

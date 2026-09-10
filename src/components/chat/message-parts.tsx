@@ -1,5 +1,7 @@
 "use client";
 
+import { TrainingReportRef } from "./training-controls";
+import { CHAT_WARNING_PART_CODES, describeChatWarnings, isInternalToolCitation } from "@/lib/chat/display-diagnostics";
 import { useEffect, useRef, useState } from "react";
 import type { ChatMessagePart } from "@/lib/chat/persistence";
 import { Reveal } from "@/components/ui/reveal";
@@ -25,6 +27,8 @@ function CitationList({ items }: { items: ChatMessagePart & { type: "citations" 
     "实时联网调研": Globe2,
     "AI分析与推断": Sparkles,
   };
+  const citations = items.items.filter(c => !isInternalToolCitation(c.title));
+  if (citations.length === 0) return null;
   return (
     <div className="parts-citation-list">
       <div className="parts-section-label">
@@ -32,7 +36,7 @@ function CitationList({ items }: { items: ChatMessagePart & { type: "citations" 
         <span>参考来源</span>
       </div>
       <ul className="citation-items">
-        {items.items.map((c, i) => {
+        {citations.map((c, i) => {
           const Icon = iconMap[c.label] ?? Link2;
           const tone =
             c.label === "已核验职业库"
@@ -352,13 +356,28 @@ function ErrorPart({ code, message }: { code: string; message: string }) {
   );
 }
 
+function WarningNotice({ codes }: { codes: string[] }) {
+  const notice = describeChatWarnings(codes);
+  return <div className={notice.actionable ? "parts-warning" : "parts-diagnostic"}>
+    {notice.actionable && <p role="status">{notice.message}</p>}
+    <details><summary>{notice.actionable ? "查看诊断信息" : "兼容性诊断（不影响正文阅读）"}</summary>
+      <p>{notice.codes.join(" · ")}</p>
+    </details>
+  </div>;
+}
+
 export function MessageParts({ parts, onQuickAction }: MessagePartsProps) {
   if (!parts || parts.length === 0) return null;
+  const warningParts = parts.filter(part => part.type === "error" && CHAT_WARNING_PART_CODES.has(part.code));
+  const codes = warningParts.flatMap(part => part.type === "error" ? [part.message] : []);
+  const visibleParts = parts.filter(part => !(part.type === "error" && CHAT_WARNING_PART_CODES.has(part.code)));
 
   return (
     <div className="message-parts">
-      {parts.map((part, index) => {
+      {visibleParts.map((part, index) => {
         switch (part.type) {
+          case "simulation_report_ref":
+            return <TrainingReportRef key={index} sessionId={part.sessionId}/>;
           case "citations":
             return <CitationList key={index} items={part as ChatMessagePart & { type: "citations" }} />;
           case "profile_candidate_ref":
@@ -428,6 +447,7 @@ export function MessageParts({ parts, onQuickAction }: MessagePartsProps) {
             return null;
         }
       })}
+      {codes.length > 0 && <WarningNotice codes={codes} />}
     </div>
   );
 }

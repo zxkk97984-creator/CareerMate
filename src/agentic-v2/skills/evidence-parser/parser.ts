@@ -188,6 +188,66 @@ function extractFromHistory(history: unknown): EvidenceItem[] {
         });
       }
     }
+  } else if (histData && typeof histData === "object") {
+    const historyObject = histData as Record<string, unknown>;
+    const activePlan = historyObject.activePlan;
+    if (activePlan && typeof activePlan === "object" && !Array.isArray(activePlan)) {
+      const plan = activePlan as Record<string, unknown>;
+      const { cleaned } = stripPII(
+        `计划 ${String(plan.targetRoleLabel ?? plan.targetRole ?? "")} 状态: active，版本 ${String(plan.version ?? "未知")}`,
+      );
+      items.push({
+        id: nextId("history"),
+        source: "history",
+        type: "plan",
+        confidence: 0.85,
+        rawQuote: cleaned,
+        normalizedClaim: cleaned,
+        conflicts: [],
+      });
+    }
+
+    const recentProgress = historyObject.recentProgress;
+    if (Array.isArray(recentProgress)) {
+      for (const entry of recentProgress) {
+        if (!entry || typeof entry !== "object") continue;
+        const record = entry as Record<string, unknown>;
+        const title = record.title ?? record.summary;
+        if (typeof title === "string" && title.trim()) {
+          const { cleaned } = stripPII(title);
+          items.push({
+            id: nextId("history"),
+            source: "history",
+            type: "progress",
+            confidence: 0.8,
+            rawQuote: cleaned,
+            normalizedClaim: cleaned,
+            conflicts: [],
+          });
+        }
+      }
+    }
+
+    const recentSimulations = historyObject.recentSimulations;
+    if (Array.isArray(recentSimulations)) {
+      for (const entry of recentSimulations) {
+        if (!entry || typeof entry !== "object") continue;
+        const record = entry as Record<string, unknown>;
+        const title = record.scenarioTitle ?? record.scenarioKey;
+        if (typeof title === "string" && title.trim()) {
+          const { cleaned } = stripPII(`模拟训练 ${title}，得分 ${String(record.score ?? "未评分")}`);
+          items.push({
+            id: nextId("history"),
+            source: "history",
+            type: "progress",
+            confidence: 0.8,
+            rawQuote: cleaned,
+            normalizedClaim: cleaned,
+            conflicts: [],
+          });
+        }
+      }
+    }
   }
 
   return items;
@@ -314,10 +374,28 @@ function deduplicate(items: EvidenceItem[]): EvidenceItem[] {
  * 从 normalizedClaim 中提取能力键（如"数据分析"），相同能力不同来源即冲突。
  */
 function detectConflicts(items: EvidenceItem[]): EvidenceItem[] {
-  // 按来源+类型分组
+  // 只把“同一对象、不同来源”的证据标为冲突；同一画像里的多个能力分数不是互相冲突。
+  function conflictKey(item: EvidenceItem): string | null {
+    if (item.type === "ability_score" || item.type === "ability_evidence") {
+      const match = item.normalizedClaim.match(/自评\s+(.+?)\s+能力/);
+      return match ? `ability:${match[1].trim().toLowerCase()}` : null;
+    }
+    if (item.type === "preference" && item.normalizedClaim.startsWith("目标职业:")) {
+      return "goal:targetRole";
+    }
+    if (item.type === "requirement") {
+      const skill = item.normalizedClaim.match(/\b(python|sql|excel|java|tableau|power\s*bi|machine\s*learning|数据分析|沟通)\b/i)?.[0];
+      return skill ? `requirement:${skill.toLowerCase()}` : null;
+    }
+    if (item.type === "market_salary") return "market:salary";
+    if (item.type === "market_trend") return `market:${item.normalizedClaim.toLowerCase()}`;
+    return null;
+  }
+
   const groups = new Map<string, EvidenceItem[]>();
   for (const item of items) {
-    const key = `${item.type}`;
+    const key = conflictKey(item);
+    if (!key) continue;
     const group = groups.get(key) ?? [];
     group.push(item);
     groups.set(key, group);

@@ -65,6 +65,15 @@ export interface ProgressLogData {
 export interface MemoryItemDto {
   id: string;
   content: string;
+  source: string;
+  kind: string;
+  scope: string;
+  status: string;
+  confidence: number | null;
+  reason: string;
+  sourceConversationId: string | null;
+  sourceMessageId: string | null;
+  expiresAt: string | null;
   sensitivity: string;
   createdAt: string;
   updatedAt: string;
@@ -97,6 +106,12 @@ export interface SimulationSessionDto {
   requestedMode: string;
   candidateId: string | null;
   remoteConversationId?: string | null;
+  scenarioSnapshot?: unknown;
+  scoringSnapshot?: Record<string, unknown>;
+  sourceType?: string;
+  sourceRef?: string | null;
+  roundLimit?: number;
+  completedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -126,6 +141,7 @@ export interface RoleTemplateDto {
 
 /** 工作台聚合状态 */
 export interface WorkspaceData {
+  dashboard?: import("@/lib/dashboard/model").DashboardDto | null;
   user: { id: string; displayName: string; username: string; avatarDataUrl: string | null; role: string } | null;
   profile: ProfileDto | null;
   plan: CareerPlanDto | null;

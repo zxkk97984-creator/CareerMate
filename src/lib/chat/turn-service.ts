@@ -1,3 +1,4 @@
+import { tboxFailureMessage } from "../tbox/failure-details";
 import { getPrisma } from "@/lib/prisma";
 import type { AgentResponse } from "./agent-protocol";
 import type { CitationObservation } from "../tbox/probe-judge";
@@ -66,6 +67,7 @@ export interface ChatTurnService {
   begin(input: TurnBeginInput): Promise<
     { kind: "new"; turn: ClaimedTurn } | { kind: "replay"; turn: PersistedTurn }
   >;
+  checkpoint(input: { turn: ClaimedTurn; partialText: string }): Promise<void>;
   finalize(input: TurnFinalizeInput): Promise<FinalizedTurn>;
   fail(input: TurnFailInput): Promise<void>;
 }
@@ -171,6 +173,19 @@ export function createTurnService(): ChatTurnService {
   const db = getPrisma();
 
   return {
+    async checkpoint({ turn, partialText }) {
+      await db.$transaction(async (tx) => {
+        const lease = await tx.chatConversation.updateMany({
+          where: { id: turn.conversationId, userId: turn.userId, activeTurnId: turn.id },
+          data: { activeTurnStartedAt: new Date() },
+        });
+        if (!lease.count) return;
+        await tx.chatMessage.updateMany({
+          where: { id: turn.assistantMessageId, turnId: turn.id, status: "streaming" },
+          data: { content: partialText },
+        });
+      });
+    },
     // ── 短事务 A：认领轮次 ──────────────────────────
     async begin(input) {
       const { userId, conversationId, message, clientRequestId } = input;
@@ -440,7 +455,7 @@ export function createTurnService(): ChatTurnService {
               parts: JSON.stringify([{
                 type: "error",
                 code,
-                message: "这次连接没有成功，你的提问已经保留，可以稍后重试。",
+                message: tboxFailureMessage(code),
               }]),
               status: "failed",
               executionMeta: executionMeta ? JSON.stringify(executionMeta) : "{}",
@@ -457,7 +472,7 @@ export function createTurnService(): ChatTurnService {
             parts: JSON.stringify([{
               type: "error",
               code,
-              message: "这次连接没有成功，你的提问已经保留，可以稍后重试。",
+              message: tboxFailureMessage(code),
             }]),
             status: "failed",
             executionMeta: executionMeta ? JSON.stringify(executionMeta) : "{}",

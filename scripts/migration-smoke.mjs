@@ -96,6 +96,7 @@ async function withDatabase(databasePath, action) {
 
 async function verifyFreshDatabase() {
   const databasePath = join(tempRoot, "fresh.db");
+  writeFileSync(databasePath, "", { flag: "wx" });
   runPrisma("Fresh database migration deploy", ["migrate", "deploy", "--schema", schemaPath], databasePath);
   runPrisma(
     "Fresh database schema drift check",
@@ -167,6 +168,7 @@ async function createLegacyFixture(databasePath, legacySchemaPath) {
 
 async function verifyLegacyDatabase() {
   const databasePath = join(tempRoot, "legacy.db");
+  writeFileSync(databasePath, "", { flag: "wx" });
   debug("legacy-fixture-start");
   const legacySchemaPath = createBaselineOnlyMigrationDirectory();
   debug("legacy-fixture-create-db");

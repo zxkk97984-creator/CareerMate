@@ -1,0 +1,50 @@
+import { test, expect } from '@playwright/test';
+test.use({ contextOptions: { reducedMotion: 'reduce' } });
+
+test('scenario preview opens independent training chat, resumes and discusses a report', async ({ page }) => {
+ test.setTimeout(90000);
+ const errors: string[] = []; page.on('pageerror', e => errors.push(e.message));
+ await page.goto('/login');
+ await page.getByLabel('账号').fill('student_lin'); await page.getByLabel('密码').fill('careermate123');
+ await page.getByRole('button', { name: '进入 CareerMate' }).click(); await expect(page).toHaveURL(/\/chat/);
+ await page.goto('/simulation');
+ await expect(page.locator('.training-grid')).toBeVisible();
+ await page.screenshot({ path: '/tmp/careermate-training-lobby.png', fullPage: true });
+ await page.locator('.training-card').first().click();
+ const dialog = page.getByRole('dialog'); await expect(dialog).toBeVisible();
+ await page.keyboard.press('Escape'); await expect(dialog).not.toBeVisible();
+ await page.locator('.training-card').first().click(); await expect(dialog).toBeVisible();
+ await dialog.getByRole('button', { name: '开始训练' }).click();
+ await expect(page).toHaveURL(/\/chat\?conversationId=/);
+ const url = page.url(); const conversationId = new URL(url).searchParams.get('conversationId');
+ await expect(page.locator('.training-chat-bar')).toContainText('0/6');
+ await expect(page.locator('.chat-scroll-area')).not.toBeEmpty();
+ for (let n = 1; n <= 3; n++) {
+  await page.locator('.chat-composer textarea, .composer-textarea').first().fill(`第${n}轮：我会先确认需求和验收标准，明确负责人和时间，再检查反馈并调整任务。`);
+  await page.locator('.chat-composer textarea, .composer-textarea').first().press('Enter');
+  await expect(page.locator('.training-chat-bar')).toContainText(`${n}/6`, { timeout: 20000 });
+ }
+ await page.reload(); await expect(page.locator('.training-chat-bar')).toContainText('3/6');
+ await page.getByRole('button', { name: '结束并生成报告' }).click();
+ await expect(page.locator('.training-chat-bar')).toContainText('训练已完成', { timeout: 20000 });
+ await expect(page.locator('.sim-report')).toBeVisible();
+ await page.locator('.sim-report').scrollIntoViewIfNeeded();
+ await page.screenshot({ path: '/tmp/careermate-training-chat.png', fullPage: true });
+ const before = await page.evaluate(async id => (await fetch(`/api/chat/conversations/${id}`)).json(), conversationId);
+ const textarea = page.locator('.chat-composer textarea, .composer-textarea').first();
+ await textarea.fill('请解释报告中的改进建议，并给我一个练习方法。'); await textarea.press('Enter');
+ await expect(textarea).toBeEnabled({ timeout: 20000 });
+ const after = await page.evaluate(async id => (await fetch(`/api/chat/conversations/${id}`)).json(), conversationId);
+ expect(after.data.simulation.turnCount).toBe(before.data.simulation.turnCount);
+ await page.goto('/simulation'); await page.locator('.training-history-item').first().click(); await expect(page).toHaveURL(url);
+ await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/simulation');
+ await page.screenshot({ path: '/tmp/careermate-training-mobile.png', fullPage: true });
+ expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+ await page.getByRole('button', { name: '自定义场景', exact: true }).click();
+ await page.getByLabel('事件经过').fill('项目延期两周，需要向业务负责人解释原因并重新协商交付时间。');
+ await page.getByLabel('训练目标', { exact: true }).fill('清晰说明风险并协商下一步行动');
+ await page.getByRole('button', { name: '生成场景预览' }).click(); await expect(dialog).toBeVisible();
+ await dialog.getByRole('button', { name: '开始训练' }).click(); await expect(page).toHaveURL(/\/chat\?conversationId=/);
+ expect(page.url()).not.toBe(url); await expect(page.locator('.training-chat-bar')).toContainText('0/6');
+ expect(errors).toEqual([]);
+});

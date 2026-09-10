@@ -1,7 +1,10 @@
 import { z } from "zod";
 import { fail, ok } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
+import { resourceDto } from "@/lib/dto";
 import { getPrisma } from "@/lib/prisma";
+import type { CareerPlanRow } from "@/lib/plans/compatibility";
+import { normalizePlanTasks } from "@/lib/plans/task-model";
 import { isAllowedResourceSource } from "@/lib/resources";
 import { resourceTypes } from "@/lib/types";
 
@@ -17,48 +20,78 @@ const querySchema = z.object({
     "projectPractice",
   ]).optional(),
   type: z.enum(resourceTypes).optional(),
-  // T16b：由任务进入时携带，服务端按用户核验需要读取的实体（任意 query 参数不可信）
-  taskId: z.string().trim().min(1).max(80).optional(),
-  planId: z.string().trim().min(1).max(80).optional(),
+  q: z.string().trim().max(120).optional(),
+  includeUnverified: z.enum(["true", "false"]).optional(),
+  taskId: z.string().trim().min(1).max(120).optional(),
+  planId: z.string().trim().min(1).max(120).optional(),
 }).strict();
 
-/** 从计划 content 中解析出月份并定位目标任务，返回其标题；找不到或解析失败返回 null */
-function findTaskTitleInPlanContent(contentJson: string | null, taskId: string): string | null {
-  if (!contentJson) return null;
-  try {
-    const parsed = JSON.parse(contentJson);
-    const months = Array.isArray(parsed?.months) ? parsed.months : [];
-    for (const month of months) {
-      const tasks = month?.learningTasks;
-      if (!Array.isArray(tasks)) continue;
-      const task = tasks.find((t: any) => t?.id === taskId && typeof t?.title === "string");
-      if (task) return task.title;
-    }
-    return null;
-  } catch {
-    return null;
-  }
+const planContextSelect = {
+  id: true,
+  userId: true,
+  targetRole: true,
+  status: true,
+  schemaVersion: true,
+  content: true,
+  years: true,
+  quarters: true,
+  months: true,
+  currentMonthIndex: true,
+  assumptions: true,
+  riskNotes: true,
+} as const;
+
+function findTaskTitleInPlan(
+  plan: {
+    schemaVersion: number;
+    content: string;
+    years: string;
+    quarters: string;
+    months: string;
+    currentMonthIndex: number;
+    assumptions: string;
+    riskNotes: string;
+  },
+  taskId: string,
+): string | null {
+  const row = {
+    ...plan,
+    id: "",
+    userId: "",
+    targetRole: "",
+    targetRoleLabel: null,
+    version: 1,
+    parentPlanId: null,
+    activatedAt: null,
+    generationMeta: "{}",
+  } as CareerPlanRow;
+  return normalizePlanTasks(row).find((task) => task.id === taskId)?.title ?? null;
 }
 
-async function resolveTaskContext(userId: string, taskId?: string, planId?: string): Promise<
-  { taskId: string | null; planId: string | null; taskTitle: string | null; roleKey: string | null } | { forbidden: true }
+async function resolveTaskContext(
+  userId: string,
+  taskId?: string,
+  planId?: string,
+): Promise<
+  { taskId: string | null; planId: string | null; taskTitle: string | null; roleKey: string | null }
+  | { forbidden: true }
 > {
   if (!taskId && !planId) return { taskId: null, planId: null, taskTitle: null, roleKey: null };
   const db = getPrisma();
-  // 若给了 planId，按 planId 查并校验归属
   if (planId) {
-    const plan = await db.careerPlan.findUnique({ where: { id: planId }, select: { id: true, userId: true, targetRole: true, content: true } });
+    const plan = await db.careerPlan.findUnique({ where: { id: planId }, select: planContextSelect });
     if (!plan || plan.userId !== userId) return { forbidden: true };
-    const title = taskId ? findTaskTitleInPlanContent(plan.content, taskId) : null;
+    const title = taskId ? findTaskTitleInPlan(plan, taskId) : null;
+    if (taskId && !title) return { forbidden: true };
     return { taskId: taskId ?? null, planId, taskTitle: title, roleKey: plan.targetRole };
   }
-  // 只给 taskId：需在所有属于该用户的计划里定位到目标任务所在计划
-  const plans = await db.careerPlan.findMany({ where: { userId }, select: { id: true, targetRole: true, content: true } });
+  const plans = await db.careerPlan.findMany({ where: { userId }, select: planContextSelect });
   for (const plan of plans) {
-    const title = findTaskTitleInPlanContent(plan.content, taskId!);
-    if (title !== null) return { taskId: taskId ?? null, planId: plan.id, taskTitle: title, roleKey: plan.targetRole };
+    const title = findTaskTitleInPlan(plan, taskId!);
+    if (title !== null) {
+      return { taskId: taskId ?? null, planId: plan.id, taskTitle: title, roleKey: plan.targetRole };
+    }
   }
-  // 任务存在但不在任何计划 → 视为无效上下文
   return { forbidden: true };
 }
 
@@ -67,34 +100,60 @@ export async function GET(request: Request) {
   if (!user) return fail("UNAUTHORIZED", "未登录或登录态过期", 401);
 
   const url = new URL(request.url);
-  if (["roleKey", "abilityKey", "type", "taskId", "planId"].some((key) => url.searchParams.getAll(key).length > 1)) {
+  const allowedKeys = ["roleKey", "abilityKey", "type", "q", "includeUnverified", "taskId", "planId"];
+  if (allowedKeys.some((key) => url.searchParams.getAll(key).length > 1)) {
     return fail("INVALID_REQUEST", "资源筛选参数不能重复", 400);
   }
   const parsed = querySchema.safeParse({
     roleKey: url.searchParams.get("roleKey") ?? undefined,
     abilityKey: url.searchParams.get("abilityKey") ?? undefined,
     type: url.searchParams.get("type") ?? undefined,
+    q: url.searchParams.get("q") ?? undefined,
+    includeUnverified: url.searchParams.get("includeUnverified") ?? undefined,
     taskId: url.searchParams.get("taskId") ?? undefined,
     planId: url.searchParams.get("planId") ?? undefined,
   });
   if (!parsed.success) return fail("INVALID_REQUEST", "资源筛选参数无效", 400, parsed.error.flatten());
 
-  const where = { roleKey: parsed.data.roleKey, abilityKey: parsed.data.abilityKey, type: parsed.data.type } as Record<string, string | undefined>;
+  const where: Record<string, unknown> = {
+    status: "active",
+    ...(parsed.data.includeUnverified === "true" ? {} : { verificationStatus: "verified" }),
+  };
+  if (parsed.data.roleKey) where.roleKey = parsed.data.roleKey;
+  if (parsed.data.abilityKey) where.abilityKey = parsed.data.abilityKey;
+  if (parsed.data.type) where.type = parsed.data.type;
+  if (parsed.data.q) {
+    where.OR = [
+      { title: { contains: parsed.data.q } },
+      { description: { contains: parsed.data.q } },
+      { provider: { contains: parsed.data.q } },
+    ];
+  }
 
-  // T16b：任务进入时校验上下文归属；taskId/planId 不属当前用户或目标任务不存在 → 403/404
-  let context: { taskId: string | null; planId: string | null; taskTitle: string | null; roleKey: string | null } = { taskId: null, planId: null, taskTitle: null, roleKey: null };
+  let context: { taskId: string | null; planId: string | null; taskTitle: string | null; roleKey: string | null } = {
+    taskId: null,
+    planId: null,
+    taskTitle: null,
+    roleKey: null,
+  };
   if (parsed.data.taskId || parsed.data.planId) {
     const resolved = await resolveTaskContext(user.id, parsed.data.taskId, parsed.data.planId);
-    if ("forbidden" in resolved) return fail("NOT_FOUND", "无法验证该任务上下文，请从任务详情重新进入", 404);
+    if ("forbidden" in resolved) {
+      return fail("NOT_FOUND", "无法验证该任务上下文，请从任务详情重新进入", 404);
+    }
     context = resolved;
-    // 上下文能确定角色时，用它作为资源筛选的默认角色（但 user 显式传入的 roleKey 优先）
     if (!where.roleKey && context.roleKey) where.roleKey = context.roleKey;
   }
 
   const items = await getPrisma().resourceItem.findMany({
     where,
-    orderBy: [{ roleKey: "asc" }, { stage: "asc" }],
+    orderBy: [{ roleKey: "asc" }, { stage: "asc" }, { title: "asc" }],
   });
 
-  return ok({ items: items.filter((item) => isAllowedResourceSource(item.source)), context });
+  return ok({
+    items: items
+      .filter((item) => isAllowedResourceSource(item.source))
+      .map(resourceDto),
+    context,
+  });
 }

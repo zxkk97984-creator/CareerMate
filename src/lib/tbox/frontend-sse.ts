@@ -126,6 +126,8 @@ export async function consumeFrontendSseResponse(
   function consume(block: string) {
     const parsed = parseFrontendSseBlock(block);
     if (!parsed) throw new Error("流式响应格式无效");
+    // 长任务保活事件只用于维持连接，不改变消息状态。
+    if (parsed.event === "heartbeat") return;
     if (parsed.event === "error") {
       throw new Error(
         typeof parsed.data.message === "string" ? parsed.data.message : "对话服务暂时不可用",

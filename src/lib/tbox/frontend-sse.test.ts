@@ -83,6 +83,23 @@ describe("frontend SSE response consumption", () => {
     ).rejects.toThrow("服务不可用");
   });
 
+  it("ignores heartbeat keepalive events and continues until done", async () => {
+    const deltas: string[] = [];
+    const result = await consumeFrontendSseResponse(
+      new Response(
+        'event: heartbeat\ndata: {"ts":1789000000000}\n\n' +
+          'event: delta\ndata: {"text":"完成"}\n\n' +
+          'event: heartbeat\ndata: {"ts":1789000015000}\n\n' +
+          'event: done\ndata: {"conversationId":"remote-keepalive"}\n\n',
+        { status: 200, headers: { "Content-Type": "text/event-stream" } },
+      ),
+      { onDelta: (content) => deltas.push(content) },
+    );
+
+    expect(deltas).toEqual(["完成"]);
+    expect(result.conversationId).toBe("remote-keepalive");
+  });
+
   it("collects deltas and requires a terminal done event", async () => {
     const deltas: string[] = [];
     const contexts: Array<Record<string, unknown>> = [];

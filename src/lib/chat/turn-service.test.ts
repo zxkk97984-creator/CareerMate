@@ -86,6 +86,21 @@ describe("createTurnService", () => {
     mockTx.chatMessage.updateMany.mockResolvedValue({ count: 0 });
   });
 
+  it("checkpoints only the active turn and renews its lease", async () => {
+    mockTx.chatConversation.updateMany.mockResolvedValue({ count: 1 });
+    await svc.checkpoint({ turn: { id: "t1", conversationId: "conv-1", userId: "user-1", clientRequestId: "r1", userMessageId: "u1", assistantMessageId: "a1" }, partialText: "已生成的正文" });
+    expect(mockTx.chatMessage.updateMany).toHaveBeenCalledWith({
+      where: { id: "a1", turnId: "t1", status: "streaming" }, data: { content: "已生成的正文" },
+    });
+    expect(mockTx.chatConversation.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { activeTurnStartedAt: expect.any(Date) } }));
+  });
+
+  it("does not checkpoint a turn whose lock was replaced", async () => {
+    mockTx.chatConversation.updateMany.mockResolvedValue({ count: 0 });
+    await svc.checkpoint({ turn: { id: "t1", conversationId: "conv-1", userId: "user-1", clientRequestId: "r1", userMessageId: "u1", assistantMessageId: "a1" }, partialText: "旧正文" });
+    expect(mockTx.chatMessage.updateMany).not.toHaveBeenCalled();
+  });
+
   // ── begin ─────────────────────────────────────
 
   describe("begin", () => {

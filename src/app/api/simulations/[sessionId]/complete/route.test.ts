@@ -252,6 +252,41 @@ describe("POST /api/simulations/[sessionId]/complete", () => {
     expect(mocks.logCreate.mock.calls[0][0].data.summary).toContain("已生成画像更新候选");
   });
 
+  it("drops fabricated evidence and does not derive a candidate from unsupported updates", async () => {
+    createCandidateMock.mockResolvedValue({ id: "candidate-1" });
+    mocks.generateReport.mockResolvedValue({
+      data: {
+        text: "",
+        structured: report({
+          evidence: ["领导 100 人团队实现亿元营收"],
+          candidateUpdates: [{
+            field: "abilityScores.communication",
+            newValue: 95,
+            confidence: 0.99,
+            reason: "管理大型团队",
+            evidenceExcerpt: "领导 100 人团队实现亿元营收",
+            impactSummary: "提高沟通能力",
+            requiresConfirmation: true,
+          }],
+        }),
+        citations: [],
+        warnings: [],
+      },
+      meta: apiMeta,
+    });
+
+    const response = await POST(new Request("http://localhost/api/simulations/session-1/complete", {
+      method: "POST",
+    }), { params: Promise.resolve({ sessionId: "session-1" }) });
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(createCandidateMock).not.toHaveBeenCalled();
+    expect(payload.data.feedback.candidateUpdates).toEqual([]);
+    expect(payload.data.feedback.evidence.join(" ")).not.toContain("领导 100 人团队");
+    expect(payload.data.feedback.evidence.join(" ")).toContain("验收标准");
+  });
+
   it("persists a marked deterministic score without a candidate after degradation", async () => {
     const degradedMeta = {
       requestedMode: "api" as const,

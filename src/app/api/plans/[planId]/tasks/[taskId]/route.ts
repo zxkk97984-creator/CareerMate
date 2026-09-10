@@ -2,7 +2,7 @@ import { z } from "zod";
 import { fail, ok } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
 import { planDto } from "@/lib/dto";
-import { updatePlanTaskStatus } from "@/lib/path";
+import { normalizePlanTasks, updateUnifiedPlanTaskStatus } from "@/lib/plans/task-model";
 import { getPrisma } from "@/lib/prisma";
 import { taskStatuses } from "@/lib/types";
 
@@ -37,10 +37,11 @@ export async function PATCH(
   if (!plan) return fail("NOT_FOUND", "未找到职业路径或任务", 404);
   if (plan.status !== "active") return fail("PLAN_ARCHIVED", "归档计划不能修改", 409);
 
-  const update = updatePlanTaskStatus(plan.months, taskId, parsedBody.data.status);
+  const update = updateUnifiedPlanTaskStatus(plan, taskId, parsedBody.data.status);
   if (update.kind === "invalid") return fail("INVALID_PLAN_DATA", "职业路径任务结构无效", 400);
   if (update.kind === "missing") return fail("NOT_FOUND", "未找到职业路径或任务", 404);
   if (update.kind === "unchanged") return ok({ plan: planDto(plan), changed: false });
+  const taskTitle = normalizePlanTasks(plan).find((task) => task.id === taskId)?.title;
 
   try {
     const updatedPlan = await getPrisma().$transaction(async (transaction) => {
@@ -51,7 +52,12 @@ export async function PATCH(
           status: "active",
           updatedAt: plan.updatedAt,
         },
-        data: { months: JSON.stringify(update.months) },
+        data: {
+          ...(update.content !== undefined ? { content: update.content } : {}),
+          ...(update.months !== undefined ? { months: update.months } : {}),
+          ...(update.years !== undefined ? { years: update.years } : {}),
+          ...(update.quarters !== undefined ? { quarters: update.quarters } : {}),
+        },
       });
       if (winner.count !== 1) throw new TaskPlanConflictError("plan changed");
 
@@ -63,7 +69,7 @@ export async function PATCH(
           summary: `${update.previousStatus} → ${parsedBody.data.status}`,
           relatedPlanId: plan.id,
           relatedTaskId: taskId,
-          metadata: JSON.stringify({ previousStatus: update.previousStatus, status: parsedBody.data.status }),
+          metadata: JSON.stringify({ previousStatus: update.previousStatus, status: parsedBody.data.status, taskTitle }),
         },
       });
       const persisted = await transaction.careerPlan.findUnique({ where: { id: plan.id } });

@@ -101,7 +101,11 @@ const allowedPatterns = [
 ];
 
 // Live2D 模型与纹理是产品运行必需资源，允许二进制进入版本库
-const allowedBinaryPatterns = [/^public\/live2d\//, /^tasks\/audit-/];
+const allowedBinaryPatterns = [
+  /^public\/live2d\//,
+  /^public\/images\/companion\//,
+  /^public\/images\/kurisu-avatar\.png$/,
+];
 
 const allowedContentFiles = new Set(["scripts/secret-scan.mjs"]);
 const failures = [];

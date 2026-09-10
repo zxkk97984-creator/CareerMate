@@ -199,20 +199,78 @@ model RoleTemplate {
 }
 
 model ResourceItem {
-  id             String   @id @default(cuid())
-  title          String
-  type           String
-  roleKey        String
-  abilityKey     String
-  stage          String
-  source         String
-  url            String?
-  estimatedHours Int?
-  description    String
-  createdAt      DateTime @default(now())
+  id                 String    @id @default(cuid())
+  externalKey        String?   @unique
+  title              String
+  type               String
+  roleKey            String
+  abilityKey         String
+  stage              String
+  source             String
+  provider           String?
+  difficulty         String?
+  url                String?
+  estimatedHours     Int?
+  description        String
+  detail             String    @default("")
+  steps              String    @default("[]")
+  deliverables       String    @default("[]")
+  acceptanceCriteria String    @default("[]")
+  verificationStatus String    @default("unverified")
+  lastVerifiedAt     DateTime?
+  validUntil         DateTime?
+  sourceFile         String?
+  sourceBatch        String?
+  contentHash        String?
+  status             String    @default("active")
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime? @updatedAt
+
+  @@index([roleKey, abilityKey, status])
+  @@index([verificationStatus])
+}
+
+model JobSample {
+  id                    String    @id @default(cuid())
+  jobId                 String    @unique
+  roleKey               String?
+  title                 String
+  company               String?
+  city                  String
+  experience            String?
+  education             String?
+  salaryRaw             String    @default("")
+  salaryMin             Float?
+  salaryMax             Float?
+  salaryUnit            String?
+  salaryMonths          Int?
+  salaryComparable      Boolean   @default(false)
+  salaryNote            String    @default("")
+  skills                String    @default("[]")
+  jobLink               String?
+  jd                    String    @default("")
+  sourceFile            String
+  sourceBatch           String
+  collectedAt           DateTime?
+  collectionDateApprox  Boolean   @default(false)
+  verificationStatus    String    @default("unverified")
+  detailAvailable       Boolean   @default(false)
+  fieldConflicts        String    @default("[]")
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([city, title])
+  @@index([experience])
+  @@index([education])
+  @@index([roleKey])
 }
 
 model SimulationSession {
+  conversationId       String? @unique
+  creationRequestId    String?
+  conversation         ChatConversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, creationRequestId])
   id                   String   @id @default(cuid())
   userId               String
   scenarioKey          String
@@ -226,6 +284,13 @@ model SimulationSession {
   actualMode           String   @default("mock")
   remoteConversationId String?
   candidateId          String?  @unique
+  scenarioSnapshot     String   @default("{}")
+  scoringSnapshot      String   @default("{}")
+  sourceType           String   @default("recommended")
+  sourceRef            String?
+  roundLimit           Int      @default(6)
+  lastRequestId        String?
+  completedAt          DateTime?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
@@ -288,6 +353,7 @@ model ManualAiSample {
 }
 
 model ChatConversation {
+  simulationSession SimulationSession?
   id                     String   @id @default(cuid())
   userId                 String
   title                  String

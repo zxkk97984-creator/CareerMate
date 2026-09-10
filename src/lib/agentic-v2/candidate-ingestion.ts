@@ -17,6 +17,7 @@ const defaultCandidateTypeByTask: Record<AgentArtifactV1["taskType"], AgentArtif
   // 以下任务类型不创建候选：
   career_exploration: null, // 运行时检查 roleKey+roleName 以决定是否创建 career_template_draft
   simulation_turn: null,
+  simulation_scenario: null,
 };
 
 // ── 输入输出类型 ──────────────────────────────────────────

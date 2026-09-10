@@ -47,6 +47,63 @@ function safeArray(value: unknown): unknown[] {
   return [];
 }
 
+function CandidateDataPreview({ data }: { data: unknown }) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return <p className="text-sm text-[var(--cm-text-muted)]">候选没有可展示的数据。</p>;
+  }
+  const record = data as Record<string, unknown>;
+  if (record.patch && typeof record.patch === "object" && !Array.isArray(record.patch)) {
+    return (
+      <ul className="list-disc pl-5 space-y-1 text-[var(--cm-text-muted)]">
+        {Object.entries(record.patch as Record<string, unknown>).map(([key, value]) => (
+          <li key={key}><strong>{key}</strong>：{safeListItem(value)}</li>
+        ))}
+      </ul>
+    );
+  }
+  if (Array.isArray(record.abilityEvidence)) {
+    return (
+      <ul className="list-disc pl-5 space-y-1 text-[var(--cm-text-muted)]">
+        {record.abilityEvidence.map((item, index) => {
+          const evidence = item as Record<string, unknown>;
+          return <li key={index}>{String(evidence.abilityKey ?? "能力")}：{String(evidence.summary ?? "")}</li>;
+        })}
+      </ul>
+    );
+  }
+  if (record.plan && typeof record.plan === "object") {
+    const plan = record.plan as Record<string, unknown>;
+    const phases = safeArray(plan.phases) as Array<Record<string, unknown>>;
+    return (
+      <div className="space-y-2 text-[var(--cm-text-muted)]">
+        <p className="font-medium text-[var(--cm-text-strong)]">{String(plan.title ?? "职业计划")}</p>
+        {phases.map((phase, index) => (
+          <div key={index} className="rounded-lg bg-[var(--cm-surface-soft)] p-2">
+            <strong>{String(phase.title ?? `阶段 ${index + 1}`)}</strong>
+            <ul className="mt-1 list-disc pl-5">
+              {safeArray(phase.actions).map((action, actionIndex) => {
+                const item = action as Record<string, unknown>;
+                return (
+                  <li key={actionIndex}>
+                    {String(item.title ?? "")} · {item.estimatedHours != null ? `${item.estimatedHours} 小时` : "投入待细化"}
+                    {safeArray(item.outputs).length > 0 ? ` · 产出：${safeArray(item.outputs).map(safeListItem).join("、")}` : ""}
+                    {safeArray(item.acceptanceCriteria).length > 0 ? ` · 验收：${safeArray(item.acceptanceCriteria).map(safeListItem).join("、")}` : ""}
+                    {safeArray(item.resources).length > 0 ? ` · 材料：${safeArray(item.resources).map(safeListItem).join("、")}` : ""}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  if (typeof record.content === "string") {
+    return <p className="text-sm text-[var(--cm-text-muted)]">{record.content}</p>;
+  }
+  return <pre className="whitespace-pre-wrap break-words rounded-lg bg-[var(--cm-surface-soft)] p-2 text-xs text-[var(--cm-text-muted)]">{JSON.stringify(record, null, 2)}</pre>;
+}
+
 export function AgentArtifactCandidateCard({
   candidateId,
   candidateType,
@@ -169,6 +226,12 @@ export function AgentArtifactCandidateCard({
 
       {expanded && art && (
         <div className="mt-3 pt-3 border-t border-[var(--cm-border)] text-sm">
+          {art.data ? (
+            <div className="mb-3">
+              <h5 className="font-medium text-[var(--cm-text-strong)] mb-1">将写入的完整内容</h5>
+              <CandidateDataPreview data={art.data} />
+            </div>
+          ) : null}
           {safeArray(art.evidence).length > 0 && (
             <div className="mb-2">
               <h5 className="font-medium text-[var(--cm-text-strong)] mb-1">证据</h5>

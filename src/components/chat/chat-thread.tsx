@@ -5,6 +5,7 @@ import gsap from "gsap";
 import { useMotionSafe } from "@/lib/motion/motion-safe";
 import type { MessageItem } from "@/lib/chat/schemas";
 import type { ChatMessagePart } from "@/lib/chat/persistence";
+import { ChatProgress } from "./chat-progress";
 import { MessageParts } from "./message-parts";
 import { MemoizedMarkdown } from "./memoized-markdown";
 import Image from "next/image";
@@ -140,6 +141,7 @@ export function ChatThread({ messages, activeConversationId, onNewChat, onQuickA
                 <MessageParts parts={msg.parts as ChatMessagePart[]} onQuickAction={onQuickAction} />
               )}
             </div>
+            {msg.role === "assistant" && msg.status === "streaming" && <ChatProgress startedAt={msg.createdAt} content={msg.content} />}
             {msg.role === "assistant" && msg.status === "completed" && msg.content && <CopyMessage content={msg.content}/>}
             {msg.role === "assistant" && typeof msg.executionMeta === "object" && msg.executionMeta !== null && "actualMode" in msg.executionMeta && msg.executionMeta.actualMode !== "api" && <p className="message-source-note">{msg.executionMeta.actualMode === "mock" ? "演示回复" : "本地样例回复"} · 当前未使用实时 AI 结果</p>}
             {msg.status === "failed" && (

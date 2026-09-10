@@ -13,7 +13,27 @@ const validPlanArtifact = {
       targetRole: { key: "data_analyst", label: "数据分析师" },
       summary: "分析岗三年计划",
       horizon: { value: 3, unit: "year" },
-      phases: [{ id: "p1", title: "基础期", objective: "入门", duration: { value: 6, unit: "month" }, skills: [], actions: [{ id: "a1", title: "学SQL", description: "基础", type: "learning", status: "not_started", resources: [] }], outputs: [], evaluationCriteria: [], risks: [] }],
+      phases: [{
+        id: "p1",
+        title: "基础期",
+        objective: "入门",
+        duration: { value: 6, unit: "month" },
+        skills: [],
+        actions: [{
+          id: "a1",
+          title: "完成 5 道 SQL 聚合查询练习",
+          description: "使用公开销售数据完成查询并记录每一步的过滤逻辑",
+          type: "practice",
+          status: "not_started",
+          estimatedHours: 4,
+          resources: [],
+          outputs: ["5 道查询结果与说明"],
+          acceptanceCriteria: ["能解释每个查询的分组和过滤条件"],
+        }],
+        outputs: ["5 道查询结果与说明"],
+        evaluationCriteria: ["能解释每个查询的分组和过滤条件"],
+        risks: [],
+      }],
       immediateActions: [],
       assumptions: [],
       riskNotes: [],
@@ -168,6 +188,74 @@ describe("候选解析服务 (严格 Zod)", () => {
     await expect(
       resolveAgentArtifactCandidate({ userId: "u1", candidateId: "c1", decision: "accept" }, { db: tx as any }),
     ).rejects.toMatchObject({ code: "BASE_VERSION_CONFLICT", status: 409 });
+  });
+
+  it("首份计划候选允许 baseVersion=null，且接受时当前没有活动计划", async () => {
+    const firstPlanArtifact = { ...validPlanArtifact, baseVersion: null };
+    const tx = makeTx({
+      agentArtifactCandidate: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "c-first",
+          userId: "u1",
+          candidateType: "career_plan",
+          status: "pending",
+          artifact: JSON.stringify(firstPlanArtifact),
+          baseVersion: null,
+          sourceSessionId: "s1",
+          sourceConversationId: "c1",
+          resolvedAt: null,
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        update: vi.fn(),
+      },
+      careerPlan: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        updateMany: vi.fn(),
+        create: vi.fn().mockResolvedValue({ id: "plan-first" }),
+      },
+    });
+
+    await expect(
+      resolveAgentArtifactCandidate(
+        { userId: "u1", candidateId: "c-first", decision: "accept" },
+        { db: tx as any },
+      ),
+    ).resolves.toMatchObject({ status: "accepted", candidateType: "career_plan" });
+    expect(tx.careerPlan.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("首份计划候选在确认前若已出现活动计划，则拒绝覆盖", async () => {
+    const firstPlanArtifact = { ...validPlanArtifact, baseVersion: null };
+    const tx = makeTx({
+      agentArtifactCandidate: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "c-first",
+          userId: "u1",
+          candidateType: "career_plan",
+          status: "pending",
+          artifact: JSON.stringify(firstPlanArtifact),
+          baseVersion: null,
+          sourceSessionId: "s1",
+          sourceConversationId: "c1",
+          resolvedAt: null,
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        update: vi.fn(),
+      },
+      careerPlan: {
+        findFirst: vi.fn().mockResolvedValue({ id: "plan-existing", version: 1 }),
+        updateMany: vi.fn(),
+        create: vi.fn(),
+      },
+    });
+
+    await expect(
+      resolveAgentArtifactCandidate(
+        { userId: "u1", candidateId: "c-first", decision: "accept" },
+        { db: tx as any },
+      ),
+    ).rejects.toMatchObject({ code: "BASE_VERSION_CONFLICT", status: 409 });
+    expect(tx.careerPlan.create).not.toHaveBeenCalled();
   });
 
   it("career_plan 接受时使用全局最大版本，避免与 pending 历史版本冲突", async () => {

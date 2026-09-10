@@ -115,6 +115,34 @@ test("workspace pages have no horizontal overflow at 375px", async ({ page }) =>
   }
 });
 
+test("workspace pages expose visible keyboard focus targets", async ({ page }) => {
+  await login(page);
+  const pagesToCheck = ["/dashboard", "/path", "/simulation", "/resources", "/memory"];
+  for (const path of pagesToCheck) {
+    await page.goto(path);
+    await page.waitForLoadState("networkidle");
+    let foundFocusable = false;
+    for (let index = 0; index < 6; index += 1) {
+      await page.keyboard.press("Tab");
+      const focused = await page.evaluate(() => {
+        const element = document.activeElement as HTMLElement | null;
+        if (!element || element === document.body) return null;
+        const style = window.getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return {
+          tag: element.tagName,
+          visible: style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0,
+        };
+      });
+      if (focused?.visible) {
+        foundFocusable = true;
+        break;
+      }
+    }
+    expect(foundFocusable, `${path} 应能通过 Tab 到达可见控件`).toBe(true);
+  }
+});
+
 test("mobile menu button does not overlap page title", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await login(page);

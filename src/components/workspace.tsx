@@ -30,6 +30,7 @@ const VIEW_BY_PATH: Record<string, View> = {
 };
 
 const MODULE_LABEL: Record<ModuleKey, string> = {
+  dashboard: "成长概览",
   plan: "计划",
   resources: "资源",
   memories: "记忆",
@@ -74,9 +75,9 @@ export function Workspace({ initialView, isAdmin = false }: { initialView: View;
     );
   }
 
-  const pendingCandidateCount = (data.candidates || []).filter((c: any) => c.status === "pending").length
-    + (data.v2CandidateTotal ?? (data.v2Candidates ?? []).length)
-    + (data.pendingPlan ? 1 : 0); // pending 计划计入待确认，保持概览/路径/建议中心一致
+  // 侧栏“记忆”只统计画像/能力/记忆候选；待确认计划由概览和职业路径单独提示。
+  const pendingMemoryCandidateCount = (data.candidates || []).filter((c: any) => c.status === "pending").length
+    + (data.v2CandidateTotal ?? (data.v2Candidates ?? []).length);
 
   const failedModules = (Object.keys(moduleErrors) as ModuleKey[]).filter((k) => moduleErrors[k]);
 
@@ -101,7 +102,7 @@ export function Workspace({ initialView, isAdmin = false }: { initialView: View;
         displayName={data.user.displayName}
         avatar={data.user.avatarDataUrl}
         isAdmin={isAdmin}
-        pendingCandidateCount={pendingCandidateCount}
+        pendingCandidateCount={pendingMemoryCandidateCount}
         open={sidebarOpen}
         onClose={closeSidebar}
       />
@@ -126,10 +127,10 @@ export function Workspace({ initialView, isAdmin = false }: { initialView: View;
 
         {/* 可滚动主内容（移动端预留菜单按钮空间） */}
         <div className="workspace-content">
-          <PageHeader
+          {activeView !== "simulation" && <PageHeader
             title={{ dashboard: "成长概览", onboarding: "认识你，从这里开始", path: "职业路径", simulation: "模拟训练", resources: "资源中心", memory: "记忆", settings: "设置", admin: "岗位管理" }[activeView]}
             description={{ dashboard: "看见成长，也知道下一步该做什么。", onboarding: "聊聊你的背景与期待，让建议更适合你。", path: "从长期方向，到今天能完成的一步。", simulation: "在真实情境中练习，把知识变成能力。", resources: "围绕你的目标，找到当前最需要的学习材料。", memory: "查看成长记录，决定 AI 可以记住什么。", settings: "管理账号信息、隐私数据与 AI 陪伴形象。", admin: "审阅职业探索结果，维护岗位资料。" }[activeView]}
-          />
+          />}
 
           {/* 局部模块失败：就地提示 + 重试，不阻断其他模块、不伪装成空列表 */}
           {failedModules.length > 0 && (
@@ -150,7 +151,7 @@ export function Workspace({ initialView, isAdmin = false }: { initialView: View;
 
           {/* 视图内容 */}
           <div className={`workspace-view view-${activeView}`}>
-          {activeView === "dashboard" && <DashboardView data={data} refresh={refresh} setNotice={setNotice} />}
+          {activeView === "dashboard" && <DashboardView dashboard={data.dashboard ?? null} loading={initialLoading} error={moduleErrors.dashboard} refresh={refresh} setNotice={setNotice} />}
           {activeView === "onboarding" && (
             <OnboardingView
               refresh={refresh}

@@ -113,14 +113,10 @@ describe("CareerMate成长数据分析", () => {
 
   // ---- 损坏输入 ----
 
-  it("损坏输入不抛出异常且产出合法结构", () => {
+  it("损坏输入明确失败，不伪装成正常空报告", () => {
     const input = loadExample("corrupt");
-    let result;
-    expect(() => {
-      result = analyzeGrowthData(input as Parameters<typeof analyzeGrowthData>[0]);
-    }).not.toThrow();
-    const parsed = growthAnalysisSchema.safeParse(result);
-    expect(parsed.success).toBe(true);
+    expect(() => analyzeGrowthData(input as Parameters<typeof analyzeGrowthData>[0]))
+      .toThrow("成长分析输入不符合 schema");
   });
 
   // ---- 敏感信息检测 ----
@@ -154,6 +150,26 @@ describe("CareerMate成长数据分析", () => {
     const input = loadExample("normal");
     const result = analyzeGrowthData(input as Parameters<typeof analyzeGrowthData>[0]);
     expect(result.trends.totalProgressEvents).toBe(12);
+  });
+
+  it("excludes planning events and deduplicates repeated learning events", () => {
+    const result = analyzeGrowthData({
+      profileSnapshot: { available: true, data: { abilityScores: {} } },
+      planHistory: [],
+      progressLogs: [
+        { id: "plan-1", eventType: "plan_generated", createdAt: "2026-01-01T00:00:00.000Z" },
+        { id: "event-1", eventType: "task_completed", createdAt: "2026-01-02T00:00:00.000Z" },
+        { id: "event-1", eventType: "task_completed", createdAt: "2026-01-02T00:00:00.000Z" },
+        { id: "route-1", eventType: "learning_route_accepted", createdAt: "2026-01-03T00:00:00.000Z" },
+      ],
+      simulations: [
+        { id: "sim-pending", scenarioKey: "interview", score: null, status: "active", createdAt: "2026-01-04T00:00:00.000Z" },
+      ],
+      historicalScores: [],
+    });
+
+    expect(result.trends.totalProgressEvents).toBe(1);
+    expect(result.trends.continuousTrainingDays).toBe(1);
   });
 
   // ---- 方向判定 ----

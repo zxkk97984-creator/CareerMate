@@ -20,6 +20,12 @@ export const planActionV2Schema = z.object({
   estimatedHours: z.number().int().min(0).optional(),
   cadence: z.string().trim().max(200).optional(),
   resources: z.array(z.string().trim().max(500)).max(20),
+  /**
+   * 动作级交付物与验收标准。旧计划没有这两个字段时继续读取阶段级要求；
+   * 新生成的 Plan V2 候选应在动作级写清“产出什么、怎样验收”。
+   */
+  outputs: z.array(z.string().trim().min(1).max(500)).max(20).optional(),
+  acceptanceCriteria: z.array(z.string().trim().min(1).max(500)).max(20).optional(),
 }).strict();
 
 export type PlanActionV2 = z.infer<typeof planActionV2Schema>;

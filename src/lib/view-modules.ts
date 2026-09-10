@@ -9,7 +9,7 @@ import type { View } from "@/lib/workspace-types";
 export const SHARED_MODULES: ModuleKey[] = ["plan", "candidates", "v2Candidates"];
 
 const VIEW_PAGE_MODULES: Partial<Record<View, ModuleKey[]>> = {
-  dashboard: [],
+  dashboard: ["dashboard"],
   path: [],
   simulation: ["simulations"],
   resources: ["resources"],

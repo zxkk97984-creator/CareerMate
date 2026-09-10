@@ -5,9 +5,13 @@ import type {
   CurrentUserDto,
   PlanGenerationMeta,
   ProfileDto,
+  JobSampleDto,
+  ResourceItemDto,
 } from "@/lib/types";
 import { parseJson } from "@/lib/json";
 import { convertV2ToV1Arrays } from "@/lib/plans/compatibility";
+import type { CareerPlanRow } from "@/lib/plans/compatibility";
+import { planTaskSummaryFromRow } from "@/lib/plans/task-model";
 
 export function userDto(user: {
   id: string;
@@ -83,7 +87,7 @@ export function planDto(plan: {
   targetRoleLabel?: string | null;
   createdAt: Date;
   updatedAt: Date;
-}): CareerPlanDto {
+}, options: { weeklyBudgetHours?: number | null } = {}): CareerPlanDto {
   // V2 计划读取时若缺少 V1 数组则从 content 转换
   let years = parseJson<Array<Record<string, unknown>>>(plan.years, []);
   let quarters = parseJson<Array<Record<string, unknown>>>(plan.quarters, []);
@@ -100,6 +104,11 @@ export function planDto(plan: {
       currentMonthIndex = v1Arrays.currentMonthIndex;
     } catch { /* 转换失败则使用空数组 */ }
   }
+
+  const taskModel = planTaskSummaryFromRow(
+    plan as unknown as CareerPlanRow,
+    options.weeklyBudgetHours ?? null,
+  );
 
   return {
     id: plan.id,
@@ -124,6 +133,9 @@ export function planDto(plan: {
     schemaVersion: plan.schemaVersion ?? 1,
     content: plan.content ?? null,
     targetRoleLabel: plan.targetRoleLabel ?? null,
+    tasks: taskModel.tasks,
+    taskSummary: taskModel.summary,
+    v2: taskModel.planV2,
     createdAt: plan.createdAt.toISOString(),
     updatedAt: plan.updatedAt.toISOString(),
   };
@@ -158,5 +170,117 @@ export function candidateDto(candidate: {
     evidenceExcerpt: candidate.evidenceExcerpt ?? "",
     impactSummary: candidate.impactSummary ?? "",
     abilityEvidenceId: candidate.abilityEvidenceId ?? null,
+  };
+}
+
+export function resourceDto(resource: {
+  id: string;
+  externalKey?: string | null;
+  title: string;
+  type: string;
+  roleKey: string;
+  abilityKey: string;
+  stage: string;
+  source: string;
+  provider?: string | null;
+  difficulty?: string | null;
+  url?: string | null;
+  estimatedHours?: number | null;
+  description: string;
+  detail?: string;
+  steps?: string;
+  deliverables?: string;
+  acceptanceCriteria?: string;
+  verificationStatus?: string;
+  lastVerifiedAt?: Date | null;
+  validUntil?: Date | null;
+  sourceFile?: string | null;
+  sourceBatch?: string | null;
+  status?: string;
+}): ResourceItemDto {
+  return {
+    id: resource.id,
+    externalKey: resource.externalKey ?? null,
+    title: resource.title,
+    type: resource.type,
+    roleKey: resource.roleKey,
+    abilityKey: resource.abilityKey,
+    stage: resource.stage,
+    source: resource.source,
+    provider: resource.provider ?? null,
+    difficulty: resource.difficulty ?? null,
+    url: resource.url ?? null,
+    estimatedHours: resource.estimatedHours ?? null,
+    description: resource.description,
+    detail: resource.detail ?? "",
+    steps: parseJson<string[]>(resource.steps ?? "[]", []),
+    deliverables: parseJson<string[]>(resource.deliverables ?? "[]", []),
+    acceptanceCriteria: parseJson<string[]>(resource.acceptanceCriteria ?? "[]", []),
+    verificationStatus: resource.verificationStatus ?? "unverified",
+    lastVerifiedAt: resource.lastVerifiedAt?.toISOString() ?? null,
+    validUntil: resource.validUntil?.toISOString() ?? null,
+    sourceFile: resource.sourceFile ?? null,
+    sourceBatch: resource.sourceBatch ?? null,
+    status: resource.status ?? "active",
+  };
+}
+
+export function jobSampleDto(job: {
+  id: string;
+  jobId: string;
+  roleKey: string | null;
+  title: string;
+  company: string | null;
+  city: string;
+  experience: string | null;
+  education: string | null;
+  salaryRaw: string;
+  salaryMin: number | null;
+  salaryMax: number | null;
+  salaryUnit: string | null;
+  salaryMonths: number | null;
+  salaryComparable: boolean;
+  salaryNote: string;
+  skills: string;
+  jobLink: string | null;
+  jd: string;
+  sourceFile: string;
+  sourceBatch: string;
+  collectedAt: Date | null;
+  collectionDateApprox: boolean;
+  verificationStatus: string;
+  detailAvailable: boolean;
+  fieldConflicts: string;
+  createdAt: Date;
+  updatedAt: Date;
+}): JobSampleDto {
+  return {
+    id: job.id,
+    jobId: job.jobId,
+    roleKey: job.roleKey,
+    title: job.title,
+    company: job.company,
+    city: job.city,
+    experience: job.experience,
+    education: job.education,
+    salaryRaw: job.salaryRaw,
+    salaryMin: job.salaryMin,
+    salaryMax: job.salaryMax,
+    salaryUnit: job.salaryUnit,
+    salaryMonths: job.salaryMonths,
+    salaryComparable: job.salaryComparable,
+    salaryNote: job.salaryNote,
+    skills: parseJson<string[]>(job.skills, []),
+    jobLink: job.jobLink,
+    jd: job.jd,
+    sourceFile: parseJson<string[]>(job.sourceFile, [job.sourceFile]),
+    sourceBatch: job.sourceBatch,
+    collectedAt: job.collectedAt?.toISOString() ?? null,
+    collectionDateApprox: job.collectionDateApprox,
+    verificationStatus: job.verificationStatus,
+    detailAvailable: job.detailAvailable,
+    fieldConflicts: parseJson<JobSampleDto["fieldConflicts"]>(job.fieldConflicts, []),
+    createdAt: job.createdAt.toISOString(),
+    updatedAt: job.updatedAt.toISOString(),
   };
 }

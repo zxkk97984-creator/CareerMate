@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { parseJson } from "@/lib/json";
 import type { AiExecutionMeta } from "@/lib/types";
+import type { JobSampleContext } from "@/lib/jobs/context";
 
 export const simulationScenarioKeys = [
   "cross_role_communication",
@@ -9,6 +10,7 @@ export const simulationScenarioKeys = [
   "data_driven_decision",
   "requirement_clarification",
   "career_interview",
+  "custom",
 ] as const;
 export type SimulationScenarioKey = (typeof simulationScenarioKeys)[number];
 export const simulationScenarioSchema = z.enum(simulationScenarioKeys);
@@ -145,12 +147,173 @@ const scenarios: Record<SimulationScenarioKey, Omit<SimulationScenarioMeta, "key
     ],
     scoringDimensions: ["岗位匹配", "专业能力", "表达结构", "临场应变"],
   },
+  custom: {
+    title: "自定义场景",
+    difficulty: "L2",
+    durationMinutes: 8,
+    skills: ["communication", "projectPractice"],
+    role: "你",
+    counterpart: "对话对象",
+    objective: "在用户描述的真实情境中练习沟通、判断和推进。",
+    brief: "用户自定义的练习场景。",
+    openingMessage: "请先说明你对当前情境的理解和第一步行动。",
+    prompts: [
+      "请补充你的判断依据和下一步行动。",
+      "如果对方不接受这个方案，你会怎么调整？",
+      "请说明风险和你的应对方案。",
+      "请用一句话总结你的核心观点。",
+      "最后请给出一个可执行的下一步。",
+    ],
+    scoringDimensions: ["目标理解", "表达结构", "推进能力", "复盘意识"],
+  },
 };
 
 export function listSimulationScenarios(): SimulationScenarioMeta[] {
   return simulationScenarioKeys
-    .filter((key) => key !== "career_interview")
+    .filter((key) => key !== "career_interview" && key !== "custom")
     .map((key) => ({ key, ...scenarios[key] }));
+}
+
+export interface SimulationRecommendationEvidence {
+  abilityScores?: Record<string, number> | null;
+  history?: Array<{ scenarioKey: string; score: number | null }>;
+}
+
+/**
+ * 按能力缺口和历史训练结果排序推荐场景。
+ * 无能力/历史证据时保持场景库原顺序，不把未知当成 0 分。
+ */
+export function rankSimulationScenarios(
+  items: SimulationScenarioMeta[],
+  evidence: SimulationRecommendationEvidence = {},
+): SimulationScenarioMeta[] {
+  const abilityScores = evidence.abilityScores ?? {};
+  const history = evidence.history ?? [];
+
+  return items
+    .map((scenario, index) => {
+      const scoredSkills = scenario.skills
+        .map((skill) => abilityScores[skill])
+        .filter((score): score is number => typeof score === "number" && Number.isFinite(score));
+      const averageAbility = scoredSkills.length > 0
+        ? scoredSkills.reduce((sum, score) => sum + score, 0) / scoredSkills.length
+        : null;
+      const abilityGapPriority = averageAbility === null ? 0 : (100 - averageAbility) * 0.3;
+
+      const attempts = history.filter((item) => item.scenarioKey === scenario.key);
+      const latest = attempts[0];
+      let historyPriority = 0;
+      if (latest) {
+        if (latest.score === null) historyPriority += 5;
+        else if (latest.score < 60) historyPriority += 25;
+        else if (latest.score < 75) historyPriority += 10;
+        else historyPriority -= 15;
+        historyPriority -= Math.min(attempts.length, 3) * 5;
+      }
+
+      return {
+        scenario,
+        priority: abilityGapPriority + historyPriority - index * 0.01,
+      };
+    })
+    .sort((left, right) => right.priority - left.priority)
+    .map((item) => item.scenario);
+}
+
+export const simulationScenarioSnapshotSchema = z.object({
+  key: z.string().trim().min(1).max(160),
+  title: z.string().trim().min(1).max(200),
+  difficulty: z.enum(["L1", "L2", "L3"]),
+  durationMinutes: z.number().int().min(1).max(180),
+  skills: z.array(z.string().trim().min(1).max(80)).max(12),
+  role: z.string().trim().min(1).max(160),
+  counterpart: z.string().trim().min(1).max(160),
+  objective: z.string().trim().min(1).max(2000),
+  brief: z.string().trim().min(1).max(4000),
+  openingMessage: z.string().trim().min(1).max(4000),
+  prompts: z.array(z.string().trim().min(1).max(2000)).min(1).max(20),
+  scoringDimensions: z.array(z.string().trim().min(1).max(120)).min(1).max(12),
+}).strict();
+
+export type SimulationScenarioSnapshot = z.infer<typeof simulationScenarioSnapshotSchema>;
+
+export function scenarioSnapshotFromMeta(meta: SimulationScenarioMeta): SimulationScenarioSnapshot {
+  return simulationScenarioSnapshotSchema.parse({
+    key: meta.key,
+    title: meta.title,
+    difficulty: meta.difficulty,
+    durationMinutes: meta.durationMinutes,
+    skills: meta.skills,
+    role: meta.role,
+    counterpart: meta.counterpart,
+    objective: meta.objective,
+    brief: meta.brief,
+    openingMessage: meta.openingMessage,
+    prompts: meta.prompts,
+    scoringDimensions: meta.scoringDimensions,
+  });
+}
+
+export const customScenarioInputSchema = z.object({
+  description: z.string().trim().min(10).max(2000),
+  role: z.string().trim().min(1).max(160),
+  counterpart: z.string().trim().min(1).max(160),
+  objective: z.string().trim().min(5).max(500),
+  difficulty: z.enum(["L1", "L2", "L3"]).default("L2"),
+}).strict();
+
+export type CustomScenarioInput = z.infer<typeof customScenarioInputSchema>;
+
+export function buildCustomScenario(input: CustomScenarioInput): SimulationScenarioSnapshot {
+  return simulationScenarioSnapshotSchema.parse({
+    key: "custom",
+    title: `自定义：${input.objective.slice(0, 40)}`,
+    difficulty: input.difficulty,
+    durationMinutes: input.difficulty === "L1" ? 6 : input.difficulty === "L3" ? 12 : 8,
+    skills: ["communication", "projectPractice"],
+    role: input.role,
+    counterpart: input.counterpart,
+    objective: input.objective,
+    brief: input.description,
+    openingMessage: `你是${input.role}，对方是${input.counterpart}。请先说明你对当前情境的理解和第一步行动。`,
+    prompts: [
+      "请补充你的判断依据和下一步行动。",
+      "如果对方不接受这个方案，你会怎么调整？",
+      "请说明风险和你的应对方案。",
+      "请用一句话总结你的核心观点。",
+      "最后请给出一个可执行的下一步。",
+    ],
+    scoringDimensions: ["目标理解", "表达结构", "推进能力", "复盘意识"],
+  });
+}
+
+/**
+ * 把本地已导入的岗位样本转成固定训练快照。
+ * 只使用脱敏后的标题、JD、技能和薪资解释，不读取原始 CSV 或招聘者信息。
+ */
+export function buildJobSimulationScenario(job: JobSampleContext): SimulationScenarioSnapshot {
+  const skills = job.skills.length > 0 ? job.skills.slice(0, 8).join("、") : "岗位相关技能";
+  const jd = job.jd.trim() || `该岗位样本没有详情 JD，请围绕 ${job.title} 的通用职责准备回答。`;
+  return simulationScenarioSnapshotSchema.parse({
+    key: "career_interview",
+    title: `${job.title} · 岗位模拟`,
+    difficulty: "L2",
+    durationMinutes: 8,
+    skills: job.skills.slice(0, 6).length > 0 ? job.skills.slice(0, 6) : ["roleFoundation", "communication"],
+    role: "候选人",
+    counterpart: "面试官",
+    objective: `围绕 ${job.title} 的岗位要求进行结构化面试，练习用可验证经历说明匹配度。`,
+    brief: `本地岗位样本（未核验）：${job.title}${job.company ? ` · ${job.company}` : ""}。技能要求：${skills}。岗位描述：${jd}`.slice(0, 4000),
+    openingMessage: `你是 ${job.title} 岗位候选人，我是面试官。请先做一个简短自我介绍，并说明你为什么适合这个岗位。`,
+    prompts: [
+      "请结合一段项目或课程经历，说明你如何运用岗位所需能力解决问题。",
+      `如果入职后遇到 ${job.title} 常见的协作冲突，你会如何处理？`,
+      "你认为这个岗位当前最大的挑战是什么？你准备如何补上差距？",
+      "请分享一次失败或复盘经历，并说明你从中获得了什么。",
+      "最后请用三句话总结你与这个岗位的匹配点。",
+    ],
+    scoringDimensions: ["岗位匹配", "专业能力", "表达结构", "复盘意识"],
+  });
 }
 
 /** 根据用户目标岗位生成岗位面试场景 */
@@ -348,6 +511,18 @@ export function nextSimulationPrompt(key: SimulationScenarioKey, turnCount: numb
   return prompts[Math.min(Math.max(turnCount - 1, 0), prompts.length - 1)]!;
 }
 
+/** 固定场景快照的下一轮提示；轮次耗尽时返回结束引导，不再生成第 7 个问题。 */
+export function nextSimulationPromptFromSnapshot(
+  snapshot: SimulationScenarioSnapshot | null,
+  turnCount: number,
+) {
+  if (!snapshot) return null;
+  if (turnCount > snapshot.prompts.length) {
+    return "训练轮次已完成，请点击“完成并评分”生成报告。";
+  }
+  return snapshot.prompts[Math.max(0, turnCount - 1)] ?? null;
+}
+
 export function containsSimulationTurnProtocol(text: string) {
   const trimmed = text.trim();
   if (!trimmed) return false;
@@ -375,8 +550,8 @@ export function containsSimulationTurnProtocol(text: string) {
   });
 }
 
-export function canCompleteSimulation(turnCount: number) {
-  return turnCount >= 3 && turnCount <= 6;
+export function canCompleteSimulation(turnCount: number, roundLimit = 6) {
+  return turnCount >= 3 && turnCount <= roundLimit;
 }
 
 /** T17b：能力影响值的展示——负值渲染 `-2` 而非 `+-2`，避免误导；绝对值用于条形。 */
@@ -396,9 +571,14 @@ export function impactBarPercent(value: number): number {
 export function simulationDto(session: {
   id: string; scenarioKey: string; scenarioTitle: string; transcript: string; score: number | null;
   feedback: string; status: string; turnCount: number; requestedMode: string; actualMode: string;
-  candidateId: string | null; remoteConversationId?: string | null; createdAt: Date; updatedAt: Date;
+  candidateId: string | null; remoteConversationId?: string | null;
+  scenarioSnapshot?: string; scoringSnapshot?: string; sourceType?: string; sourceRef?: string | null;
+  roundLimit?: number; completedAt?: Date | null;
+  createdAt: Date; updatedAt: Date;
 }) {
   const parsedFeedback = parseJson<Record<string, unknown>>(session.feedback, {});
+  const snapshot = simulationScenarioSnapshotSchema.safeParse(parseJson(session.scenarioSnapshot ?? "{}", {}));
+  const scoring = parseJson<Record<string, unknown>>(session.scoringSnapshot ?? "{}", {});
   // 优先从 feedback 中读取 V2 候选 ID（AgentArtifactCandidate），回退到旧的 candidateId 字段
   const resolvedCandidateId: string | null =
     (typeof parsedFeedback.artifactCandidateId === "string" && parsedFeedback.artifactCandidateId.trim())
@@ -418,6 +598,12 @@ export function simulationDto(session: {
     actualMode: session.actualMode,
     candidateId: resolvedCandidateId,
     remoteConversationId: session.remoteConversationId ?? null,
+    scenarioSnapshot: snapshot.success ? snapshot.data : null,
+    scoringSnapshot: scoring,
+    sourceType: session.sourceType ?? "recommended",
+    sourceRef: session.sourceRef ?? null,
+    roundLimit: session.roundLimit ?? 6,
+    completedAt: session.completedAt?.toISOString() ?? null,
     createdAt: session.createdAt.toISOString(),
     updatedAt: session.updatedAt.toISOString(),
   };

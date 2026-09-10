@@ -2,6 +2,7 @@
 // 统一编码 context / delta / artifact / done / error 事件
 
 const encoder = new TextEncoder();
+export const SSE_HEARTBEAT_INTERVAL_MS = 15_000;
 
 /** 编码一条 SSE 事件 */
 export function formatSseEvent(
@@ -19,6 +20,40 @@ export function writeSseEvent(
   data: unknown,
 ): void {
   controller.enqueue(formatSseEvent(event, data));
+}
+
+/**
+ * 在等待百宝箱长任务期间持续写入 SSE 心跳，避免浏览器、代理或开发服务器
+ * 因长时间没有数据而提前断开连接。
+ */
+export function startSseHeartbeat(
+  controller: ReadableStreamDefaultController<Uint8Array>,
+  intervalMs = SSE_HEARTBEAT_INTERVAL_MS,
+): () => void {
+  let timer: ReturnType<typeof setInterval> | null = null;
+  let stopped = false;
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    if (timer !== null) {
+      clearInterval(timer);
+      timer = null;
+    }
+  };
+
+  timer = setInterval(() => {
+    if (stopped) return;
+    try {
+      writeSseEvent(controller, "heartbeat", { ts: Date.now() });
+    } catch {
+      stop();
+    }
+  }, intervalMs);
+  if (typeof (timer as NodeJS.Timeout).unref === "function") {
+    (timer as NodeJS.Timeout).unref();
+  }
+
+  return stop;
 }
 
 /** 编码 context 事件（必须是第一条 SSE 事件） */

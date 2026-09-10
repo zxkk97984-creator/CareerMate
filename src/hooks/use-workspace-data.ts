@@ -11,6 +11,7 @@ import { modulesForView } from "@/lib/view-modules";
 
 /** 可独立成功/失败的业务模块。失败时保留旧数据并记录错误，不伪装为空列表。 */
 export type ModuleKey =
+  | "dashboard"
   | "plan"
   | "resources"
   | "memories"
@@ -133,6 +134,9 @@ export function useWorkspaceData(activeView: View): UseWorkspaceData {
   }, [router]);
 
   const loadModules = useCallback(async (keys: ModuleKey[]) => {
+    const dashboard = keys.includes("dashboard")
+      ? fetchApi<import("@/lib/dashboard/model").DashboardDto>("/api/dashboard")
+      : Promise.resolve(null);
     // 只发起本页需要的模块请求（T20 按页面加载）：共享摘要恒常、其余按 keys，
     // 不请求未包含的模块——否则普通用户 dashboard 也会命中 admin/资源/记忆/模拟
     // 等多余接口（admin 对非管理员返回 403 并被误判为失败）。
@@ -158,8 +162,8 @@ export function useWorkspaceData(activeView: View): UseWorkspaceData {
       ? fetchApi<{ drafts: WorkspaceData["drafts"]; templates: WorkspaceData["templates"] }>("/api/admin/role-drafts")
       : Promise.resolve<null>(null);
 
-    const [planR, resourcesR, memoriesR, candidatesR, v2R, simulationsR, adminR] = await Promise.all([
-      plan, resources, memories, candidates, v2Candidates, simulations, admin,
+    const [planR, resourcesR, memoriesR, candidatesR, v2R, simulationsR, adminR, dashboardR] = await Promise.all([
+      plan, resources, memories, candidates, v2Candidates, simulations, admin, dashboard,
     ]);
 
     const errors: Partial<Record<ModuleKey, string>> = {};
@@ -178,6 +182,7 @@ export function useWorkspaceData(activeView: View): UseWorkspaceData {
     }
 
     applyIfOk("plan", planR, (v) => setData((prev) => ({ ...prev, plan: v.plan, pendingPlan: v.pendingPlan, planExecutionMeta: v.executionMeta })), "计划暂时未能加载，重试后继续");
+    applyIfOk("dashboard", dashboardR, (v) => setData((prev) => ({ ...prev, dashboard: v })), "成长概览暂时未能加载");
     applyIfOk("resources", resourcesR, (v) => setData((prev) => ({ ...prev, resources: v.items })), "资源暂时未能加载");
     applyIfOk("memories", memoriesR, (v) => setData((prev) => ({ ...prev, memories: v.items })), "记忆暂时未能加载");
     applyIfOk("candidates", candidatesR, (v) => setData((prev) => ({ ...prev, candidates: v.items })), "建议暂时未能加载");
@@ -185,7 +190,11 @@ export function useWorkspaceData(activeView: View): UseWorkspaceData {
     applyIfOk("simulations", simulationsR, (v) => setData((prev) => ({ ...prev, simulations: v.items })), "训练暂时未能加载");
     applyIfOk("admin", adminR, (v) => setData((prev) => ({ ...prev, drafts: v.drafts, templates: v.templates })), "草稿暂时未能加载");
 
-    setModuleErrors(errors);
+    setModuleErrors((previous) => {
+      const next = { ...previous };
+      for (const key of keys) delete next[key];
+      return { ...next, ...errors };
+    });
   }, []);
 
   const loadInitial = useCallback(async () => {
@@ -216,7 +225,8 @@ export function useWorkspaceData(activeView: View): UseWorkspaceData {
     if (!hasDataRef.current) return void loadInitial();
     setRefreshing(true);
     const seq = ++seqRef.current;
-    await loadModules(keys);
+    const invalidatesDashboard = keys.some((key) => ["plan", "candidates", "v2Candidates", "simulations"].includes(key));
+    await loadModules(activeViewRef.current === "dashboard" && invalidatesDashboard ? [...new Set([...keys, "dashboard" as const])] : keys);
     if (seq === seqRef.current && mountedRef.current) setRefreshing(false);
   }, [loadInitial, loadModules]);
 

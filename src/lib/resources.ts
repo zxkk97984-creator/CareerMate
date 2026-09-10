@@ -24,3 +24,16 @@ export function filterResources<T extends FilterableResource>(
     && (filters.type === "all" || item.type === filters.type),
   );
 }
+
+const taskResourceReferencePrefix = "resource:";
+
+export function formatTaskResourceReference(resource: { id: string; title: string }): string {
+  return `${taskResourceReferencePrefix}${resource.id}:${resource.title}`;
+}
+
+export function displayTaskResourceReference(value: string): string {
+  if (!value.startsWith(taskResourceReferencePrefix)) return value;
+  const firstSeparator = value.indexOf(":", taskResourceReferencePrefix.length);
+  if (firstSeparator < 0) return value;
+  return value.slice(firstSeparator + 1) || value;
+}

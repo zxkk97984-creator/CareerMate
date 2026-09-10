@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { fail, ok } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
+import { invalidateMemoryContexts } from "@/lib/memory/context-invalidation";
 import { getPrisma } from "@/lib/prisma";
 
 const postSchema = z.object({
@@ -21,7 +22,15 @@ export async function GET() {
     where: { userId: user.id },
     orderBy: { createdAt: "desc" },
   });
-  return ok({ items });
+  return ok({
+    items: items.map((memory) => ({
+      ...memory,
+      confidence: memory.confidence ?? null,
+      expiresAt: memory.expiresAt?.toISOString() ?? null,
+      createdAt: memory.createdAt.toISOString(),
+      updatedAt: memory.updatedAt.toISOString(),
+    })),
+  });
 }
 
 export async function POST(request: Request) {
@@ -40,6 +49,7 @@ export async function POST(request: Request) {
       sensitivity: parsed.data.sensitivity,
     },
   });
+  await invalidateMemoryContexts(user.id);
 
   return ok({ memory });
 }

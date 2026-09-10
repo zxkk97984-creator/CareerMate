@@ -43,7 +43,7 @@ async function timedResponse<T>(
   const controller = new AbortController();
   const timeoutMs = Number.isFinite(deps.config.streamTimeoutMs)
     ? deps.config.streamTimeoutMs
-    : 90_000;
+    : 180_000;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let timedOut = false;
   const armTimeout = () => {

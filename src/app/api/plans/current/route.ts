@@ -38,8 +38,8 @@ export async function GET() {
   }
 
   return ok({
-    plan: plan ? planDto(plan) : null,
-    pendingPlan: pendingPlan ? planDto(pendingPlan) : null,
+    plan: plan ? planDto(plan, { weeklyBudgetHours: user.profile?.weeklyAvailableHours ?? null }) : null,
+    pendingPlan: pendingPlan ? planDto(pendingPlan, { weeklyBudgetHours: user.profile?.weeklyAvailableHours ?? null }) : null,
     executionMeta,
   });
 }

@@ -91,8 +91,9 @@ export const parserInputSchema = z.object({
       .optional(),
     careerBaseline: z
       .object({
-        roleKey: z.string().optional(),
-        templateVersion: z.string().optional(),
+        available: z.boolean().optional(),
+        roleKey: z.string().nullable().optional(),
+        templateVersion: z.string().nullable().optional(),
         evidence: z.array(z.unknown()).optional(),
       })
       .optional(),

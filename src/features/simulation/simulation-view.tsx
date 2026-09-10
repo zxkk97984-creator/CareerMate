@@ -1,13 +1,30 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+/**
+ * 模拟训练：推荐场景与自定义场景双入口。
+ *
+ * 两个入口都先预览，用户可以编辑场景；点击开始后服务端保存场景、
+ * 角色、目标、难度、评分标准和来源快照，训练过程中不再被模型改写。
+ */
+
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { ScenarioDrawer } from "./scenario-drawer";
+import "./simulation-lobby.css";
+import { ArrowLeft, BarChart3, Bot, CheckCircle2, ListChecks, MessagesSquare, Sparkles, Timer, Users } from "lucide-react";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, BarChart3, Bot, CheckCircle2, ListChecks, MessagesSquare, Sparkles, Timer, Users } from "lucide-react";
+import { InlineAlert } from "@/components/ui/inline-alert";
+import { extractAiExecutionMeta, fetchApi } from "@/lib/client-api";
+import {
+  formatAbilityImpact,
+  impactBarPercent,
+  listSimulationScenarios,
+  type SimulationScenarioMeta,
+  type SimulationScenarioSnapshot,
+} from "@/lib/simulation";
 import { abilityLabels, type ProfileDto } from "@/lib/types";
-import { fetchApi } from "@/lib/client-api";
-import { formatAbilityImpact, impactBarPercent, listSimulationScenarios, scenarioMetaForSession, type SimulationScenarioMeta } from "@/lib/simulation";
 import type { SimulationSessionDto } from "@/lib/workspace-types";
 
 interface SimulationFeedback {
@@ -21,6 +38,13 @@ interface SimulationFeedback {
 
 type SimulationSession = SimulationSessionDto & { feedback?: SimulationFeedback | null };
 
+interface ScenarioDraft {
+  sourceType: "recommended" | "custom" | "job";
+  sourceRef: string | null;
+  scenarioSnapshot: SimulationScenarioSnapshot;
+  executionMeta?: ReturnType<typeof extractAiExecutionMeta>;
+}
+
 const fixedScenarios = listSimulationScenarios();
 
 const scenarioIcons: Record<string, typeof MessagesSquare> = {
@@ -30,30 +54,35 @@ const scenarioIcons: Record<string, typeof MessagesSquare> = {
   data_driven_decision: BarChart3,
   requirement_clarification: ListChecks,
   career_interview: Sparkles,
+  custom: Sparkles,
 };
 
-/** 大分数圆环：null score 不渲染 0 分圆环，改显示“未产生正式评分”（T17b） */
 function ScoreRing({ score }: { score: number | null }) {
   if (score === null) {
-    return <div className="sim-report-score sim-report-score-none" role="img" aria-label="本次训练未评分"><span className="sim-report-score-num">—</span><span className="sim-report-score-label">未产生正式评分</span></div>;
+    return (
+      <div className="sim-report-score sim-report-score-none" role="img" aria-label="本次训练未评分">
+        <span className="sim-report-score-num">—</span>
+        <span className="sim-report-score-label">未产生正式评分</span>
+      </div>
+    );
   }
   const value = Math.max(0, Math.min(100, score));
-  const R = 42;
-  const C = 2 * Math.PI * R;
+  const radius = 42;
+  const circumference = 2 * Math.PI * radius;
   return (
     <div className="sim-report-score" role="img" aria-label={`综合得分 ${value} 分`}>
       <svg viewBox="0 0 96 96" style={{ position: "absolute", inset: 0 }} aria-hidden="true">
-        <circle className="sim-report-score-track" cx="48" cy="48" r={R} fill="none" strokeWidth="8" />
+        <circle className="sim-report-score-track" cx="48" cy="48" r={radius} fill="none" strokeWidth="8" />
         <circle
           className="sim-report-score-arc"
           cx="48"
           cy="48"
-          r={R}
+          r={radius}
           fill="none"
           stroke="var(--cm-brand)"
           strokeWidth="8"
           strokeLinecap="round"
-          strokeDasharray={`${(value / 100) * C} ${C}`}
+          strokeDasharray={`${(value / 100) * circumference} ${circumference}`}
         />
       </svg>
       <span className="sim-report-score-num">{value}</span>
@@ -62,287 +91,191 @@ function ScoreRing({ score }: { score: number | null }) {
   );
 }
 
-function SimulationReport({ active, onRestart }: { active: SimulationSession; onRestart: () => void }) {
-  const fb = active.feedback;
-  const impacts = fb?.abilityImpact && typeof fb.abilityImpact === "object" ? Object.entries(fb.abilityImpact) : [];
+export function SimulationReport({ active, onRestart }: { active: SimulationSession; onRestart?: () => void }) {
+  const feedback = active.feedback;
+  const impacts = feedback?.abilityImpact && typeof feedback.abilityImpact === "object"
+    ? Object.entries(feedback.abilityImpact)
+    : [];
   const degraded = active.actualMode === "mock";
   return (
     <div className="sim-report">
       <div className="sim-report-head">
         <ScoreRing score={active.score} />
         <div className="sim-report-summary">
-          {/* 候选已生成/待确认，不声称已改画像（T17b） */}
-          {active.candidateId ? <span className="sim-report-badge sim-report-badge-brand">画像候选已生成</span> : <span className="sim-report-badge">本次未生成画像候选</span>}
+          {active.candidateId
+            ? <span className="sim-report-badge sim-report-badge-brand">能力证据候选已生成，等待确认</span>
+            : <span className="sim-report-badge">本次未生成能力证据候选</span>}
         </div>
       </div>
-      {/* AI 降级：结果旁持续标记，折叠详细原因（plan 4.4） */}
-      {degraded ? <p className="sim-report-degraded">本次使用演示数据（结果仅供参考）</p> : null}
+      {degraded ? <p className="sim-report-degraded">本次使用演示数据（结果仅供参考，不生成正式能力候选）</p> : null}
       {impacts.length > 0 ? (
         <div className="sim-report-section">
-          <div className="sim-report-section-title">能力影响</div>
+          <div className="sim-report-section-title">能力影响（未确认前不写入画像）</div>
           <div className="sim-impact-list">
             {impacts.map(([key, value]) => {
-              const num = Number(value);
+              const number = Number(value);
               return (
                 <div key={key} className="sim-impact-row">
                   <span className="sim-impact-label">{abilityLabels[key as keyof typeof abilityLabels] ?? key}</span>
-                  <span className="sim-impact-track"><span className="sim-impact-bar" style={{ width: impactBarPercent(num) + "%" }} /></span>
-                  {/* 负向建议不渲染 +-2（T17b） */}
-                  <span className={`sim-impact-value ${num < 0 ? "sim-impact-value-neg" : ""}`}>{formatAbilityImpact(num)}</span>
+                  <span className="sim-impact-track"><span className="sim-impact-bar" style={{ width: `${impactBarPercent(number)}%` }} /></span>
+                  <span className={`sim-impact-value ${number < 0 ? "sim-impact-value-neg" : ""}`}>{formatAbilityImpact(number)}</span>
                 </div>
               );
             })}
           </div>
         </div>
       ) : null}
-      {fb?.strengths && fb.strengths.length > 0 ? (
+      {feedback?.strengths?.length ? (
         <div className="sim-report-section">
           <div className="sim-report-section-title">做得好</div>
-          <ul className="sim-report-list">
-            {fb.strengths.map((s) => <li key={s}><CheckCircle2 size={14} />{s}</li>)}
-          </ul>
+          <ul className="sim-report-list">{feedback.strengths.map((item) => <li key={item}><CheckCircle2 size={14} />{item}</li>)}</ul>
         </div>
       ) : null}
-      {fb?.improvements && fb.improvements.length > 0 ? (
+      {feedback?.improvements?.length ? (
         <div className="sim-report-section">
           <div className="sim-report-section-title">改进建议</div>
-          <ul className="sim-report-list">
-            {fb.improvements.map((s) => <li key={s}><Sparkles size={14} />{s}</li>)}
-          </ul>
+          <ul className="sim-report-list">{feedback.improvements.map((item) => <li key={item}><Sparkles size={14} />{item}</li>)}</ul>
         </div>
       ) : null}
-      {fb?.evidence && fb.evidence.length > 0 ? (
+      {feedback?.evidence?.length ? (
         <div className="sim-report-section">
-          <div className="sim-report-section-title">证据摘录</div>
-          <ul className="sim-report-list sim-report-list-quote">
-            {fb.evidence.map((s) => <li key={s}>{s}</li>)}
-          </ul>
+          <div className="sim-report-section-title">报告依据（来自你的实际回答）</div>
+          <ul className="sim-report-list sim-report-list-quote">{feedback.evidence.map((item) => <li key={item}>{item}</li>)}</ul>
         </div>
-      ) : null}
+      ) : (
+        <p className="sim-report-degraded">报告没有可用回答摘录，未观察到的能力不应视为已具备。</p>
+      )}
       <div className={active.candidateId ? "sim-report-cta" : "sim-report-note"}>
-        {active.candidateId ? <>画像更新候选已生成，可前往<a href="/memory?tab=candidates">“待确认建议”</a>确认。候选未确认前不视为已更新画像。</> : "本次未生成画像更新候选。"}
+        {active.candidateId
+          ? <>能力证据候选已生成，可前往 <a href="/memory?tab=candidates">待确认建议</a> 审阅。候选未确认前不写入正式画像。</>
+          : "本次未生成能力更新候选。"}
       </div>
       <div className="sim-report-actions">
-        <Button variant="secondary" onClick={onRestart}>再来一次</Button>
+        {onRestart && <Button variant="secondary" onClick={onRestart}>再来一次</Button>}
         <Link href="/path" className="sim-report-back" aria-label="返回任务"><ArrowLeft size={14} /> 返回任务</Link>
       </div>
     </div>
   );
 }
 
-/** 三阶段模拟训练：选择 → 训练 → 完成（T17a） */
-export function SimulationView({ simulations, refresh, setNotice }: { simulations: SimulationSession[]; profile: ProfileDto | null; refresh: () => Promise<void>; setNotice: (value: string) => void }) {
-  const [scenarios, setScenarios] = useState<SimulationScenarioMeta[]>(fixedScenarios);
-  const [selected, setSelected] = useState<SimulationScenarioMeta>(fixedScenarios[0]);
-  const [active, setActive] = useState<SimulationSession | null>(() => simulations.find((item) => item.status === "active") ?? simulations[0] ?? null);
-  const [answer, setAnswer] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [generatingScenarios, setGeneratingScenarios] = useState(false);
-
-  const generateScenarios = useCallback(async () => {
-    setGeneratingScenarios(true);
-    setNotice("正在根据目标岗位生成训练/面试场景...");
-    try {
-      const response = await fetchApi<{ items: SimulationScenarioMeta[] }>("/api/simulations/scenarios", { method: "POST" });
-      if (!response.ok) throw new Error(response.error?.message ?? "场景生成失败");
-      if (!Array.isArray(response.data.items) || response.data.items.length === 0) {
-        throw new Error("场景生成结果为空");
-      }
-      setScenarios(response.data.items);
-      setSelected((current) => response.data.items.find((item) => item.key === current.key) ?? response.data.items[0]);
-      setNotice("已按目标岗位刷新推荐场景。");
-    } catch (caught) {
-      const message = caught instanceof Error ? caught.message : "场景生成失败";
-      setNotice(message);
-    } finally {
-      setGeneratingScenarios(false);
+export function ScenarioPreview({
+  draft,
+  busy,
+  onEdit,
+  onStart,
+}: {
+  draft: ScenarioDraft;
+  busy: boolean;
+  onEdit: (snapshot: SimulationScenarioSnapshot) => void;
+  onStart: () => void;
+}) {
+  const snapshot = draft.scenarioSnapshot;
+  const update = (patch: Partial<SimulationScenarioSnapshot>) => {
+    const next = { ...snapshot, ...patch };
+    if ("role" in patch || "counterpart" in patch || "objective" in patch) {
+      next.openingMessage = `你是${next.role}，对方是${next.counterpart}。请围绕“${next.objective}”说明你的第一步行动。`;
     }
-  }, [setNotice]);
-
-  // 外部刷新后自动同步“进行中的训练”，避免遗留会话挡住新训练
-  useEffect(() => {
-    if (active) return;
-    const found = simulations.find((item) => item.status === "active") ?? null;
-    if (found) setActive(found);
-  }, [simulations, active]);
-
-  // 首次进入时自动生成一次
-  useEffect(() => {
-    void generateScenarios();
-  }, [generateScenarios]);
-
-  // 进行中会话的 brief 必须与其场景对应：从该 session 的 scenarioKey 反查，不能拿默认第一项冒充（T17a）
-  const activeScenario = useMemo(
-    () => (active ? scenarioMetaForSession(active, scenarios) : null),
-    [active, scenarios],
-  );
-
-  // 无进行中会话时，情境卡展示“所选场景”；有进行中会话时，展示“该会话对应场景”，不冒充默认第一项
-  const briefScenario = active?.status === "active" ? (activeScenario ?? null) : selected;
-
-  async function start() {
-    if (busy || active?.status === "active") return;
-    setBusy(true); setError(""); setNotice("正在创建模拟训练会话...");
-    try {
-      const response = await fetchApi<{ session: SimulationSession }>("/api/simulations", { method: "POST", body: JSON.stringify({ scenarioType: selected.key }) });
-      if (!response.ok) throw new Error(response.error?.message ?? "训练会话创建失败");
-      setActive(response.data.session); setAnswer(""); setNotice("训练已开始，请完成至少 3 轮回答。"); await refresh();
-    } catch (caught) { const message = caught instanceof Error ? caught.message : "训练会话创建失败"; setError(message); setNotice(message); }
-    finally { setBusy(false); }
-  }
-
-  async function send() {
-    if (!active || busy || answer.trim().length < 5) return;
-    const draft = answer.trim();
-    setBusy(true); setError(""); setNotice("CareerMate 正在分析回答并准备追问...");
-    try {
-      const response = await fetchApi<{ session: SimulationSession }>("/api/simulations/" + active.id + "/messages", { method: "POST", body: JSON.stringify({ message: draft }) });
-      if (!response.ok) throw new Error(response.error?.message ?? "训练回答提交失败");
-      setActive(response.data.session); setAnswer(""); setNotice("已完成第 " + response.data.session.turnCount + " 轮训练。"); await refresh();
-    } catch (caught) {
-      // 失败保留答案（answer 未清空），允许重试（T17a）
-      const message = caught instanceof Error ? caught.message : "训练回答提交失败";
-      setError(message); setNotice(message);
-    }
-    finally { setBusy(false); }
-  }
-
-  async function complete() {
-    if (!active || busy || active.status !== "active") return;
-    setBusy(true); setError(""); setNotice("正在生成训练评分和画像候选...");
-    try {
-      const response = await fetchApi<{ session: SimulationSession; candidateId?: string | null }>("/api/simulations/" + active.id + "/complete", { method: "POST" });
-      if (!response.ok) throw new Error(response.error?.message ?? "训练评分失败");
-      setActive(response.data.session);
-      const cid = response.data.candidateId ?? response.data.session.candidateId;
-      if (response.data.session.score === null) {
-        setNotice("训练已完成，但本次未产生正式评分；如需评分，请开始一轮新训练。");
-      } else if (cid) {
-        setNotice("训练已完成，画像更新候选等待确认。");
-      } else {
-        setNotice("训练已完成，本次未生成画像更新候选。");
-      }
-      await refresh();
-    } catch (caught) { const message = caught instanceof Error ? caught.message : "训练评分失败"; setError(message); setNotice(message); }
-    finally { setBusy(false); }
-  }
-
-  const scenarioCards = (
-    <div className="sim-scenario-list">
-      {scenarios.map((scenario) => {
-        const Icon = scenarioIcons[scenario.key] ?? MessagesSquare;
-        const skillLabels = scenario.skills.slice(0, 2).map((s) => abilityLabels[s as keyof typeof abilityLabels] ?? s);
-        const isSelected = selected.key === scenario.key;
-        return (
-          <button
-            key={scenario.key}
-            className={`sim-scenario-btn ${isSelected ? "selected" : ""}`}
-            disabled={busy || active?.status === "active"}
-            onClick={() => setSelected(scenario)}
-          >
-            <div className="sim-scenario-head">
-              <span className="sim-scenario-icon" aria-hidden="true"><Icon size={16} /></span>
-              <span className="sim-scenario-title">{scenario.title}</span>
-              <span className={`sim-scenario-diff sim-scenario-diff-${scenario.difficulty.toLowerCase()}`}>{scenario.difficulty}</span>
-            </div>
-            <div className="sim-scenario-prompt">{scenario.brief}</div>
-            <div className="sim-scenario-chips">
-              <span className="sim-scenario-chip"><Timer size={11} />{scenario.durationMinutes} 分钟</span>
-              {skillLabels.map((label) => <span key={label} className="sim-scenario-chip">{label}</span>)}
-            </div>
-            <div className="sim-scenario-meta">6 轮对话 · AI 评分</div>
-          </button>
-        );
-      })}
-    </div>
-  );
-
+    onEdit(next);
+  };
   return (
-    <div className="sim-layout" data-od-id="simulation-layout">
-      {/* 左侧 360px：场景列表（进行中会话时不显示大片禁用卡片，聚焦当前训练 T17a） */}
-      <SurfaceCard title="训练场景" description="按目标岗位生成的训练与面试" action={<Button variant="secondary" disabled={generatingScenarios || busy} onClick={generateScenarios}>{generatingScenarios ? "生成中..." : "刷新推荐场景"}</Button>}>
-        {active?.status === "active" ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <span style={{ fontSize: 13, color: "var(--cm-text-muted)" }}>当前正在训练，结束后可重新选择场景。</span>
-            <Button variant="secondary" disabled={busy} onClick={() => setActive(null)}>结束当前训练后选择</Button>
-          </div>
-        ) : (
-          scenarioCards
-        )}
-      </SurfaceCard>
-
-      {/* 右侧：情境卡 + 会话面板 */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 20, minWidth: 0 }}>
-        {/* 情境卡：进行中会话时展示该会话对应场景，默认折叠；无会话时展示所选场景（T17a） */}
-        <details open={active?.status !== "active"}>
-          <summary style={{ cursor: "pointer", fontSize: 14, fontWeight: 600, color: "var(--cm-text-strong)" }}>
-            {active?.status === "active" ? "情境卡（当前训练）" : "情境卡"}
-          </summary>
-          {briefScenario ? (
-            <div className="sim-brief" style={{ marginTop: 10 }}>
-              <div className="sim-brief-line"><span className="sim-brief-label">你的角色</span><span>{briefScenario.role}</span></div>
-              <div className="sim-brief-line"><span className="sim-brief-label">对话对象</span><span>{briefScenario.counterpart}</span></div>
-              <div className="sim-brief-line"><span className="sim-brief-label">目标</span><span>{briefScenario.objective}</span></div>
-              <div className="sim-brief-dims">
-                {briefScenario.scoringDimensions.map((d) => <span key={d} className="sim-brief-dim">{d}</span>)}
-              </div>
-              <div style={{ marginTop: 14, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12 }}>
-                <Button disabled={busy || active?.status === "active"} onClick={start}>开始新训练</Button>
-                <span style={{ fontSize: 12, color: "var(--cm-text-subtle)" }}>完成至少 3 轮后可评分</span>
-              </div>
-            </div>
-          ) : (
-            <p style={{ margin: "8px 0 0", fontSize: 13, color: "var(--cm-text-muted)" }}>该场景详情暂不可用，可在完成后重新选择。</p>
-          )}
-        </details>
-
-        {/* 会话面板 */}
-        <SurfaceCard title={active?.scenarioTitle ?? selected.title} description={active ? `已进行 ${active.turnCount}/6 轮` : undefined}>
-          {error ? <p className="sim-error">{error}</p> : null}
-          {active ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {active.transcript.map((turn, index) => (
-                <div key={turn.role + "-" + index} className={`sim-turn ${turn.role === "user" ? "sim-turn-user" : "sim-turn-assistant"}`}>{turn.content}</div>
-              ))}
-              {active.status === "active" ? (
-                <>
-                  <textarea
-                    aria-label="训练回答"
-                    className="sim-answer"
-                    placeholder="输入不少于 5 个字的回答"
-                    value={answer}
-                    onChange={(event) => setAnswer(event.target.value)}
-                  />
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                    <Button disabled={busy || answer.trim().length < 5 || active.turnCount >= 6} onClick={send}>提交第 {active.turnCount + 1} 轮</Button>
-                    <Button variant="secondary" disabled={busy || active.turnCount < 3} onClick={complete}>完成并评分</Button>
-                  </div>
-                  <p className="sim-round-hint">已完成 {active.turnCount}/6 轮，至少 3 轮后可评分。</p>
-                </>
-              ) : (
-                <SimulationReport active={active} onRestart={start} />
-              )}
-            </div>
-          ) : (
-            <p className="sim-empty">选择场景并开始训练。</p>
-          )}
-
-          {simulations.length > 0 && (
-            <div className="sim-history">
-              {simulations.slice(0, 5).map((item) => (
-                <div key={item.id} className="sim-history-row">
-                  <div className="sim-history-main">
-                    <div className="sim-history-title">{item.scenarioTitle}</div>
-                    <div className="sim-history-meta">{item.status === "completed" ? (item.score === null ? "未评分" : "得分 " + item.score) : "进行中 " + item.turnCount + "/6 轮"}</div>
-                  </div>
-                  <button onClick={() => setActive(item)} className="sim-history-btn">{item.status === "completed" ? (item.score === null ? "查看" : item.score + " 分") : item.turnCount + " 轮"}</button>
-                </div>
-              ))}
-            </div>
-          )}
-        </SurfaceCard>
+    <div className="sim-preview" data-od-id="simulation-preview">
+      <div className="sim-preview-head">
+        <div>
+          <span className="path-eyebrow">开始前预览</span>
+          <h3>{snapshot.title}</h3>
+          <p>确认角色和目标后，进入专属对话开始练习。训练将围绕以下情境展开。</p>
+        </div>
+        <Button disabled={busy} onClick={onStart}>开始训练</Button>
       </div>
+      <div className="sim-preview-grid">
+        <label>场景标题<input className="cm-input" value={snapshot.title} onChange={(event) => update({ title: event.target.value })} /></label>
+        <label>难度<select className="cm-select" value={snapshot.difficulty} onChange={(event) => update({ difficulty: event.target.value as SimulationScenarioSnapshot["difficulty"] })}><option value="L1">L1</option><option value="L2">L2</option><option value="L3">L3</option></select></label>
+        <label>你的角色<input className="cm-input" value={snapshot.role} onChange={(event) => update({ role: event.target.value })} /></label>
+        <label>对话对象<input className="cm-input" value={snapshot.counterpart} onChange={(event) => update({ counterpart: event.target.value })} /></label>
+        <label className="sim-preview-wide">目标<textarea className="cm-input-textarea" value={snapshot.objective} onChange={(event) => update({ objective: event.target.value })} /></label>
+        <label className="sim-preview-wide">情境说明<textarea className="cm-input-textarea" value={snapshot.brief} onChange={(event) => update({ brief: event.target.value })} /></label>
+        <label className="sim-preview-wide">评分标准（用、分隔）<input className="cm-input" value={snapshot.scoringDimensions.join("、")} onChange={(event) => update({ scoringDimensions: event.target.value.split(/[、,，]/).map((item) => item.trim()).filter(Boolean) })} /></label>
+      </div>
+      <div className="sim-preview-meta">
+        <span><Timer size={13} />{snapshot.durationMinutes} 分钟</span>
+        <span>最多 6 轮 · 至少 3 轮有效回答后可评分</span>
+        <span>来源：{draft.sourceType === "custom" ? "自定义场景" : draft.sourceType === "job" ? "岗位样本" : "推荐场景"}</span>
+      </div>
+      {draft.executionMeta?.degraded ? (
+        <InlineAlert tone="info">场景生成已降级为本地模板，当前内容仅供预览；确认后再开始训练。</InlineAlert>
+      ) : null}
     </div>
   );
+}
+
+export function SimulationView({ simulations, profile, setNotice }: {
+ simulations: SimulationSession[]; profile: ProfileDto | null; refresh: () => Promise<void>; setNotice: (value: string) => void;
+}) {
+ const router = useRouter();
+ const [mode, setMode] = useState<'recommended' | 'custom'>('recommended');
+ const [scenarios, setScenarios] = useState(fixedScenarios);
+ const [draft, setDraft] = useState<ScenarioDraft | null>(null);
+ const [loading, setLoading] = useState(false);
+ const [busy, setBusy] = useState(false);
+ const [error, setError] = useState('');
+ const requestId = useRef<string | null>(null);
+ const [custom, setCustom] = useState({ description: '', role: profile?.targetRoleLabel ?? '岗位候选人', counterpart: '业务负责人', objective: '', difficulty: 'L2' });
+ const refreshScenarios = useCallback(async () => {
+  try {
+   const response = await fetchApi<{ items: SimulationScenarioMeta[] }>('/api/simulations/scenarios');
+   if (response.ok && response.data.items.length) setScenarios(response.data.items);
+  } catch { setNotice('推荐刷新失败，保留当前场景。'); }
+ }, [setNotice]);
+ useEffect(() => { void refreshScenarios(); }, [refreshScenarios]);
+ const preview = useCallback(async (body: Record<string, unknown>) => {
+  setLoading(true); setError(''); requestId.current = null;
+  try {
+   const response = await fetchApi<ScenarioDraft>('/api/simulations/scenarios', { method: 'POST', body: JSON.stringify(body) });
+   if (!response.ok) throw new Error(response.error?.message ?? '场景生成失败，请重试');
+   setDraft({ ...response.data, executionMeta: extractAiExecutionMeta(response.meta) });
+  } catch (e) { setError(e instanceof Error ? e.message : '场景生成失败'); }
+  finally { setLoading(false); }
+ }, []);
+ useEffect(() => {
+  const jobId = new URLSearchParams(window.location.search).get('jobId');
+  if (jobId) void preview({ mode: 'recommended', jobId });
+ }, [preview]);
+ async function start() {
+  if (!draft || busy) return;
+  setBusy(true); setError(''); requestId.current ??= crypto.randomUUID();
+  try {
+   const response = await fetchApi<{ conversationId: string }>('/api/simulations', { method: 'POST', body: JSON.stringify({ ...draft, executionMeta: undefined, roundLimit: 6, createConversation: true, requestId: requestId.current }) });
+   if (!response.ok) throw new Error(response.error?.message ?? '训练创建失败，请重试');
+   if (!response.data.conversationId) throw new Error('训练聊天未创建，请重试');
+   router.push(`/chat?conversationId=${encodeURIComponent(response.data.conversationId)}`);
+  } catch (e) { setError(e instanceof Error ? e.message : '创建失败'); setBusy(false); }
+ }
+ async function resume(id: string) {
+  setBusy(true); setError('');
+  try {
+   const response = await fetchApi<{ conversationId: string }>(`/api/simulations/${id}/conversation`, { method: 'POST' });
+   if (!response.ok) throw new Error(response.error?.message ?? '恢复训练失败');
+   router.push(`/chat?conversationId=${encodeURIComponent(response.data.conversationId)}`);
+  } catch (e) { setError(e instanceof Error ? e.message : '恢复失败'); setBusy(false); }
+ }
+ return <div className="training-lobby">
+  <header className="training-hero"><span className="training-eyebrow">PRACTICE & GROW</span><h1>把真实挑战，变成你的练习场</h1><p>选一个场景，与 AI 展开一对一模拟。练习表达、应对追问，找到下一次做得更好的方法。</p><div className="training-steps"><span>01 选择场景</span><span>02 对话练习</span><span>03 获取反馈</span></div></header>
+  <div className="training-toolbar"><div className="sim-entry-tabs" aria-label="训练场景入口"><button aria-pressed={mode === 'recommended'} className={mode === 'recommended' ? 'active' : ''} onClick={() => setMode('recommended')}>推荐场景</button><button aria-pressed={mode === 'custom'} className={mode === 'custom' ? 'active' : ''} onClick={() => setMode('custom')}>自定义场景</button></div><span>一场专注的对话，一次看得见的进步</span></div>
+  {error && !draft ? <InlineAlert tone="error">{error}</InlineAlert> : null}
+  {loading ? <p role="status" className="training-loading">正在准备场景预览，请稍候…</p> : null}
+  {mode === 'recommended' ? <div className="training-grid">{scenarios.map(scenario => {
+   const Icon = scenarioIcons[scenario.key] ?? MessagesSquare;
+   return <button key={scenario.key} className="training-card" disabled={loading || busy} onClick={() => void preview({ mode: 'recommended', scenarioType: scenario.key })}>
+    <div className="training-card-top"><span className="training-icon"><Icon size={23}/></span><span>{scenario.difficulty} · {scenario.durationMinutes} 分钟</span></div>
+    <h2>{scenario.title}</h2><p>{scenario.brief}</p><div className="training-role">你的角色 · {scenario.role}</div><div className="training-objective">目标 · {scenario.objective}</div><div className="training-tags">{scenario.skills.slice(0, 3).map(key => <span key={key}>{abilityLabels[key as keyof typeof abilityLabels] ?? key}</span>)}</div><div className="training-card-footer"><span>最多 6 轮对话</span><strong>预览场景 ↗</strong></div>
+   </button>;
+  })}</div> : <SurfaceCard title="你想练习什么？" description="描述一个具体情境，AI 会为你准备角色、任务与训练目标。"><div className="sim-custom-form training-custom">
+   <label className="training-wide">事件经过<textarea className="cm-input-textarea" value={custom.description} onChange={e => setCustom({ ...custom, description: e.target.value })} placeholder="例如：项目延期，我需要向跨部门同事说明风险，并协商新的交付安排。"/></label>
+   <label>你的角色<input className="cm-input" value={custom.role} onChange={e => setCustom({ ...custom, role: e.target.value })}/></label><label>对方角色<input className="cm-input" value={custom.counterpart} onChange={e => setCustom({ ...custom, counterpart: e.target.value })}/></label>
+   <label className="training-wide">训练目标<input className="cm-input" value={custom.objective} onChange={e => setCustom({ ...custom, objective: e.target.value })} placeholder="例如：清楚表达风险，提出可执行的下一步"/></label><label>挑战难度<select className="cm-select" value={custom.difficulty} onChange={e => setCustom({ ...custom, difficulty: e.target.value })}><option value="L1">L1 · 入门练习</option><option value="L2">L2 · 进阶挑战</option><option value="L3">L3 · 高压应对</option></select></label>
+   <div className="training-wide"><Button disabled={loading || busy || custom.description.trim().length < 10 || custom.objective.trim().length < 5} onClick={() => void preview({ mode: 'custom', ...custom })}>生成场景预览</Button></div>
+  </div></SurfaceCard>}
+  <section className="training-history"><div className="training-section-heading"><h2>最近训练</h2><span>每一次练习，都值得回看</span></div>{simulations.length ? simulations.slice(0, 8).map(item => <button className="training-history-item" key={item.id} disabled={busy} onClick={() => void resume(item.id)}><span className="training-icon"><MessagesSquare size={19}/></span><span><strong>{item.scenarioTitle}</strong><small>{item.status === 'completed' ? (item.score == null ? '未产生正式评分' : `已完成 · ${item.score} 分`) : `进行中 · ${item.turnCount}/${item.roundLimit ?? 6} 轮`} · {new Date(item.createdAt).toLocaleDateString('zh-CN')}</small></span><span className="training-history-action">{item.status === 'completed' ? '查看报告' : '继续训练'} →</span></button>) : <p className="training-empty">还没有训练记录。从上方选一个场景，开始第一次练习。</p>}</section>
+  <ScenarioDrawer open={!!draft} onClose={() => { if (!busy) setDraft(null); }} title="训练场景预览">{draft && <>{error && <InlineAlert tone="error">{error}</InlineAlert>}<ScenarioPreview draft={draft} busy={busy} onEdit={snapshot => { requestId.current = null; setDraft({ ...draft, scenarioSnapshot: snapshot }); }} onStart={() => void start()}/></>}</ScenarioDrawer>
+ </div>;
 }

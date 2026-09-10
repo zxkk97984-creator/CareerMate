@@ -25,6 +25,36 @@ describe("toLearningRouteView", () => {
     expect(view.relatedPlan?.archived).toBe(false);
   });
 
+  it("keeps object tasks with investment, output and acceptance criteria", () => {
+    const view = toLearningRouteView({
+      stages: [{
+        title: "查询基础",
+        tasks: [{
+          title: "完成 10 道 SQL 聚合查询",
+          description: "使用公开销售数据完成查询",
+          estimatedHours: 4,
+          outputs: ["10 道查询及说明"],
+          acceptanceCriteria: ["能解释分组和过滤条件"],
+        }],
+      }],
+      tasks: [{
+        title: "完成 10 道 SQL 聚合查询",
+        description: "使用公开销售数据完成查询",
+        estimatedHours: 4,
+        outputs: ["10 道查询及说明"],
+        acceptanceCriteria: ["能解释分组和过滤条件"],
+      }],
+    }, related, 2);
+
+    expect(view.tasks[0]).toMatchObject({
+      title: "完成 10 道 SQL 聚合查询",
+      estimatedHours: 4,
+      outputs: ["10 道查询及说明"],
+      acceptanceCriteria: ["能解释分组和过滤条件"],
+    });
+    expect(view.stages[0].tasks?.[0]).toMatchObject({ title: "完成 10 道 SQL 聚合查询" });
+  });
+
   it("degraded on corrupt/non-object content rather than rendering it", () => {
     const view = toLearningRouteView("not json", related, null);
     expect(view.present).toBe(false);

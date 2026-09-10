@@ -1,4 +1,5 @@
 import { getPrisma } from "@/lib/prisma";
+import { invalidateMemoryContexts } from "@/lib/memory/context-invalidation";
 
 // ── 类型 ────────────────────────────────────────
 
@@ -113,6 +114,7 @@ export function createMemoryProposalService(): MemoryProposalService {
         data: { status: "confirmed" },
       });
       if (result.count === 0) throw new MemoryProposalError("记忆不存在或已处理", "NOT_FOUND", 404);
+      await invalidateMemoryContexts(userId, db);
     },
 
     async rejectProposal(memoryId, userId) {
@@ -121,6 +123,7 @@ export function createMemoryProposalService(): MemoryProposalService {
         data: { status: "rejected" },
       });
       if (result.count === 0) throw new MemoryProposalError("记忆不存在或已处理", "NOT_FOUND", 404);
+      await invalidateMemoryContexts(userId, db);
     },
 
     async editProposal(memoryId, userId, content) {
@@ -129,6 +132,7 @@ export function createMemoryProposalService(): MemoryProposalService {
         data: { content: content.slice(0, 2000) },
       });
       if (result.count === 0) throw new MemoryProposalError("记忆不存在或已处理", "NOT_FOUND", 404);
+      await invalidateMemoryContexts(userId, db);
     },
   };
 }

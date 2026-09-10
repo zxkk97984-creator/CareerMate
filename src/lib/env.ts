@@ -44,7 +44,7 @@ export function getTboxConfig(): TboxConfig {
   const mode: TboxMode = ["api", "manual", "mock"].includes(requestedMode)
     ? requestedMode
     : "mock";
-  const configuredTimeout = Number(read("TBOX_STREAM_TIMEOUT_MS", "90000"));
+  const configuredTimeout = Number(read("TBOX_STREAM_TIMEOUT_MS", "180000"));
   return {
     mode,
     apiKey: read("TBOX_API_KEY"),
@@ -60,7 +60,7 @@ export function getTboxConfig(): TboxConfig {
     chatEndpoint: read("TBOX_CHAT_ENDPOINT", "https://o.tbox.cn/openapi/v1/chat/create"),
     retrieveEndpoint: read("TBOX_RETRIEVE_ENDPOINT", "https://api.tbox.cn/api/datasets/retrieve"),
     streamTimeoutMs:
-      Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 90_000,
+      Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 180_000,
     webServiceUrl: read("TBOX_WEB_SERVICE_URL"),
     probeAgentId: read("TBOX_PROBE_AGENT_ID") || undefined,
     datasetIds: {

@@ -1,3 +1,5 @@
+import { verifyV2MockReadOnly } from "./helpers/v2-mock";
+const v2Mock = process.env.E2E_AGENTIC_V2 === "true";
 /**
  * E2E：DBA 开放式主聊天回归测试。
  *
@@ -32,9 +34,11 @@ async function openChat(page: import("@playwright/test").Page) {
 }
 
 test.describe("DBA 开放主聊天回归（mock模式）", () => {
-  test("完整 DBA 对话——逐字段验证画像保存，不重复提问", async ({ page }) => {
+  test(v2Mock ? "V2 Mock 自我介绍只返回正文，不误写画像或候选" : "完整 DBA 对话——逐字段验证画像保存，不重复提问", async ({ page }) => {
     await login(page);
     await openChat(page);
+
+    if (v2Mock) { await verifyV2MockReadOnly(page, "我是大二学生，想做数据库运维DBA，每周可以投入10小时"); return; }
 
     // 发送用户的完整自我介绍：大二、数据科学专业、DBA目标、10小时、SQL/NoSQL/Linux/预算
     const fullInput = "我是大二学生，专业数据科学与大数据技术，想做数据库运维DBA，每周可以投入10小时，学过SQL和数据库原理，了解一点NoSQL，有大概两个月空闲可以学，家里能装Linux虚拟机，预算希望不太贵";
@@ -147,7 +151,7 @@ test.describe("DBA 开放主聊天回归（mock模式）", () => {
     // 发送消息
     await textarea.fill("我是DBA，每周10小时学习");
     await page.getByLabel("发送消息").click();
-    await expect(page.locator(".message-assistant")).toBeVisible({ timeout: 15000 });
+    await expect(page.locator(".message-assistant").last()).toBeVisible({ timeout: 15000 });
     await expect(page.locator(".streaming-cursor")).toHaveCount(0, { timeout: 15000 });
 
     // 记录当前消息数
@@ -156,8 +160,7 @@ test.describe("DBA 开放主聊天回归（mock模式）", () => {
 
     // 刷新页面
     await page.reload();
-    await expect(page).toHaveURL(/\/chat/);
-  await page.goto("/dashboard");
+    await expect(page).toHaveURL(/\/dashboard/);
 
     // 重新打开助手面板，会话消息由控制器/远端绑定恢复
     await openChat(page);
@@ -171,13 +174,14 @@ test.describe("DBA 开放主聊天回归（mock模式）", () => {
     await expect(page.locator(".message-assistant").first()).toBeVisible({ timeout: 5000 });
   });
 
-  test("生成职业规划产生 pending 卡（无伪计划）", async ({ page }) => {
+  test(v2Mock ? "V2 Mock 规划请求不会伪造计划候选" : "生成职业规划产生 pending 卡（无伪计划）", async ({ page }) => {
     await login(page);
     const textarea = await openChat(page);
 
+    if (v2Mock) { await verifyV2MockReadOnly(page, "生成职业规划"); return; }
     await textarea.fill("生成职业规划");
     await page.getByLabel("发送消息").click();
-    await expect(page.locator(".message-assistant")).toBeVisible({ timeout: 15000 });
+    await expect(page.locator(".message-assistant").last()).toBeVisible({ timeout: 15000 });
     await expect(page.locator(".streaming-cursor")).toHaveCount(0, { timeout: 15000 });
 
     // 验证：计划卡片已渲染（mock 模式通过 artifact 机制生成）
@@ -195,13 +199,16 @@ test.describe("DBA 开放主聊天回归（mock模式）", () => {
     await login(page);
     const textarea = await openChat(page);
 
+    // 等历史卡片异步恢复完成后再取基线，避免把加载中的空列表当成“无候选”。
+    await page.waitForTimeout(500);
+
     // 先获取当前各种资源的计数
     const planCardsBefore = await page.locator("[role='region'][aria-label*='计划']").count();
     const profileCardsBefore = await page.locator("[role='region'][aria-label*='候选']").count();
 
     await textarea.fill("Python 列表推导式是什么？");
     await page.getByLabel("发送消息").click();
-    await expect(page.locator(".message-assistant")).toBeVisible({ timeout: 15000 });
+    await expect(page.locator(".message-assistant").last()).toBeVisible({ timeout: 15000 });
     await expect(page.locator(".streaming-cursor")).toHaveCount(0, { timeout: 15000 });
 
     // 验证助手回复有实际内容（非空壳、非占位符）
@@ -226,7 +233,7 @@ test.describe("DBA 开放主聊天回归（mock模式）", () => {
     await sendBtn.click();
 
     // 等待助手回复出现（说明请求已发出）
-    await expect(page.locator(".message-assistant")).toBeVisible({ timeout: 15000 });
+    await expect(page.locator(".message-assistant").last()).toBeVisible({ timeout: 15000 });
 
     // 验证最终有一条用户消息
     const userMessages = page.locator(".message-user");
@@ -247,11 +254,11 @@ test.describe("DBA 开放主聊天回归（mock模式）", () => {
 
     await textarea.fill("你好");
     await page.getByLabel("发送消息").click();
-    await expect(page.locator(".message-assistant")).toBeVisible({ timeout: 15000 });
+    await expect(page.locator(".message-assistant").last()).toBeVisible({ timeout: 15000 });
     await expect(page.locator(".streaming-cursor")).toHaveCount(0, { timeout: 15000 });
 
     // 助手应给出有实在内容的回复（mock 模式不阻断）
-    const assistantText = (await page.locator(".message-assistant").first().textContent()) ?? "";
+    const assistantText = (await page.locator(".message-assistant").last().textContent()) ?? "";
     expect(assistantText.trim().length).toBeGreaterThan(5);
 
     // 页面不应显示"正在连接百宝箱"等误导性的在线标识——不冒充在线 AI
@@ -267,10 +274,10 @@ test.describe("通用职业回归——任意非种子岗位无白名单拒答",
 
     await textarea.fill("我想做精算师，需要什么能力？");
     await page.getByLabel("发送消息").click();
-    await expect(page.locator(".message-assistant")).toBeVisible({ timeout: 15000 });
+    await expect(page.locator(".message-assistant").last()).toBeVisible({ timeout: 15000 });
     await expect(page.locator(".streaming-cursor")).toHaveCount(0, { timeout: 20000 });
 
-    const text = await page.locator(".message-assistant").first().textContent();
+    const text = await page.locator(".message-assistant").last().textContent();
     expect(text?.trim().length ?? 0).toBeGreaterThan(5);
     // 不应出现"目前仅支持"等白名单拒答文字
     expect(text).not.toContain("目前仅支持");
@@ -283,10 +290,10 @@ test.describe("通用职业回归——任意非种子岗位无白名单拒答",
 
     await page.getByPlaceholder(/输入你的问题/).fill("我想了解海洋生物声学研究员这个职业");
     await page.getByLabel("发送消息").click();
-    await expect(page.locator(".message-assistant")).toBeVisible({ timeout: 15000 });
+    await expect(page.locator(".message-assistant").last()).toBeVisible({ timeout: 15000 });
     await expect(page.locator(".streaming-cursor")).toHaveCount(0, { timeout: 20000 });
 
-    const text = await page.locator(".message-assistant").first().textContent();
+    const text = await page.locator(".message-assistant").last().textContent();
     expect(text?.trim().length ?? 0).toBeGreaterThan(5);
     expect(text).not.toContain("目前仅支持");
   });
@@ -295,10 +302,13 @@ test.describe("通用职业回归——任意非种子岗位无白名单拒答",
     await login(page);
     await openChat(page);
 
+    const userBefore = await page.locator(".message-user").count();
+    const assistantBefore = await page.locator(".message-assistant").count();
+
     // 第一轮：表达职业意向
     await page.getByPlaceholder(/输入你的问题/).fill("我想做工业设计师");
     await page.getByLabel("发送消息").click();
-    await expect(page.locator(".message-assistant")).toBeVisible({ timeout: 15000 });
+    await expect(page.locator(".message-assistant").last()).toBeVisible({ timeout: 15000 });
     await expect(page.locator(".streaming-cursor")).toHaveCount(0, { timeout: 20000 });
 
     // 第二轮：自然追问
@@ -307,10 +317,10 @@ test.describe("通用职业回归——任意非种子岗位无白名单拒答",
     await expect(page.locator(".message-assistant").nth(1)).toBeVisible({ timeout: 15000 });
     await expect(page.locator(".streaming-cursor")).toHaveCount(0, { timeout: 20000 });
 
-    // 验证有两轮对话（非死循环或拒答）
+    // 验证只增加两轮对话（不把历史会话误算成本轮）
     const userMsgs = page.locator(".message-user");
-    await expect(userMsgs).toHaveCount(2);
+    await expect(userMsgs).toHaveCount(userBefore + 2);
     const assistantMsgs = page.locator(".message-assistant");
-    await expect(assistantMsgs).toHaveCount(2);
+    await expect(assistantMsgs).toHaveCount(assistantBefore + 2);
   });
 });

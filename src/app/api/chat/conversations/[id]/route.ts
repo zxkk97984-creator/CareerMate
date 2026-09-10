@@ -1,3 +1,4 @@
+import { trainingForConversation } from "@/lib/simulation/chat-session";
 import { requireCurrentUser } from "@/lib/auth";
 import { fail, ok } from "@/lib/api";
 import { createChatService, ServiceError } from "@/lib/chat/service";
@@ -20,7 +21,7 @@ export async function GET(
 
     if (!conversation) return fail("NOT_FOUND", "会话不存在", 404);
 
-    return ok(conversation);
+    return ok({ ...conversation, simulation: await trainingForConversation(user.id, id) });
   } catch (err) {
     if (err instanceof ServiceError) {
       return fail(err.code, err.message, err.status);

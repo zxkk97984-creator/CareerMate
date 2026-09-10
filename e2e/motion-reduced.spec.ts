@@ -14,7 +14,7 @@ async function login(page: import("@playwright/test").Page, username = "student_
   await page.getByLabel("账号").fill(username);
   await page.getByLabel("密码").fill("careermate123");
   await page.getByRole("button", { name: "进入 CareerMate" }).click();
-  // 登录后重定向到 /dashboard(对话板块已迁移)
+  // 登录进入主聊天，再访问成长概览
   await expect(page).toHaveURL(/\/chat/);
   await page.goto("/dashboard");
 }
@@ -37,10 +37,10 @@ test.describe("动效降级(reduced motion)", () => {
     expect(await title.getAttribute("style")).toBeNull();
   });
 
-  test("登录后工作台 Reveal 卡片可见且 opacity=1", async ({ page }) => {
+  test("登录后成长概览卡片可见且 opacity=1", async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await login(page);
-    const card = page.locator(".surface-card").first();
+    const card = page.locator(".growth-panel").first();
     await expect(card).toBeVisible({ timeout: 20000 });
     await expect.poll(() => card.evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
   });
@@ -48,10 +48,10 @@ test.describe("动效降级(reduced motion)", () => {
   test("仪表盘指标数字为最终值(非透明残留)", async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await login(page);
-    const metric = page.locator(".cm-metric-card").first();
+    const metric = page.locator(".growth-score").first();
     await expect(metric).toBeVisible({ timeout: 20000 });
-    // reduced motion 下 CountUp 直接落最终文本:数字格式且非空
-    await expect.poll(() => metric.locator(".cm-mono").textContent()).toMatch(/^\d[\d,]*$/);
+    // reduced motion 下显示最终分值，缺少证据时明确标记待评估
+    await expect.poll(() => metric.locator("strong").textContent()).toMatch(/^(\d[\d,]*|待评估)$/);
     await expect.poll(() => metric.evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
   });
 });

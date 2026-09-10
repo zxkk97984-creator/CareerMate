@@ -44,7 +44,7 @@ const AGENTIC_V2_INTERACTIONS = {
   learning_route: ["message_submit", "generate_route", "adjust_route", "update_progress"],
   simulation: ["message_submit", "start_simulation", "continue_simulation", "reset_simulation", "complete_simulation"],
   resume: ["message_submit", "upload_document", "analyze_document"],
-  resources: ["message_submit", "search_resources", "verify_resource"],
+  resources: ["message_submit", "search_resources", "verify_resource", "analyze_job_gap", "adjust_plan_for_job"],
   growth_review: ["message_submit", "run_review"],
   memory: ["message_submit", "view_memory", "propose_memory", "accept_candidate", "reject_candidate", "delete_memory"],
   privacy: ["message_submit", "view_data", "export_data", "delete_data"],
@@ -58,6 +58,7 @@ const agenticV2SurfaceSchema = z.enum(Object.keys(AGENTIC_V2_INTERACTIONS) as [
 export const agenticV2InteractionSchema = z.object({
   surface: agenticV2SurfaceSchema,
   action: z.string().trim().min(1).max(40),
+  targetRef: z.string().trim().min(1).max(256).optional(),
 }).strict().superRefine((value, ctx) => {
   const allowed = AGENTIC_V2_INTERACTIONS[value.surface] as readonly string[];
   if (!allowed.includes(value.action)) {

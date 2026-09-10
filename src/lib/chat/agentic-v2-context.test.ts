@@ -39,6 +39,8 @@ describe("Agentic V2 business_data (snapshot-based)", () => {
     expect(businessData).toEqual({
       schemaVersion: "1",
       interaction: { surface: "career_path", action: "regenerate_plan" },
+      executionMode: "interactive",
+      responseContract: "agent_artifact_v1",
       profileSnapshot,
       historySnapshot,
       simulationState: null,

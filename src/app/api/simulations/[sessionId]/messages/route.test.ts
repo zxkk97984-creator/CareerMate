@@ -51,11 +51,11 @@ const apiMeta = {
   source: "tbox-api",
 };
 
-function request(message: string) {
+function request(message: string, requestId = "request-1") {
   return new Request("http://localhost/api/simulations/session-1/messages", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ message, requestId }),
   });
 }
 
@@ -236,5 +236,29 @@ describe("POST /api/simulations/[sessionId]/messages", () => {
       actualMode: "mock",
     });
     expect(payload.meta).toEqual(storedTranscript.at(-1).meta);
+  });
+
+  it("returns the existing turn when the same requestId is retried", async () => {
+    mocks.findFirst.mockResolvedValue({
+      ...session,
+      turnCount: 1,
+      lastRequestId: "retry-01",
+      transcript: JSON.stringify([
+        { role: "assistant", content: "请先说明目标。" },
+        { role: "user", content: "目标是帮助用户快速发现简历问题。" },
+        { role: "assistant", content: "请补充验收标准。" },
+      ]),
+    });
+
+    const response = await POST(request("目标是帮助用户快速发现简历问题。", "retry-01"), {
+      params: Promise.resolve({ sessionId: "session-1" }),
+    });
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.data.idempotent).toBe(true);
+    expect(payload.data.assistantMessage).toBe("请补充验收标准。");
+    expect(mocks.generateTurn).not.toHaveBeenCalled();
+    expect(mocks.updateMany).not.toHaveBeenCalled();
   });
 });

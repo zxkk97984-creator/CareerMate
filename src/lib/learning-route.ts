@@ -9,8 +9,8 @@ export interface LearningRouteView {
   targetRole: string | null;
   weeklyBudgetHours: number | null;
   period: string | null;
-  stages: Array<{ title: string; description?: string; tasks?: string[] }>;
-  tasks: string[];
+  stages: Array<{ title: string; description?: string; tasks?: LearningRouteTask[] }>;
+  tasks: LearningRouteTask[];
   resources: string[];
   deliverables: string[];
   acceptanceCriteria: string[];
@@ -20,6 +20,16 @@ export interface LearningRouteView {
   /** 本路线基于哪个版本的计划生成 */
   basePlanVersion: number | number[] | null;
 }
+
+export interface LearningRouteTaskObject {
+  title: string;
+  description?: string;
+  estimatedHours?: number;
+  outputs: string[];
+  acceptanceCriteria: string[];
+}
+
+export type LearningRouteTask = string | LearningRouteTaskObject;
 
 export interface RelatedPlanView {
   id: string;
@@ -49,9 +59,29 @@ function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v) => typeof v === "string" && v.trim()) as string[] : [];
 }
 
-function asStages(value: unknown): Array<{ title: string; description?: string; tasks?: string[] }> {
+function asTaskArray(value: unknown): LearningRouteTask[] {
   if (!Array.isArray(value)) return [];
-  return value.flatMap((item): Array<{ title: string; description?: string; tasks?: string[] }> => {
+  return value.flatMap((item): LearningRouteTask[] => {
+    if (typeof item === "string" && item.trim()) return [item.trim()];
+    if (typeof item !== "object" || item === null || Array.isArray(item)) return [];
+    const obj = item as Record<string, unknown>;
+    const title = asString(obj.title ?? obj.name);
+    if (!title) return [];
+    return [{
+      title,
+      description: asString(obj.description) ?? undefined,
+      estimatedHours: typeof obj.estimatedHours === "number" && obj.estimatedHours > 0
+        ? Math.round(obj.estimatedHours)
+        : undefined,
+      outputs: asStringArray(obj.outputs),
+      acceptanceCriteria: asStringArray(obj.acceptanceCriteria),
+    }];
+  });
+}
+
+function asStages(value: unknown): Array<{ title: string; description?: string; tasks?: LearningRouteTask[] }> {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item): Array<{ title: string; description?: string; tasks?: LearningRouteTask[] }> => {
     if (typeof item !== "object" || item === null) return [];
     const obj = item as Record<string, unknown>;
     const title = asString(obj.title ?? obj.name ?? obj.phase);
@@ -59,7 +89,7 @@ function asStages(value: unknown): Array<{ title: string; description?: string; 
     return [{
       title,
       description: asString(obj.description ?? obj.goal) ?? undefined,
-      tasks: asStringArray(obj.tasks ?? obj.actions ?? obj.items),
+      tasks: asTaskArray(obj.tasks ?? obj.actions ?? obj.items),
     }];
   });
 }
@@ -83,7 +113,7 @@ export function toLearningRouteView(
 
   const c = content as RawContent;
   const stages = asStages(c.stages);
-  const tasks = asStringArray(c.tasks);
+  const tasks = asTaskArray(c.tasks);
   const resources = asStringArray(c.resources);
   const deliverables = asStringArray(c.deliverables);
   const acceptanceCriteria = asStringArray(c.acceptanceCriteria);

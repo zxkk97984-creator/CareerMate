@@ -200,6 +200,53 @@ describe("Agentic V2 快照加载器", () => {
     );
   });
 
+  it("只在页面明确引用岗位样本时加载脱敏岗位上下文", async () => {
+    const fakeDb = makeFakeDb({
+      jobSample: {
+        findFirst: vi.fn().mockResolvedValue({
+          jobId: "job-1",
+          title: "数据分析师",
+          company: "示例公司",
+          city: "上海",
+          experience: "1-3年",
+          education: "本科",
+          salaryRaw: "10-15K",
+          salaryMin: 10_000,
+          salaryMax: 15_000,
+          salaryUnit: "month",
+          salaryMonths: null,
+          salaryComparable: true,
+          salaryNote: "按月薪记录",
+          skills: JSON.stringify(["SQL"]),
+          jd: "负责业务数据分析",
+          sourceBatch: "boss-20260824",
+          collectedAt: new Date("2026-08-24T00:00:00.000Z"),
+          collectionDateApprox: true,
+          verificationStatus: "unverified",
+          recruiterName: "张三",
+          recruiterActive: "刚刚活跃",
+        }),
+      },
+    });
+
+    const result = await loadAgenticV2Snapshot({
+      ...input,
+      interaction: {
+        surface: "resources",
+        action: "analyze_job_gap",
+        targetRef: "job-1",
+      } as any,
+    }, { db: fakeDb });
+
+    expect(result.jobSampleContext).toMatchObject({
+      jobId: "job-1",
+      title: "数据分析师",
+      verificationStatus: "unverified",
+    });
+    expect(JSON.stringify(result)).not.toContain("张三");
+    expect(JSON.stringify(result)).not.toContain("刚刚活跃");
+  });
+
   it("序列化后 business_data 不超过 49152 字节", async () => {
     const fakeDb = makeFakeDb();
     const result = await loadAgenticV2Snapshot(input, { db: fakeDb });

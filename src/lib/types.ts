@@ -1,3 +1,6 @@
+import type { AiCareerPlanV2 } from "@/lib/plans/schema-v2";
+import type { PlanTaskSummary, UnifiedPlanTask } from "@/lib/plans/task-model";
+
 export type AbilityKey =
   | "aiTooling"
   | "roleFoundation"
@@ -98,6 +101,15 @@ export interface CareerPlanDto {
   content: string | null;
   /** Plan V2：目标岗位显示名称 */
   targetRoleLabel: string | null;
+  /**
+   * 共享任务模型（V1/V2 统一读取）。概览、路径和资源上下文只读这一份，
+   * 不再各自解析 months 或 content。
+   */
+  tasks?: UnifiedPlanTask[];
+  /** 与 tasks 同一算法版本生成的统计；未知值不会伪装成 0。 */
+  taskSummary?: PlanTaskSummary;
+  /** V2 原始计划（校验通过时）；用于路径页展示灵活阶段。 */
+  v2?: AiCareerPlanV2 | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -154,15 +166,58 @@ export const resourceTypeLabels: Record<ResourceType, string> = {
 
 export interface ResourceItemDto {
   id: string;
+  externalKey?: string | null;
   title: string;
   type: string;
   roleKey: string;
   abilityKey: string;
   stage: string;
   source: string;
+  provider?: string | null;
+  difficulty?: string | null;
   url?: string | null;
   estimatedHours?: number | null;
   description: string;
+  detail?: string;
+  steps?: string[];
+  deliverables?: string[];
+  acceptanceCriteria?: string[];
+  verificationStatus?: string;
+  lastVerifiedAt?: string | null;
+  validUntil?: string | null;
+  sourceFile?: string | null;
+  sourceBatch?: string | null;
+  status?: string;
+}
+
+export interface JobSampleDto {
+  id: string;
+  jobId: string;
+  roleKey: string | null;
+  title: string;
+  company: string | null;
+  city: string;
+  experience: string | null;
+  education: string | null;
+  salaryRaw: string;
+  salaryMin: number | null;
+  salaryMax: number | null;
+  salaryUnit: string | null;
+  salaryMonths: number | null;
+  salaryComparable: boolean;
+  salaryNote: string;
+  skills: string[];
+  jobLink: string | null;
+  jd: string;
+  sourceFile: string[];
+  sourceBatch: string;
+  collectedAt: string | null;
+  collectionDateApprox: boolean;
+  verificationStatus: string;
+  detailAvailable: boolean;
+  fieldConflicts: Array<{ field: string; values: Array<{ value: string; sourceFiles: string[] }> }>;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface CandidateDto {

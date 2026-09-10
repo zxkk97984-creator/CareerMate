@@ -4,6 +4,13 @@ import {
   analyzerInputSchema,
 } from "./schema";
 
+export class GrowthAnalyzerInputError extends Error {
+  constructor(message = "成长分析输入不符合 schema") {
+    super(message);
+    this.name = "GrowthAnalyzerInputError";
+  }
+}
+
 // ---- 常量 ----
 
 /** 分数低于此值标记为薄弱项 */
@@ -51,14 +58,14 @@ function computeContinuousDays(dates: string[]): number {
  * 间隔标准差越小，一致性越高。最少需要3个时间点。
  * 返回值 0-1，1 表示非常规律。
  */
-function computeConsistencyScore(dates: string[]): number {
-  if (dates.length < 3) return 0.3;
+function computeConsistencyScore(dates: string[]): number | null {
+  if (dates.length < 3) return null;
 
   const timestamps = dates
     .map((d) => new Date(d).getTime())
     .sort((a, b) => a - b);
 
-  if (timestamps.length < 3) return 0.3;
+  if (timestamps.length < 3) return null;
 
   const intervals: number[] = [];
   for (let i = 1; i < timestamps.length; i++) {
@@ -66,7 +73,7 @@ function computeConsistencyScore(dates: string[]): number {
   }
 
   const mean = intervals.reduce((sum, v) => sum + v, 0) / intervals.length;
-  if (mean === 0) return 0.3;
+  if (mean === 0) return null;
 
   const variance =
     intervals.reduce((sum, v) => sum + (v - mean) ** 2, 0) / intervals.length;
@@ -102,8 +109,19 @@ function analyzeAbilityChanges(
       (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
     );
 
-    const initialScore =
-      history.length > 0 ? history[0].score : currentScore;
+    if (history.length === 0) {
+      changes.push({
+        abilityKey,
+        initialScore: currentScore,
+        currentScore,
+        delta: 0,
+        direction: "insufficient_data",
+        dataPoints: 1,
+      });
+      continue;
+    }
+
+    const initialScore = history[0].score;
     const delta = currentScore - initialScore;
     const direction =
       delta > TREND_DELTA_THRESHOLD
@@ -129,22 +147,25 @@ function analyzeAbilityChanges(
 
 function analyzePlans(planHistory: AnalyzerInput["planHistory"]) {
   const plans = planHistory ?? [];
-  const completed = plans.filter(
-    (p) => p.status === "completed" || p.status === "archived",
-  ).length;
+  // archived 只表示旧版本被归档，不等于完成；不能把归档算进完成率。
+  const completed = plans.filter((p) => p.status === "completed").length;
   const active = plans.filter((p) => p.status === "active").length;
+  const archived = plans.filter((p) => p.status === "archived").length;
   const total = plans.length;
   return {
-    planCompletionRate: total > 0 ? completed / total : 0,
+    planCompletionRate: total > 0 ? completed / total : null,
     totalCompletedPlans: completed,
     totalActivePlans: active,
+    totalArchivedPlans: archived,
   };
 }
 
 // ---- 模拟训练进步 ----
 
 function analyzeSimulations(simulations: AnalyzerInput["simulations"]) {
-  const sims = simulations ?? [];
+  const sims = (simulations ?? []).filter(
+    (sim) => sim.status === "completed" && sim.score !== null,
+  );
   const byScenario = new Map<
     string,
     Array<{ score: number | null; date: string }>
@@ -240,17 +261,9 @@ export function detectSensitiveFields(input: AnalyzerInput): string[] {
  * 纯函数，无副作用。不写入数据库，不发起网络请求。
  */
 export function analyzeGrowthData(input: AnalyzerInput): GrowthAnalysis {
-  // 宽容模式：safeParse 失败降级为空输入
   const parsed = analyzerInputSchema.safeParse(input);
-  const data: AnalyzerInput = parsed.success
-    ? parsed.data
-    : {
-        profileSnapshot: { available: false },
-        planHistory: [],
-        progressLogs: [],
-        simulations: [],
-        historicalScores: [],
-      };
+  if (!parsed.success) throw new GrowthAnalyzerInputError();
+  const data: AnalyzerInput = parsed.data;
 
   const currentScores =
     data.profileSnapshot?.data?.abilityScores ?? {};
@@ -264,17 +277,30 @@ export function analyzeGrowthData(input: AnalyzerInput): GrowthAnalysis {
     planCompletionRate,
     totalCompletedPlans,
     totalActivePlans,
+    totalArchivedPlans,
   } = analyzePlans(data.planHistory);
 
   const simulationProgress = analyzeSimulations(data.simulations);
 
   // 连续训练天数：从进度日志和模拟训练中提取日期
+  const learningEvents = (data.progressLogs ?? []).filter((event) => {
+    if (event.eventType === "task_completed" || event.eventType === "simulation_completed") return true;
+    if (event.eventType === "task_status_updated") {
+      return /(?:→|->)\s*done\b/i.test(event.summary ?? "") || /已完成/.test(event.summary ?? "");
+    }
+    return false;
+  });
+  const uniqueLearningEvents = [...new Map(
+    learningEvents.map((event) => [event.id, event]),
+  ).values()];
   const eventDates = [
-    ...(data.progressLogs ?? []).map((p) => p.createdAt),
-    ...(data.simulations ?? []).map((s) => s.createdAt),
+    ...uniqueLearningEvents.map((event) => event.createdAt),
+    ...(data.simulations ?? [])
+      .filter((simulation) => simulation.status === "completed" && simulation.score !== null)
+      .map((simulation) => simulation.createdAt),
   ];
   const continuousTrainingDays = computeContinuousDays(eventDates);
-  const totalProgressEvents = (data.progressLogs ?? []).length;
+  const totalProgressEvents = uniqueLearningEvents.length;
 
   const weaknesses = identifyWeaknesses(currentScores);
   const strongAreas = identifyStrongAreas(currentScores);
@@ -297,6 +323,7 @@ export function analyzeGrowthData(input: AnalyzerInput): GrowthAnalysis {
       planCompletionRate,
       totalCompletedPlans,
       totalActivePlans,
+      totalArchivedPlans,
       simulationProgress,
       continuousTrainingDays,
       totalProgressEvents,

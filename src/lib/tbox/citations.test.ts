@@ -169,3 +169,14 @@ describe("resolveSearchPolicy", () => {
   });
 
 });
+
+ it("does not turn tool logs into citations just because knowledge was used", () => {
+   const results = normalizeCitationsFromToolCalls([
+     { toolId: "k1", toolType: "knowledge", resultSummary: "[参考资料 1] (相关度: 0.9)\n职业能力模板\n能力要求" },
+     { toolId: "w1", toolType: "workflow", resultSummary: '{"artifact":{"data":{"code":"INVALID_WORKFLOW_INPUT"}}}' },
+     { toolId: "p1", toolType: "plan", resultSummary: "Plan created successfully." },
+     { toolId: "s1", toolType: "skill", resultSummary: "stdout:" },
+   ]);
+   expect(results).toHaveLength(1);
+   expect(results[0].title).toBe("职业能力模板");
+ });

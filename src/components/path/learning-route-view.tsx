@@ -1,6 +1,6 @@
 "use client";
 
-import { toLearningRouteView, type LearningRouteView } from "@/lib/learning-route";
+import { toLearningRouteView, type LearningRouteTask, type LearningRouteView } from "@/lib/learning-route";
 
 interface LearningRouteViewProps {
   content: unknown;
@@ -45,7 +45,7 @@ export function LearningRouteViewBody({ view }: { view: LearningRouteView }) {
               <li key={i} style={{ fontSize: 13.5, color: "var(--cm-text-strong)" }}>
                 {s.title}
                 {s.description ? <span style={{ color: "var(--cm-text-muted)" }}> — {s.description}</span> : null}
-                {s.tasks?.length ? <ul style={{ margin: "4px 0 0", paddingLeft: 18, color: "var(--cm-text-muted)" }}>{s.tasks.map((t, j) => <li key={j} style={{ fontSize: 12.5 }}>{t}</li>)}</ul> : null}
+                {s.tasks?.length ? <ul style={{ margin: "4px 0 0", paddingLeft: 18, color: "var(--cm-text-muted)" }}>{s.tasks.map((t, j) => <li key={j} style={{ fontSize: 12.5 }}>{renderTask(t)}</li>)}</ul> : null}
               </li>
             ))}
           </ol>
@@ -56,7 +56,7 @@ export function LearningRouteViewBody({ view }: { view: LearningRouteView }) {
         <div>
           <div style={{ fontSize: 12.5, fontWeight: 500, color: "var(--cm-text-subtle)" }}>学习任务</div>
           <ul style={{ margin: "6px 0 0", paddingLeft: 20, display: "flex", flexDirection: "column", gap: 4 }}>
-            {view.tasks.map((t, i) => <li key={i} style={{ fontSize: 13.5, color: "var(--cm-text-strong)" }}>{t}</li>)}
+            {view.tasks.map((t, i) => <li key={i} style={{ fontSize: 13.5, color: "var(--cm-text-strong)" }}>{renderTask(t)}</li>)}
           </ul>
         </div>
       )}
@@ -89,5 +89,18 @@ export function LearningRouteViewBody({ view }: { view: LearningRouteView }) {
 
       {view.degraded && <p style={{ margin: 0, fontSize: 12.5, color: "var(--cm-warning)" }}>{view.degraded}</p>}
     </div>
+  );
+}
+
+function renderTask(task: LearningRouteTask) {
+  if (typeof task === "string") return task;
+  return (
+    <>
+      <span>{task.title}</span>
+      {task.description ? <span style={{ color: "var(--cm-text-muted)" }}> — {task.description}</span> : null}
+      {task.estimatedHours ? <span style={{ color: "var(--cm-text-subtle)" }}> · 约 {task.estimatedHours} 小时</span> : null}
+      {task.outputs.length ? <span style={{ color: "var(--cm-text-muted)" }}> · 产出：{task.outputs.join("、")}</span> : null}
+      {task.acceptanceCriteria.length ? <span style={{ color: "var(--cm-text-muted)" }}> · 验收：{task.acceptanceCriteria.join("、")}</span> : null}
+    </>
   );
 }

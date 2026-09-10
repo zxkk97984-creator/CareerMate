@@ -163,12 +163,24 @@ describe("契约矩阵 SQLite：七工作流完整流水线", () => {
         phases: [{
           id: "p1", title: "阶段一", objective: "入门",
           duration: { value: 6, unit: "month" }, skills: [],
-          actions: [{ id: "a1", title: "学SQL", description: "", type: "learning", status: "not_started", resources: [] }],
-          outputs: [], evaluationCriteria: [], risks: [],
+          actions: [{
+            id: "a1",
+            title: "完成 5 道 SQL 聚合查询练习",
+            description: "使用公开销售数据完成查询并记录过滤逻辑",
+            type: "practice",
+            status: "not_started",
+            estimatedHours: 4,
+            resources: [],
+            outputs: ["5 道查询结果与说明"],
+            acceptanceCriteria: ["能解释每个查询的分组和过滤条件"],
+          }],
+          outputs: ["5 道查询结果与说明"],
+          evaluationCriteria: ["能解释每个查询的分组和过滤条件"],
+          risks: [],
         }],
         immediateActions: [], assumptions: [], riskNotes: [], evidenceRefs: [],
       },
-    }));
+    }, { baseVersion: null }));
 
     const env = parseAgentArtifactEnvelope(text);
     expect(env.artifact).toBeDefined();
@@ -214,7 +226,18 @@ describe("契约矩阵 SQLite：七工作流完整流水线", () => {
 
     const text = wrap(baseArtifact("learning_route", {
       targetRole: "ai_product_manager", weeklyBudgetHours: 10, period: "12 周",
-      stages: [{ title: "基础阶段", description: "入门", deliverables: ["笔记"], tasks: [{ title: "课程1", week: 1 }] }],
+      stages: [{
+        title: "基础阶段",
+        description: "建立 SQL 查询基础",
+        deliverables: ["查询练习记录"],
+        tasks: [{
+          title: "完成 SQL 基础课程练习",
+          description: "完成公开课程中的聚合查询章节并记录操作步骤",
+          estimatedHours: 4,
+          outputs: ["查询练习记录"],
+          acceptanceCriteria: ["能独立解释分组和过滤条件"],
+        }],
+      }],
       tasks: [], resources: [{ title: "资源1", type: "course" }],
       deliverables: ["作品集"], acceptanceCriteria: ["完成项目"], adjustmentTriggers: ["进度落后"],
       baseRouteVersion: null,
@@ -315,6 +338,27 @@ describe("契约矩阵 SQLite：七工作流完整流水线", () => {
 
   it("W7. growth_review: envelope→parse→ingest→accept→CareerPlan(replan) with parentPlanId", async () => {
     const u = await seedUser();
+    await (prisma as any).careerPlan.create({
+      data: {
+        userId: u.id, targetRole: "ai_product_manager", version: 1, status: "active",
+        schemaVersion: 2, content: JSON.stringify({
+          schemaVersion: 2, title: "原计划", targetRole: { key: "ai_product_manager", label: "AI 产品经理" },
+          summary: "原", horizon: { value: 2, unit: "year" },
+          phases: [{
+            id: "p1", title: "基础", objective: "起步", duration: { value: 6, unit: "month" }, skills: [],
+            actions: [{
+              id: "a1", title: "完成 2 次需求访谈练习",
+              description: "针对真实校园场景完成访谈记录和需求归纳",
+              type: "practice", status: "not_started", estimatedHours: 4, resources: [],
+              outputs: ["2 份访谈记录"], acceptanceCriteria: ["每份记录包含明确问题与结论"],
+            }],
+            outputs: ["2 份访谈记录"], evaluationCriteria: ["每份记录包含明确问题与结论"], risks: [],
+          }],
+          immediateActions: [], assumptions: [], riskNotes: [], evidenceRefs: [],
+        }),
+        years: "[]", quarters: "[]", months: "[]", generationMeta: "{}",
+      },
+    });
     const text = wrap(baseArtifact("growth_review", {
       plan: {
         schemaVersion: 2, title: "调整后计划",
@@ -323,8 +367,20 @@ describe("契约矩阵 SQLite：七工作流完整流水线", () => {
         phases: [{
           id: "p2", title: "进阶", objective: "提升", duration: { value: 6, unit: "month" },
           skills: [],
-          actions: [{ id: "a1", title: "设计工作坊", description: "", type: "learning", status: "not_started", resources: [] }],
-          outputs: [], evaluationCriteria: [], risks: [],
+          actions: [{
+            id: "a1",
+            title: "完成 2 次设计思维工作坊练习",
+            description: "针对真实校园场景完成需求拆解和原型草图",
+            type: "practice",
+            status: "not_started",
+            estimatedHours: 8,
+            resources: [],
+            outputs: ["2 份需求拆解与原型草图"],
+            acceptanceCriteria: ["每份草图能对应一个明确用户问题"],
+          }],
+          outputs: ["2 份需求拆解与原型草图"],
+          evaluationCriteria: ["每份草图能对应一个明确用户问题"],
+          risks: [],
         }],
         immediateActions: [], assumptions: [], riskNotes: [], evidenceRefs: [],
       },
@@ -380,7 +436,18 @@ describe("LearningRoute 版本管理", () => {
     // 第一条路线
     const a1 = baseArtifact("learning_route", {
       targetRole: "ai_product_manager", weeklyBudgetHours: 5, period: "4周",
-      stages: [{ title: "S1", description: "", deliverables: [], tasks: [{ title: "T1", week: 1 }] }],
+      stages: [{
+        title: "S1",
+        description: "完成基础练习",
+        deliverables: [],
+        tasks: [{
+          title: "完成基础练习任务",
+          description: "按公开资料完成一次可复现的基础练习",
+          estimatedHours: 4,
+          outputs: ["练习记录"],
+          acceptanceCriteria: ["记录包含步骤与结果"],
+        }],
+      }],
       tasks: [], resources: [], deliverables: [], acceptanceCriteria: [], adjustmentTriggers: [],
       baseRouteVersion: null,
     }, { baseVersion: 1 });
@@ -402,7 +469,18 @@ describe("LearningRoute 版本管理", () => {
     // 第二条路线——带 baseRouteVersion
     const a2 = baseArtifact("learning_route", {
       targetRole: "ai_product_manager", weeklyBudgetHours: 10, period: "8周",
-      stages: [{ title: "S2", description: "", deliverables: [], tasks: [{ title: "T2", week: 1 }] }],
+      stages: [{
+        title: "S2",
+        description: "完成进阶练习",
+        deliverables: [],
+        tasks: [{
+          title: "完成进阶练习任务",
+          description: "按公开资料完成一次可复现的进阶练习",
+          estimatedHours: 6,
+          outputs: ["进阶练习记录"],
+          acceptanceCriteria: ["记录包含步骤、结果和复盘"],
+        }],
+      }],
       tasks: [], resources: [], deliverables: [], acceptanceCriteria: [], adjustmentTriggers: [],
       baseRouteVersion: route1Version,
     }, { baseVersion: 1 });
@@ -454,7 +532,20 @@ describe("LearningRoute 版本管理", () => {
     // 先接受第一条路线，version=1
     const a1 = baseArtifact("learning_route", {
       targetRole: "ai_product_manager", weeklyBudgetHours: 5,
-      stages: [], tasks: [], resources: [], deliverables: [], acceptanceCriteria: [], adjustmentTriggers: [],
+      period: "4周",
+      stages: [{
+        title: "S1",
+        description: "完成基础练习",
+        deliverables: [],
+        tasks: [{
+          title: "完成基础练习任务",
+          description: "按公开资料完成一次可复现的基础练习",
+          estimatedHours: 4,
+          outputs: ["练习记录"],
+          acceptanceCriteria: ["记录包含步骤与结果"],
+        }],
+      }],
+      tasks: [], resources: [], deliverables: [], acceptanceCriteria: [], adjustmentTriggers: [],
       baseRouteVersion: null,
     }, { baseVersion: 2 });
     const e1 = parseAgentArtifactEnvelope(wrap(a1));
@@ -468,7 +559,20 @@ describe("LearningRoute 版本管理", () => {
     // 第二条路线——带旧的 baseRouteVersion=0（实际已是 version=1）
     const a2 = baseArtifact("learning_route", {
       targetRole: "ai_product_manager", weeklyBudgetHours: 10,
-      stages: [], tasks: [], resources: [], deliverables: [], acceptanceCriteria: [], adjustmentTriggers: [],
+      period: "8周",
+      stages: [{
+        title: "S2",
+        description: "完成进阶练习",
+        deliverables: [],
+        tasks: [{
+          title: "完成进阶练习任务",
+          description: "按公开资料完成一次可复现的进阶练习",
+          estimatedHours: 6,
+          outputs: ["进阶练习记录"],
+          acceptanceCriteria: ["记录包含步骤、结果和复盘"],
+        }],
+      }],
+      tasks: [], resources: [], deliverables: [], acceptanceCriteria: [], adjustmentTriggers: [],
       baseRouteVersion: 0, // 旧的版本号——当前已是 version=1
     }, { baseVersion: 2 });
     const e2 = parseAgentArtifactEnvelope(wrap(a2));

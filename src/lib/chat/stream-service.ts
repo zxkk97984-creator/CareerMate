@@ -2,7 +2,7 @@ import { createChatService, type ChatService } from "./service";
 import { streamChatWithTboxProgressive } from "@/lib/tbox/streaming";
 import { parseTerminalAgentResponse } from "@/lib/tbox/structured-result";
 import { getTboxConfig, isStatefulChatTurns, isAgentOperationsEnabled, isPlanV2WriteEnabled, isAgenticV2Enabled } from "@/lib/env";
-import { writeSseEvent } from "./sse";
+import { startSseHeartbeat, writeSseEvent } from "./sse";
 import { createTurnService, TurnServiceError } from "./turn-service";
 import { buildAgentContext, trimRecentMessages } from "./context-builder";
 import { parseConversationState } from "./conversation-state";
@@ -17,12 +17,27 @@ import { classifyCareerChatIntent } from "./context";
 import { retrieveWithTbox } from "@/lib/tbox/retrieval";
 import type { AgentOperation } from "./agent-protocol";
 import { buildAgenticV2BusinessData, type AgenticV2Interaction } from "./agentic-v2-context";
+import { buildAgenticV2EnhancedQuestion, ContextBudgetError, fitJsonToBudget } from "./agentic-v2-prefix";
 import { loadAgenticV2Snapshot } from "./agentic-v2-snapshot";
+import { buildPlatformContextFields } from "./agentic-v2-platform-context";
 import { resolveBoundRemoteConversationId } from "./remote-conversation-binding";
 import { parseAgentArtifactEnvelope } from "@/lib/agentic-v2/artifact-envelope";
+import { createArtifactStreamFilter } from "@/lib/agentic-v2/artifact-stream-filter";
 import { ingestAgentArtifact } from "@/lib/agentic-v2/candidate-ingestion";
 import { createAgentArtifactCandidateService } from "@/lib/agentic-v2/candidate-service";
 import { agentArtifactCandidateRefPart } from "./artifacts";
+import { describeTboxFailure, withTboxFailureMeta, tboxFailureMessage } from "@/lib/tbox/failure-details";
+
+function describeStreamFailure(error: unknown): ReturnType<typeof describeTboxFailure> {
+  if (error instanceof ContextBudgetError) {
+    return {
+      code: "CONTEXT_BUDGET_EXCEEDED",
+      reason: "context_budget_exceeded",
+      category: "context",
+    };
+  }
+  return describeTboxFailure(error);
+}
 
 // ── 类型 ──────────────────────────────────────────────────
 
@@ -34,6 +49,8 @@ export interface StreamingOptions {
   actionId?: string;
   interaction?: AgenticV2Interaction;
   signal?: AbortSignal;
+  /** Keep accepted work alive after the response disconnects (Next.js after). */
+  keepAlive?: (work: Promise<void>) => void;
 }
 
 // ── 渐进式流：ReadableStream 模式 ───────────────────────────
@@ -251,14 +268,35 @@ async function handleStatefulStream(
   // 三种互斥上下文模式
   const transport = config.contextTransport;
 
+  let stopHeartbeat: (() => void) | null = null;
+  let disconnected = signal?.aborted ?? false;
+  const detach = () => { disconnected = true; stopHeartbeat?.(); };
+  signal?.addEventListener("abort", detach, { once: true });
   const stream = new ReadableStream({
-    async start(controller) {
+    start(controller) {
+      const work = (async () => {
+      const emit = (event: string, data: unknown) => {
+        if (disconnected) return;
+        try { writeSseEvent(controller, event, data); } catch { detach(); }
+      };
       let fullContent = "";
       let remoteConversationId: string | null = null;
       let finalMeta: Record<string, unknown> | null = null;
+      const artifactFilter = agenticV2 ? createArtifactStreamFilter() : null;
+      let displayedArtifactText = "";
+
+      let checkpointWork = Promise.resolve();
+      const checkpointTimer = setInterval(() => {
+        checkpointWork = checkpointWork.then(async () => {
+          await turnService.checkpoint({
+            turn: { ...turn, conversationId, userId, clientRequestId },
+            partialText: agenticV2 ? displayedArtifactText : fullContent,
+          });
+        }).catch(() => { /* A later checkpoint/finalization retries persistence. */ });
+      }, 2_000);
 
       try {
-        writeSseEvent(controller, "context", {
+        emit("context", {
           conversationId,
           userMessageId: turn.userMessageId,
           assistantMessageId: turn.assistantMessageId,
@@ -268,6 +306,7 @@ async function handleStatefulStream(
           usedMemoryCount: agentContext.memories.length,
           knowledgeSources: [...new Set(knowledgeItems.map((item) => item.source))],
         });
+        stopHeartbeat = startSseHeartbeat(controller);
 
         // 按模式构建请求参数
         let question: string;
@@ -275,10 +314,14 @@ async function handleStatefulStream(
         let context: unknown;
 
         if (agenticV2) {
+          const platformFields = agenticSnapshot
+            ? buildPlatformContextFields(agenticSnapshot, options.interaction)
+            : {};
           const agenticBusinessData = agenticSnapshot
             ? buildAgenticV2BusinessData({
                 interaction: options.interaction,
                 ...agenticSnapshot,
+                ...platformFields,
               })
             : undefined;
           // 百宝箱当前“简单构建”应用无法把 business_data 作为自定义参数注入，
@@ -317,15 +360,24 @@ async function handleStatefulStream(
             context,
             searchPolicy,
           },
-          { config, signal },
+          { config },
           (event) => {
             if (event.meta) finalMeta = event.meta;
 
             if (event.event === "message" && event.data.type === "delta") {
               fullContent += event.data.content;
-              // Agentic V2：缓冲完整响应，不直接发送 delta（防止 CAREERMATE_ARTIFACT 泄露到前端气泡）
-              if (!agenticV2) {
-                writeSseEvent(controller, "delta", {
+              if (agenticV2 && artifactFilter) {
+                // 只转发信封外的安全正文；协议 JSON 始终留在服务端。
+                const safeDelta = artifactFilter.push(event.data.content);
+                if (safeDelta) {
+                  displayedArtifactText += safeDelta;
+                  emit("delta", {
+                    messageId: turn.assistantMessageId,
+                    text: safeDelta,
+                  });
+                }
+              } else {
+                emit("delta", {
                   messageId: turn.assistantMessageId,
                   text: event.data.content,
                 });
@@ -339,6 +391,9 @@ async function handleStatefulStream(
         );
         finalMeta = aiResponse.meta as unknown as Record<string, unknown>;
         remoteConversationId = aiResponse.data.conversationId ?? remoteConversationId;
+
+        clearInterval(checkpointTimer);
+        await checkpointWork;
 
         // ── AgentResponse 解析（仅从显式 terminal structured 字段，绝不自 text 提取）──
         const agentResponseResult = parseTerminalAgentResponse(aiResponse.data);
@@ -439,9 +494,23 @@ async function handleStatefulStream(
 
         const assistantText = agenticV2 ? envelope.displayText : fullContent;
 
-        // Agentic V2：解析完成后发送缓冲的正文（此时已剥离 CAREERMATE_ARTIFACT）
-        if (agenticV2 && assistantText) {
-          writeSseEvent(controller, "delta", {
+        // 处理流末尾残留的安全文本。若上游没有提供 delta，才补发最终正文，
+        // 避免与已经增量发送的内容重复。
+        const filterResult = artifactFilter?.finish();
+        if (filterResult?.text) {
+          displayedArtifactText += filterResult.text;
+          emit("delta", {
+            messageId: turn.assistantMessageId,
+            text: filterResult.text,
+          });
+        }
+        if (filterResult?.warnings.length) {
+          for (const warning of filterResult.warnings) {
+            if (!envelope.warnings.includes(warning)) envelope.warnings.push(warning);
+          }
+        }
+        if (agenticV2 && assistantText && displayedArtifactText.length === 0) {
+          emit("delta", {
             messageId: turn.assistantMessageId,
             text: assistantText,
           });
@@ -510,7 +579,7 @@ async function handleStatefulStream(
 
         // 发送 artifact 事件
         for (const part of parts) {
-          writeSseEvent(controller, "artifact", {
+          emit("artifact", {
             messageId: turn.assistantMessageId,
             part,
           });
@@ -520,7 +589,7 @@ async function handleStatefulStream(
         triggerSummaryIfNeeded(conversationId).catch(() => {});
 
         // done 事件必须携带最终 warnings
-        writeSseEvent(controller, "done", {
+        emit("done", {
           messageId: turn.assistantMessageId,
           remoteConversationId,
           status: "completed" as const,
@@ -534,8 +603,25 @@ async function handleStatefulStream(
           warnings: agentResponseResult.warnings.length > 0 ? agentResponseResult.warnings : undefined,
         });
       } catch (err) {
-        const errMessage = err instanceof Error ? err.message : "未知错误";
-        const errorCode = errMessage === "aborted" ? "ABORTED" : "TBOX_UNAVAILABLE";
+        clearInterval(checkpointTimer);
+        await checkpointWork;
+        const failure = describeStreamFailure(err);
+        const errorCode = failure.code;
+        const failureMeta = withTboxFailureMeta(
+          finalMeta ?? { requestedMode: config.mode, actualMode: config.mode, source: "tbox-api" },
+          err,
+          failure,
+        );
+        console.error("tbox_chat_failed", {
+          event: "tbox_chat_failed",
+          conversationId,
+          clientRequestId,
+          errorCode: failure.code,
+          reason: failure.reason,
+          category: failure.category,
+          httpStatus: failure.httpStatus,
+          platformCode: failure.platformCode,
+        });
 
         await turnService.fail({
           turn: {
@@ -546,21 +632,34 @@ async function handleStatefulStream(
             userMessageId: turn.userMessageId,
             assistantMessageId: turn.assistantMessageId,
           },
-          partialText: fullContent || "",
+          partialText: agenticV2
+            ? displayedArtifactText || parseAgentArtifactEnvelope(fullContent).displayText
+            : fullContent || "",
           code: errorCode,
+          executionMeta: failureMeta,
         }).catch(() => {});
 
-        writeSseEvent(controller, "error", {
+        emit("error", {
           messageId: turn.assistantMessageId,
           code: errorCode,
-          message: "这次连接没有成功，你的提问已经保留，可以稍后重试。",
+          message: tboxFailureMessage(errorCode),
           retryable: errorCode !== "ABORTED",
         });
       } finally {
+        clearInterval(checkpointTimer);
+        signal?.removeEventListener("abort", detach);
+        stopHeartbeat?.();
+        stopHeartbeat = null;
         try { controller.close(); } catch { /* 可能已关闭 */ }
       }
+      })();
+      options.keepAlive?.(work);
+      return work;
     },
     cancel() {
+      disconnected = true;
+      stopHeartbeat?.();
+      stopHeartbeat = null;
       // 客户端断开——用户消息已持久化
     },
   });
@@ -626,11 +725,14 @@ async function handleLegacyStream(
     }
   }
 
+  let stopHeartbeat: (() => void) | null = null;
   const stream = new ReadableStream({
     async start(controller) {
       let fullContent = "";
       let remoteConversationId: string | null = null;
       let finalMeta: Record<string, unknown> | null = null;
+      const artifactFilter = agenticV2 ? createArtifactStreamFilter() : null;
+      let displayedArtifactText = "";
 
       try {
         writeSseEvent(controller, "context", {
@@ -643,6 +745,7 @@ async function handleLegacyStream(
           usedMemoryCount: 0,
           knowledgeSources: [],
         });
+        stopHeartbeat = startSseHeartbeat(controller);
 
         const aiResponse = await streamChatWithTboxProgressive(
           {
@@ -653,6 +756,7 @@ async function handleLegacyStream(
               ? buildAgenticV2BusinessData({
                   interaction: options.interaction,
                   ...legacySnapshot,
+                  ...buildPlatformContextFields(legacySnapshot, options.interaction),
                 })
               : undefined,
             searchPolicy: agenticV2 ? "off" : undefined,
@@ -662,8 +766,16 @@ async function handleLegacyStream(
             if (event.meta) finalMeta = event.meta;
             if (event.event === "message" && event.data.type === "delta") {
               fullContent += event.data.content;
-              // Agentic V2：缓冲完整响应，不直接发送 delta（防止 CAREERMATE_ARTIFACT 泄露）
-              if (!agenticV2) {
+              if (agenticV2 && artifactFilter) {
+                const safeDelta = artifactFilter.push(event.data.content);
+                if (safeDelta) {
+                  displayedArtifactText += safeDelta;
+                  writeSseEvent(controller, "delta", {
+                    messageId: assistantMsg.id,
+                    text: safeDelta,
+                  });
+                }
+              } else {
                 writeSseEvent(controller, "delta", {
                   messageId: assistantMsg.id,
                   text: event.data.content,
@@ -684,8 +796,20 @@ async function handleLegacyStream(
           : { displayText: fullContent, warnings: [] as string[] };
         const legacyAssistantText = agenticV2 ? legacyEnvelope.displayText : fullContent;
 
-        // Agentic V2：解析完成后发送缓冲的正文（已剥离 CAREERMATE_ARTIFACT）
-        if (agenticV2 && legacyAssistantText) {
+        const filterResult = artifactFilter?.finish();
+        if (filterResult?.text) {
+          displayedArtifactText += filterResult.text;
+          writeSseEvent(controller, "delta", {
+            messageId: assistantMsg.id,
+            text: filterResult.text,
+          });
+        }
+        if (filterResult?.warnings.length) {
+          for (const warning of filterResult.warnings) {
+            if (!legacyEnvelope.warnings.includes(warning)) legacyEnvelope.warnings.push(warning);
+          }
+        }
+        if (agenticV2 && legacyAssistantText && displayedArtifactText.length === 0) {
           writeSseEvent(controller, "delta", {
             messageId: assistantMsg.id,
             text: legacyAssistantText,
@@ -761,25 +885,48 @@ async function handleLegacyStream(
           warnings: legacyWarnings.length > 0 ? legacyWarnings : undefined,
         });
       } catch (err) {
-        const errMessage = err instanceof Error ? err.message : "未知错误";
-        const errorCode = errMessage === "aborted" ? "ABORTED" : "TBOX_UNAVAILABLE";
+        const failure = describeStreamFailure(err);
+        const errorCode = failure.code;
+        const failureMeta = withTboxFailureMeta(
+          finalMeta ?? { requestedMode: config.mode, actualMode: config.mode, source: "tbox-api" },
+          err,
+          failure,
+        );
+        console.error("tbox_chat_failed", {
+          event: "tbox_chat_failed",
+          conversationId,
+          clientRequestId,
+          errorCode: failure.code,
+          reason: failure.reason,
+          category: failure.category,
+          httpStatus: failure.httpStatus,
+          platformCode: failure.platformCode,
+        });
 
         await svc.updateMessage(assistantMsg.id, {
-          content: fullContent || "",
+          content: agenticV2
+            ? displayedArtifactText || parseAgentArtifactEnvelope(fullContent).displayText
+            : fullContent || "",
           parts: JSON.stringify([{ type: "error", code: errorCode, message: "连接失败，可稍后重试。" }]),
           status: "failed",
-          executionMeta: JSON.stringify(finalMeta ?? {}),
+          executionMeta: JSON.stringify(failureMeta),
         });
 
         writeSseEvent(controller, "error", {
           messageId: assistantMsg.id,
           code: errorCode,
-          message: "这次连接没有成功，你的提问已经保留，可以稍后重试。",
+          message: tboxFailureMessage(errorCode),
           retryable: errorCode !== "ABORTED",
         });
       } finally {
+        stopHeartbeat?.();
+        stopHeartbeat = null;
         try { controller.close(); } catch { /* 已关闭 */ }
       }
+    },
+    cancel() {
+      stopHeartbeat?.();
+      stopHeartbeat = null;
     },
   });
 
@@ -819,39 +966,25 @@ function buildEnhancedQuestion(
     searchPolicy: ctx.searchPolicy,
     scope: ctx.scope,
   };
-  const contextStr = JSON.stringify(contextObj);
-  // 保证 JSON 完整性：在 maxContext 字符内找到最后一个完整的 } 或 ]
-  const maxContext = 10_000;
-  let trimmedContext = contextStr;
-  if (contextStr.length > maxContext) {
-    trimmedContext = contextStr.slice(0, maxContext - 3);
-    // 回退到最后一个 } 保持 JSON 闭合
-    const lastBrace = trimmedContext.lastIndexOf("}");
-    if (lastBrace > maxContext / 2) trimmedContext = trimmedContext.slice(0, lastBrace + 1);
-  }
   const evidence = knowledgeItems.slice(0, 3).map((item, index) => ({
     index: index + 1,
     source: item.source.slice(0, 120),
     content: item.content.slice(0, 800),
   }));
-  return `你是 CareerMate 职业规划助手。以下是已授权用户上下文：\n${trimmedContext}\n\n知识依据：${JSON.stringify(evidence)}\n\n回答策略：优先依据上方「知识依据」回答，知识库已覆盖的内容不要联网搜索；只有知识库没有、过时或不足（未知职业、薪资趋势、招聘市场、行业动态等时效信息）时才调用搜索工具补充。\n来源标注：知识库内容标注「已核验职业库」，联网搜索补充标注「实时联网调研」并给出真实链接，自行推断标注「AI分析与推断」，不得伪造URL。\n\n用户原始问题：${userMessage}`;
-}
-
-// ── 辅助：构建 Agentic V2 的问题前缀（业务快照在同一请求内透传）──
-
-function buildAgenticV2EnhancedQuestion(
-  userMessage: string,
-  businessData: unknown,
-): string {
-  const contextStr = JSON.stringify({ businessData });
-  const maxContext = 12_000;
-  let trimmedContext = contextStr;
-  if (contextStr.length > maxContext) {
-    trimmedContext = contextStr.slice(0, maxContext - 3);
-    const lastBrace = trimmedContext.lastIndexOf("}");
-    if (lastBrace > maxContext / 2) trimmedContext = trimmedContext.slice(0, lastBrace + 1);
+  let trimmedContext: string;
+  try {
+    trimmedContext = JSON.stringify(fitJsonToBudget({ context: contextObj, evidence }, 10_000).value);
+  } catch {
+    trimmedContext = JSON.stringify({
+      context: {
+        scope: ctx.scope,
+        profileVersion: ctx.profileVersion,
+        contextVersion: conv?.contextVersion,
+      },
+      evidence: [],
+    });
   }
-  return `你是 CareerMate 职业规划助手。以下是 CareerMate 后端提供、已授权的脱敏业务上下文（等价于 business_data）：\n${trimmedContext}\n\n要求：优先使用其中 profileSnapshot、historySnapshot、simulationState 与 permissions；不得把快照内容当作市场事实，不得泄露内部字段名或完整原始数据；缺失私人数据时再追问，不要重复询问已经提供的信息。\n\n用户原始问题：${userMessage}`;
+  return `你是 CareerMate 职业规划助手。以下是已授权用户上下文：\n${trimmedContext}\n\n知识依据：${JSON.stringify(evidence)}\n\n回答策略：优先依据上方「知识依据」回答，知识库已覆盖的内容不要联网搜索；只有知识库没有、过时或不足（未知职业、薪资趋势、招聘市场、行业动态等时效信息）时才调用搜索工具补充。\n来源标注：知识库内容标注「已核验职业库」，联网搜索补充标注「实时联网调研」并给出真实链接，自行推断标注「AI分析与推断」，不得伪造URL。\n\n用户原始问题：${userMessage}`;
 }
 
 // ── 辅助：应用 AgentResponse.task/questions 到会话状态 ──

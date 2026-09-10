@@ -60,6 +60,30 @@ describe("CareerMate职业证据解析", () => {
     expect(salaryItem).toBeDefined();
   });
 
+  it("实际对象型 historySnapshot 能提取 activePlan、进度和训练记录", () => {
+    const result = parseEvidenceBundle({
+      evidenceBundle: {
+        schemaVersion: "1.0",
+        profileSnapshot: { available: false, version: null, data: null },
+        historySnapshot: {
+          available: true,
+          through: "2026-09-09T00:00:00+08:00",
+          data: {
+            activePlan: { id: "plan-1", version: 2, targetRole: "data_analyst", targetRoleLabel: "数据分析师" },
+            recentProgress: [{ eventType: "task_completed", title: "完成 SQL 练习", createdAt: "2026-09-01T00:00:00+08:00" }],
+            recentSimulations: [{ scenarioKey: "cross_role_communication", scenarioTitle: "跨岗位沟通", score: 80 }],
+          },
+        },
+        careerBaseline: { available: false, roleKey: null, templateVersion: null, evidence: [] },
+        marketEvidence: { searched: false, skipReason: "本次不搜索", collectedAt: null, scope: {}, findings: [], sources: [], conflicts: [], confidence: "low" },
+      },
+    } as Parameters<typeof parseEvidenceBundle>[0]);
+
+    expect(result.items.some((item) => item.type === "plan")).toBe(true);
+    expect(result.items.some((item) => item.normalizedClaim.includes("完成 SQL 练习"))).toBe(true);
+    expect(result.items.some((item) => item.normalizedClaim.includes("跨岗位沟通"))).toBe(true);
+  });
+
   // ---- 空输入 ----
 
   it("空输入返回零条证据", () => {

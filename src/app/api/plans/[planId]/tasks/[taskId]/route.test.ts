@@ -120,6 +120,7 @@ describe("PATCH /api/plans/:planId/tasks/:taskId", () => {
       relatedPlanId: "plan-1",
       relatedTaskId: "task-1",
       eventType: "task_status_updated",
+      metadata: JSON.stringify({ previousStatus: "not_started", status: "done", taskTitle: "Learn" }),
     }) });
   });
 

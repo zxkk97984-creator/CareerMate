@@ -1,6 +1,9 @@
 import { getPrisma } from "@/lib/prisma";
 import type { AgenticV2Interaction } from "./agentic-v2-context";
-import type { ProfileSnapshotV1, HistorySnapshotV1, SimulationStateV1 } from "@/lib/agentic-v2/contracts";
+import type { ProfileSnapshotV1, HistorySnapshotV1, SimulationStateV1, SerializableJsonValue } from "@/lib/agentic-v2/contracts";
+import type { CareerPlanRow } from "@/lib/plans/compatibility";
+import { planTaskSummaryFromRow } from "@/lib/plans/task-model";
+import { sanitizeJobSampleForContext, type JobSampleContext } from "@/lib/jobs/context";
 
 // ── 限制常量 ──────────────────────────────────────────────
 const LIMITS = {
@@ -29,6 +32,12 @@ export interface SnapshotDatabase {
     }): Promise<Array<Record<string, unknown>>>;
   };
   careerPlan: {
+    findFirst(args: {
+      where: Record<string, unknown>;
+      orderBy: Record<string, string>;
+    }): Promise<Record<string, unknown> | null>;
+  };
+  learningRoute?: {
     findFirst(args: {
       where: Record<string, unknown>;
       orderBy: Record<string, string>;
@@ -64,6 +73,11 @@ export interface SnapshotDatabase {
       select: { summary: true; contextVersion: true };
     }): Promise<{ summary: string; contextVersion: number } | null>;
   };
+  jobSample?: {
+    findFirst(args: {
+      where: { OR: Array<{ id: string } | { jobId: string }> };
+    }): Promise<Record<string, unknown> | null>;
+  };
 }
 
 // ── 错误类型 ──────────────────────────────────────────────
@@ -78,7 +92,7 @@ export class AgenticV2SnapshotError extends Error {
 }
 
 // ── 工具函数 ──────────────────────────────────────────────
-function truncateText(value: unknown, max = LIMITS.text): string {
+function truncateText(value: unknown, max: number = LIMITS.text): string {
   const text = typeof value === "string"
     ? value.trim()
     : value === null || value === undefined
@@ -122,6 +136,16 @@ export interface LoadAgenticV2SnapshotResult {
   profileSnapshot: ProfileSnapshotV1;
   historySnapshot: HistorySnapshotV1;
   simulationState: SimulationStateV1 | null;
+  jobSampleContext: JobSampleContext | null;
+  currentTime: string;
+  timezone: string;
+  contextCoverage: {
+    algorithmVersion: string;
+    generatedAt: string;
+    included: string[];
+    truncated: string[];
+    missing: string[];
+  };
 }
 
 // ── 主入口 ────────────────────────────────────────────────
@@ -205,46 +229,102 @@ export async function loadAgenticV2Snapshot(
       })
     : null;
 
-  const activePlan = activePlanRow
+  const weeklyBudgetHours = typeof profileRow?.weeklyAvailableHours === "number"
+    ? profileRow.weeklyAvailableHours
+    : null;
+  const activePlanModel = activePlanRow
+    ? planTaskSummaryFromRow(activePlanRow as unknown as CareerPlanRow, weeklyBudgetHours)
+    : null;
+  const activeLearningRouteRow = profileAvailable && db.learningRoute
+    ? await db.learningRoute.findFirst({
+        where: { userId: input.userId, status: "active" },
+        orderBy: { version: "desc" },
+      })
+    : null;
+  const activeLearningRoute = activeLearningRouteRow
     ? (() => {
-        const parsed = safeJson<Record<string, unknown>>(activePlanRow.content as string, {});
-        const v2plan = (activePlanRow.schemaVersion as number) >= 2 ? parsed : null;
-        const immediateActions = Array.isArray(v2plan?.immediateActions)
-          ? v2plan.immediateActions
-          : [];
-        const phases = Array.isArray(v2plan?.phases)
-          ? v2plan.phases
-          : [];
+        const content = safeJson<Record<string, unknown>>(activeLearningRouteRow.content as string, {});
+        const list = (value: unknown, take: number) => Array.isArray(value) ? value.slice(0, take) : [];
         return {
-          id: truncateText(activePlanRow.id),
-          version: typeof activePlanRow.version === "number" ? activePlanRow.version : 1,
-          targetRole: truncateText(activePlanRow.targetRole),
-          targetRoleLabel: truncateText(activePlanRow.targetRoleLabel) || null,
-          summary: truncateText((v2plan?.summary as string) ?? (v2plan?.title as string) ?? ""),
-          currentMonthIndex: typeof activePlanRow.currentMonthIndex === "number"
-            ? activePlanRow.currentMonthIndex
-            : 1,
-          activatedAt: activePlanRow.activatedAt instanceof Date
-            ? activePlanRow.activatedAt.toISOString()
+          id: truncateText(activeLearningRouteRow.id),
+          version: typeof activeLearningRouteRow.version === "number" ? activeLearningRouteRow.version : 1,
+          status: truncateText(activeLearningRouteRow.status),
+          basePlanVersion: typeof activeLearningRouteRow.basePlanVersion === "number"
+            ? activeLearningRouteRow.basePlanVersion
             : null,
-          immediateActions: immediateActions.slice(0, 5).map((action) => ({
-            title: truncateText(
-              action && typeof action === "object"
-                ? (action as Record<string, unknown>).title
-                : action,
-            ),
-          })),
-          phases: phases.slice(0, 4).map((phase) => {
-            const row = phase && typeof phase === "object"
-              ? phase as Record<string, unknown>
-              : {};
-            return {
-              title: truncateText(row.title),
-              monthCount: Array.isArray(row.months) ? row.months.length : 0,
-            };
-          }),
+          content: {
+            targetRole: truncateText(content.targetRole),
+            period: truncateText(content.period),
+            weeklyBudgetHours: typeof content.weeklyBudgetHours === "number" ? content.weeklyBudgetHours : null,
+            stages: list(content.stages, 8),
+            tasks: list(content.tasks, 20),
+            resources: list(content.resources, 20),
+            deliverables: list(content.deliverables, 20),
+            acceptanceCriteria: list(content.acceptanceCriteria, 20),
+            adjustmentTriggers: list(content.adjustmentTriggers, 20),
+          },
         };
       })()
+    : null;
+
+  const activePlan = activePlanRow && activePlanModel
+    ? {
+        id: truncateText(activePlanRow.id),
+        version: typeof activePlanRow.version === "number" ? activePlanRow.version : 1,
+        targetRole: truncateText(activePlanRow.targetRole),
+        targetRoleLabel: truncateText(activePlanRow.targetRoleLabel) || null,
+        createdAt: activePlanRow.createdAt instanceof Date
+          ? activePlanRow.createdAt.toISOString()
+          : String(activePlanRow.createdAt ?? ""),
+        updatedAt: activePlanRow.updatedAt instanceof Date
+          ? activePlanRow.updatedAt.toISOString()
+          : String(activePlanRow.updatedAt ?? ""),
+        summary: truncateText(activePlanModel.planV2?.summary ?? activePlanModel.planV2?.title ?? ""),
+        currentMonthIndex: typeof activePlanRow.currentMonthIndex === "number"
+          ? activePlanRow.currentMonthIndex
+          : 1,
+        activatedAt: activePlanRow.activatedAt instanceof Date
+          ? activePlanRow.activatedAt.toISOString()
+          : null,
+        taskSummary: activePlanModel.summary,
+        tasks: activePlanModel.tasks.slice(0, 40).map((task) => ({
+          id: truncateText(task.id),
+          title: truncateText(task.title),
+          description: truncateText(task.description),
+          type: task.type,
+          status: task.status,
+          estimatedHours: task.estimatedHours,
+          cadence: task.cadence ? truncateText(task.cadence) : null,
+          resources: task.resources.slice(0, 8).map((resource) => truncateText(resource)),
+          phaseId: task.phaseId,
+          phaseTitle: task.phaseTitle ? truncateText(task.phaseTitle) : null,
+          dueWeek: task.dueWeek,
+          outputs: task.outputs.slice(0, 8).map((output) => truncateText(output)),
+          acceptanceCriteria: task.acceptanceCriteria.slice(0, 8).map((item) => truncateText(item)),
+        })),
+        immediateActions: activePlanModel.planV2?.immediateActions.slice(0, 8).map((action) => ({
+          id: action.id,
+          title: truncateText(action.title),
+          description: truncateText(action.description),
+          status: action.status,
+          estimatedHours: action.estimatedHours ?? null,
+        })) ?? [],
+        phases: activePlanModel.planV2?.phases.slice(0, 8).map((phase) => ({
+          id: phase.id,
+          title: truncateText(phase.title),
+          objective: truncateText(phase.objective),
+          duration: phase.duration,
+          actions: phase.actions.slice(0, 20).map((action) => ({
+            id: action.id,
+            title: truncateText(action.title),
+            description: truncateText(action.description),
+            status: action.status,
+            estimatedHours: action.estimatedHours ?? null,
+            outputs: (action.outputs ?? phase.outputs).slice(0, 8).map((item) => truncateText(item)),
+            acceptanceCriteria: (action.acceptanceCriteria ?? phase.evaluationCriteria).slice(0, 8).map((item) => truncateText(item)),
+          })),
+        })) ?? [],
+      }
     : null;
 
   // 4. 近期进度
@@ -257,6 +337,7 @@ export async function loadAgenticV2Snapshot(
     : [];
 
   const recentProgress = progressRows.map((row) => ({
+    id: truncateText(row.id),
     eventType: truncateText(row.eventType),
     title: truncateText(row.title),
     summary: truncateText(row.summary),
@@ -372,8 +453,52 @@ export async function loadAgenticV2Snapshot(
     }
   }
 
+  const discussionSession = await db.simulationSession.findFirst({
+    where: { conversationId: input.conversationId, userId: input.userId, status: "completed" },
+  });
+  const trainingDiscussion = discussionSession ? {
+    sessionId: truncateText(discussionSession.id),
+    scenarioTitle: truncateText(discussionSession.scenarioTitle),
+    status: "completed", purpose: "仅讨论已完成报告，不继续训练或重新评分",
+    feedback: truncateText(discussionSession.feedback, 6000),
+    transcript: safeJson<Array<{ role: string; content: string }>>(discussionSession.transcript, []).slice(-12).map(turn => ({ role: turn.role, content: truncateText(turn.content) })),
+  } : null;
+
+  // 岗位样本只在页面明确携带 targetRef 时加载；模型不能借普通聊天枚举整个岗位库。
+  let jobSampleContext: JobSampleContext | null = null;
+  if (
+    targetRef
+    && (input.interaction?.surface === "resources" || input.interaction?.surface === "career_path")
+    && db.jobSample
+  ) {
+    const jobRow = await db.jobSample.findFirst({
+      where: { OR: [{ id: targetRef }, { jobId: targetRef }] },
+    });
+    if (jobRow) {
+      jobSampleContext = sanitizeJobSampleForContext(
+        jobRow as unknown as Parameters<typeof sanitizeJobSampleForContext>[0],
+      );
+    }
+  }
+
   // ── 字节预算控制：构建可变对象，逐级裁剪后返回最终版本 ──
-  const throughDate = now().toISOString();
+  const currentTime = now().toISOString();
+  const throughDate = currentTime;
+  const timezone = process.env.TZ?.trim() || "Asia/Shanghai";
+  const coverageIncluded: string[] = [];
+  const coverageTruncated: string[] = [];
+  const coverageMissing: string[] = [];
+  if (profileAvailable) coverageIncluded.push("profileSnapshot");
+  else coverageMissing.push("profileSnapshot");
+  if (activePlan) coverageIncluded.push("activePlan");
+  else coverageMissing.push("activePlan");
+  if (activeLearningRoute) coverageIncluded.push("activeLearningRoute");
+  else coverageMissing.push("activeLearningRoute");
+  if (recentProgress.length > 0) coverageIncluded.push("recentProgress");
+  if (recentSimulations.length > 0) coverageIncluded.push("recentSimulations");
+  if (confirmedMemories.length > 0) coverageIncluded.push("confirmedMemories");
+  if (simulationState) coverageIncluded.push("simulationState");
+  if (jobSampleContext) coverageIncluded.push("jobSampleContext");
   let finalSimulationState = simulationState;
   let finalRecentProgress = recentProgress;
   let finalAbilityEvidence = abilityEvidence;
@@ -391,6 +516,7 @@ export async function loadAgenticV2Snapshot(
       through: throughDate,
       data: {
         activePlan,
+        activeLearningRoute,
         recentProgress: finalRecentProgress,
         recentSimulations: recentSimulations.map((s) => ({
           ...s,
@@ -398,10 +524,21 @@ export async function loadAgenticV2Snapshot(
         })),
         confirmedMemories: finalConfirmedMemories,
         conversationSummary,
+        ...(trainingDiscussion ? { trainingDiscussion } : {}),
         contextVersion,
-      },
+      } as unknown as SerializableJsonValue,
     },
     simulationState: finalSimulationState,
+    jobSampleContext,
+    currentTime,
+    timezone,
+    contextCoverage: {
+      algorithmVersion: "agentic-v2-snapshot-v2",
+      generatedAt: currentTime,
+      included: [...new Set(coverageIncluded)],
+      truncated: [...new Set(coverageTruncated)],
+      missing: [...new Set(coverageMissing)],
+    },
   });
 
   let current = buildResult();
@@ -411,6 +548,7 @@ export async function loadAgenticV2Snapshot(
   if (byteSize > LIMITS.bytes) {
     // 第1级：缩减模拟转录条目到 6
     if (finalSimulationState && finalSimulationState.transcript.length > 6) {
+      coverageTruncated.push("simulationState.transcript");
       finalSimulationState = {
         ...finalSimulationState,
         transcript: finalSimulationState.transcript.slice(-6),
@@ -418,6 +556,7 @@ export async function loadAgenticV2Snapshot(
     }
     for (const sim of recentSimulations) {
       if (sim.transcript.length > 6) {
+        coverageTruncated.push("recentSimulations.transcript");
         sim.transcript = sim.transcript.slice(-6);
       }
     }
@@ -428,6 +567,7 @@ export async function loadAgenticV2Snapshot(
 
   if (byteSize > LIMITS.bytes) {
     // 第2级：缩减进度条目到 10
+    coverageTruncated.push("recentProgress");
     finalRecentProgress = recentProgress.slice(0, 10);
     current = buildResult();
     serialized = JSON.stringify(current);
@@ -436,6 +576,7 @@ export async function loadAgenticV2Snapshot(
 
   if (byteSize > LIMITS.bytes) {
     // 第3级：缩减能力证据到 10
+    coverageTruncated.push("abilityEvidence");
     finalAbilityEvidence = abilityEvidence.slice(0, 10);
     finalProfileData = { ...finalProfileData, abilityEvidence: finalAbilityEvidence };
     current = buildResult();
@@ -445,6 +586,7 @@ export async function loadAgenticV2Snapshot(
 
   if (byteSize > LIMITS.bytes) {
     // 第4级：缩减记忆到 5
+    coverageTruncated.push("confirmedMemories");
     finalConfirmedMemories = confirmedMemories.slice(0, 5);
     current = buildResult();
     serialized = JSON.stringify(current);
@@ -453,6 +595,7 @@ export async function loadAgenticV2Snapshot(
 
   if (byteSize > LIMITS.bytes) {
     // 第5级：缩减文本字段到 600
+    coverageTruncated.push("profileText");
     const reduced = { ...finalProfileData };
     for (const key of Object.keys(reduced)) {
       const val = reduced[key];
@@ -461,6 +604,24 @@ export async function loadAgenticV2Snapshot(
       }
     }
     finalProfileData = reduced;
+    current = buildResult();
+    serialized = JSON.stringify(current);
+    byteSize = Buffer.byteLength(serialized, "utf8");
+  }
+
+  if (byteSize > LIMITS.bytes) {
+    // 第6级：保留最新进度和证据的标识，但压缩单条文本长度。
+    coverageTruncated.push("progressAndEvidenceText");
+    finalRecentProgress = finalRecentProgress.map((item) => ({
+      ...item,
+      title: typeof item.title === "string" ? item.title.slice(0, 300) : item.title,
+      summary: typeof item.summary === "string" ? item.summary.slice(0, 300) : item.summary,
+    }));
+    finalAbilityEvidence = finalAbilityEvidence.map((item) => ({
+      ...item,
+      summary: typeof item.summary === "string" ? item.summary.slice(0, 300) : item.summary,
+    }));
+    finalProfileData = { ...finalProfileData, abilityEvidence: finalAbilityEvidence };
     current = buildResult();
     serialized = JSON.stringify(current);
     byteSize = Buffer.byteLength(serialized, "utf8");

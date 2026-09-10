@@ -59,6 +59,7 @@ vi.mock("./artifact-service", () => ({
 }));
 
 import { handleStreamRequest } from "./stream-service";
+import { TboxError } from "@/lib/tbox/errors";
 
 // ── 辅助函数 ──────────────────────────────────────────────
 
@@ -277,6 +278,35 @@ describe("handleStreamRequest", () => {
     const errorBlock = blocks.find(b => b.startsWith("event: error"));
     expect(errorBlock).toBeDefined();
     expect(errorBlock).toContain("TBOX_UNAVAILABLE");
+  });
+
+  it("保留百宝箱安全错误码并写入失败元数据", async () => {
+    mocks.streamProgressive.mockRejectedValueOnce(
+      new TboxError("timeout", "TIMEOUT"),
+    );
+
+    const service = createMockService();
+    const response = await handleStreamRequest(
+      {
+        userId: "user-1",
+        conversationId: "conv-1",
+        message: "测试",
+        clientRequestId: "request-timeout-1",
+      },
+      service as any,
+    );
+
+    const blocks = await readSseBody(response);
+    const errorBlock = blocks.find((block) => block.startsWith("event: error"));
+    expect(errorBlock).toContain("TIMEOUT");
+
+    const update = mocks.updateMessage.mock.calls.at(-1)?.[1] as Record<string, unknown>;
+    const executionMeta = JSON.parse(String(update.executionMeta));
+    expect(executionMeta.failure).toEqual({
+      code: "TIMEOUT",
+      reason: "timeout",
+      category: "timeout",
+    });
   });
 
   it("context事件包含基本的会话信息", async () => {

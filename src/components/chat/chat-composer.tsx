@@ -6,6 +6,9 @@ import { ArrowUp, LoaderCircle } from "lucide-react";
 import { useMotionSafe } from "@/lib/motion/motion-safe";
 
 interface ChatComposerProps {
+  placeholder?: string;
+  minLength?: number;
+  maxLength?: number;
   onSend: (text: string) => void;
   disabled: boolean;
   activeConversationId: string | null;
@@ -13,7 +16,7 @@ interface ChatComposerProps {
   onChange?: (text: string) => void;
 }
 
-export function ChatComposer({ onSend, disabled, value, onChange }: ChatComposerProps) {
+export function ChatComposer({ onSend, disabled, value, onChange, placeholder, minLength = 1, maxLength = 8000 }: ChatComposerProps) {
   const [localText, setLocalText] = useState("");
   const text = value ?? localText;
   const setText = useCallback((next: string) => { setLocalText(next); onChange?.(next); }, [onChange]);
@@ -23,7 +26,7 @@ export function ChatComposer({ onSend, disabled, value, onChange }: ChatComposer
 
   const handleSend = useCallback(() => {
     const trimmed = text.trim();
-    if (!trimmed || trimmed.length > 8000 || disabled) return;
+    if (trimmed.length < minLength || trimmed.length > maxLength || disabled) return;
     onSend(trimmed);
     const btn = sendBtnRef.current;
     if (btn && motionSafe) {
@@ -34,7 +37,7 @@ export function ChatComposer({ onSend, disabled, value, onChange }: ChatComposer
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
-  }, [text, onSend, motionSafe, disabled, setText]);
+  }, [text, onSend, motionSafe, disabled, setText, minLength, maxLength]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -75,9 +78,9 @@ export function ChatComposer({ onSend, disabled, value, onChange }: ChatComposer
           value={text}
           onChange={(e) => { setText(e.target.value); handleInput(); }}
           onKeyDown={handleKeyDown}
-          placeholder="输入你的问题，聊聊目标、学习或面试…"
+          placeholder={placeholder ?? "输入你的问题，聊聊目标、学习或面试…"}
           rows={1}
-          maxLength={8000}
+          maxLength={maxLength}
           disabled={disabled}
           aria-label="输入消息"
         />
@@ -88,7 +91,7 @@ export function ChatComposer({ onSend, disabled, value, onChange }: ChatComposer
           onPointerDown={pressSend}
           onPointerUp={releaseSend}
           onPointerLeave={releaseSend}
-          disabled={!text.trim() || disabled || text.trim().length > 8000}
+          disabled={text.trim().length < minLength || disabled || text.trim().length > maxLength}
           aria-label={disabled ? "正在回复" : "发送消息"}
         >
           {disabled ? <LoaderCircle className="cm-spinner-icon" size={19} /> : <ArrowUp size={20} />}

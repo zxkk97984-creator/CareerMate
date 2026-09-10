@@ -1,3 +1,4 @@
+import { workflowFailureCode } from "./workflow-diagnostics";
 import type { NormalizedAiEvent, NormalizedAssistantResult, ToolCallRecord } from "./types";
 
 export interface AssistantResultAccumulator {
@@ -40,6 +41,8 @@ export function createAssistantResultAccumulator(): AssistantResultAccumulator {
 
       // 工具调用结束——按 toolId 匹配，回填 resultSummary
       if (event.type === "tool_end") {
+        const failure = workflowFailureCode(event.toolType, event.resultSummary);
+        if (failure) addWarning(failure);
         const targetId = event.toolId;
         if (targetId) {
           const match = toolCalls.find((tc) => tc.toolId === targetId);

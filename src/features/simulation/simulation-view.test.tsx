@@ -1,11 +1,13 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { SimulationView } from "./simulation-view";
+import { SimulationView, SimulationReport } from "./simulation-view";
+
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 function renderCompleted(score: number | null, candidateId: string | null) {
   return renderToStaticMarkup(
-    <SimulationView
-      simulations={[{
+    <SimulationReport
+      active={{
         id: "session-1",
         scenarioKey: "cross_role_communication",
         scenarioTitle: "跨岗位沟通",
@@ -19,10 +21,8 @@ function renderCompleted(score: number | null, candidateId: string | null) {
         feedback: null,
         createdAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",
-      }]}
-      profile={null}
-      refresh={vi.fn(async () => undefined)}
-      setNotice={vi.fn()}
+      }}
+      onRestart={vi.fn()}
     />,
   );
 }
@@ -45,15 +45,20 @@ describe("SimulationView", () => {
     expect(html).not.toContain("训练得分：82 分");
     expect(html).not.toContain("画像候选已生成");
     // 未生成候选时明确提示，避免把候选建议写成已确认的能力提升
-    expect(html).toContain("本次未生成画像候选");
+    expect(html).toContain("本次未生成能力更新候选");
   });
 
   it("shows the candidate confirmation guidance when a candidate exists", () => {
     const html = renderCompleted(82, "candidate-1");
 
-    expect(html).toContain("画像候选已生成");
+    expect(html).toContain("能力证据候选已生成");
     // 深链接到“待确认建议”标签（T18），不再用旧的“记忆权限”泛指
     expect(html).toContain("待确认建议");
     expect(html).toContain('/memory?tab=candidates');
   });
 });
+
+ it("renders a scenario lobby without an answer composer", () => {
+ const html = renderToStaticMarkup(<SimulationView simulations={[]} profile={null} refresh={vi.fn()} setNotice={vi.fn()}/>);
+ expect(html).toContain("推荐场景"); expect(html).toContain("自定义场景"); expect(html).toContain("training-grid"); expect(html).not.toContain('aria-label="训练回答"');
+ });

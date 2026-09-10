@@ -2,7 +2,7 @@
  * Stateful 主聊天链路集成测试
  * 覆盖：正文零副作用、operation 执行、scope 隔离、replay、mock 元数据
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   streamProgressive: vi.fn(),
@@ -13,12 +13,24 @@ const mocks = vi.hoisted(() => ({
   retrievalMode: "agent" as "agent" | "hybrid",
   retrieveWithTbox: vi.fn(),
   snapshotShouldThrow: false,
+  contextBudgetShouldThrow: false,
   contextTransport: "question_prefix" as "question_prefix" | "business_data",
 }));
 
 vi.mock("@/lib/tbox/streaming", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/tbox/streaming")>();
   return { ...actual, streamChatWithTboxProgressive: mocks.streamProgressive };
+});
+
+vi.mock("./agentic-v2-prefix", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./agentic-v2-prefix")>();
+  return {
+    ...actual,
+    buildAgenticV2EnhancedQuestion: vi.fn((...args: Parameters<typeof actual.buildAgenticV2EnhancedQuestion>) => {
+      if (mocks.contextBudgetShouldThrow) throw new actual.ContextBudgetError(30_000);
+      return actual.buildAgenticV2EnhancedQuestion(...args);
+    }),
+  };
 });
 
 vi.mock("@/lib/tbox/retrieval", () => ({
@@ -28,6 +40,7 @@ vi.mock("@/lib/tbox/retrieval", () => ({
 vi.mock("./turn-service", () => ({
   createTurnService: () => ({
     begin: mocks.turnBegin,
+    checkpoint: vi.fn().mockResolvedValue(undefined),
     finalize: mocks.turnFinalize,
     fail: mocks.turnFail,
   }),
@@ -114,6 +127,7 @@ beforeEach(() => {
   mocks.agenticV2Enabled = false;
   mocks.retrievalMode = "agent";
   mocks.contextTransport = "question_prefix";
+  mocks.contextBudgetShouldThrow = false;
   mocks.retrieveWithTbox.mockReset();
   mocks.turnBegin.mockResolvedValue({
     kind: "new",
@@ -129,6 +143,10 @@ beforeEach(() => {
   });
 });
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 function fakeSvc() {
   return {
     getConversation: vi.fn().mockResolvedValue({ id: "c1", contextVersion: 1, summary: "", state: "{}", remoteConversationId: null }),
@@ -140,6 +158,75 @@ function fakeSvc() {
 }
 
 describe("stateful stream (STATEFUL_CHAT_TURNS=true)", () => {
+  it("finishes and persists a turn after the browser aborts and cancels its stream", async () => {
+    const caller = new AbortController();
+    let finish!: () => void;
+    const gate = new Promise<void>(resolve => { finish = resolve; });
+    mocks.streamProgressive.mockImplementationOnce(async (_input: any, deps: any, on: (e: any) => void) => {
+      await gate;
+      if (deps.signal?.aborted) throw new Error("aborted");
+      const meta = { requestedMode: "api", actualMode: "api", degraded: false, fallbackReason: null, source: "tbox-api" };
+      on({ event: "message", data: { type: "delta", content: "刷新后也完成" }, meta });
+      return { data: { text: "刷新后也完成", citations: [], warnings: [] }, meta };
+    });
+    const response = await handleStreamRequest({
+      userId: "u1", conversationId: "c1", message: "长任务",
+      clientRequestId: "550e8400-e29b-41d4-a716-446655440109", signal: caller.signal,
+    }, fakeSvc() as any);
+    const reader = response.body!.getReader();
+    await reader.read();
+    caller.abort();
+    await reader.cancel();
+    finish();
+    await vi.waitFor(() => expect(mocks.turnFinalize).toHaveBeenCalled());
+    expect(mocks.turnFail).not.toHaveBeenCalled();
+  });
+
+  it("sends heartbeat events while waiting for a long platform workflow", async () => {
+    vi.useFakeTimers();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mocks.streamProgressive.mockImplementationOnce(async (_input: any, __: any, on: (e: any) => void) => {
+      await gate;
+      const meta = { requestedMode: "mock", actualMode: "mock", degraded: false, fallbackReason: null, source: "local-mock" };
+      on({ event: "message", data: { type: "delta", content: "长任务完成" }, meta });
+      on({ event: "done", data: { conversationId: "remote-long" }, meta });
+      return {
+        data: { text: "长任务完成", citations: [], warnings: [], conversationId: "remote-long" },
+        meta,
+      };
+    });
+
+    const response = await handleStreamRequest({
+      userId: "u1",
+      conversationId: "c1",
+      message: "依次调用多个工作流",
+      clientRequestId: "550e8400-e29b-41d4-a716-446655440103",
+    }, fakeSvc() as any);
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let received = "";
+    const readNext = async () => {
+      const { value, done } = await reader.read();
+      if (value) received += decoder.decode(value, { stream: !done });
+      return done;
+    };
+
+    expect(await readNext()).toBe(false);
+    expect(received).toContain("event: context");
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(await readNext()).toBe(false);
+    expect(received).toContain("event: heartbeat");
+
+    release();
+    while (!(await readNext())) {
+      // Drain the remaining SSE events until the stream closes.
+    }
+    expect(received).toContain("event: done");
+  });
+
   it("Agentic V2 sends only scoped business_data, disables built-in search, and reuses the bound remote conversation", async () => {
     mocks.agenticV2Enabled = true;
     mocks.contextTransport = "business_data";
@@ -183,12 +270,16 @@ describe("stateful stream (STATEFUL_CHAT_TURNS=true)", () => {
     expect(serialized).not.toContain("private conversation summary");
     expect(serialized).not.toContain("careermate_context_token");
     expect(Object.keys(input.context).sort()).toEqual([
+      "evidenceBundle",
+      "executionMode",
       "historySnapshot",
       "interaction",
       "permissions",
       "profileSnapshot",
+      "responseContract",
       "schemaVersion",
       "simulationState",
+      "taskContext",
     ]);
     expect(mocks.turnFinalize).toHaveBeenCalledWith(expect.objectContaining({
       remoteBinding: { agentId: "test", agentVersion: undefined },
@@ -419,7 +510,27 @@ describe("stateful stream (STATEFUL_CHAT_TURNS=true)", () => {
           targetRole: { key: "data_analyst", label: "数据分析师" },
           summary: "分析岗三年计划",
           horizon: { value: 3, unit: "year" },
-          phases: [{ id: "p1", title: "基础期", objective: "入门", duration: { value: 6, unit: "month" }, skills: [], actions: [{ id: "a1", title: "学SQL", description: "基础", type: "learning", status: "not_started", resources: [] }], outputs: [], evaluationCriteria: [], risks: [] }],
+          phases: [{
+            id: "p1",
+            title: "基础期",
+            objective: "入门",
+            duration: { value: 6, unit: "month" },
+            skills: [],
+            actions: [{
+              id: "a1",
+              title: "完成 5 道 SQL 聚合查询练习",
+              description: "使用公开销售数据完成查询并记录过滤逻辑",
+              type: "practice",
+              status: "not_started",
+              estimatedHours: 4,
+              resources: [],
+              outputs: ["5 道查询结果与说明"],
+              acceptanceCriteria: ["能解释每个查询的分组和过滤条件"],
+            }],
+            outputs: ["5 道查询结果与说明"],
+            evaluationCriteria: ["能解释每个查询的分组和过滤条件"],
+            risks: [],
+          }],
           immediateActions: [],
           assumptions: [],
           riskNotes: [],
@@ -475,6 +586,13 @@ describe("stateful stream (STATEFUL_CHAT_TURNS=true)", () => {
     // 通过 artifact 事件发送
     const artifactBlocks = blocks.filter((b) => b.startsWith("event: artifact"));
     expect(artifactBlocks.some((b) => b.includes("agent_artifact_candidate_ref"))).toBe(true);
+    const deltaText = blocks
+      .filter((block) => block.startsWith("event: delta"))
+      .map((block) => block.split("\n").filter((line) => line.startsWith("data: ")).join(""))
+      .join("");
+    expect(deltaText).toContain("这是可读计划摘要。");
+    expect(deltaText).not.toContain("CAREERMATE_ARTIFACT");
+    expect(deltaText).not.toContain("三年计划候选");
 
     expect(blocks[blocks.length - 1]).toContain("event: done");
   });
@@ -539,5 +657,26 @@ describe("stateful stream (STATEFUL_CHAT_TURNS=true)", () => {
     expect(body.error.message).toBe("职业上下文加载失败，请稍后重试");
     expect(JSON.stringify(body)).not.toContain("SNAPSHOT_TOO_LARGE");
     mocks.snapshotShouldThrow = false;
+  });
+
+  it("Agentic V2 上下文超预算时返回独立错误码，不误报 TBOX_UNAVAILABLE", async () => {
+    mocks.agenticV2Enabled = true;
+    mocks.contextBudgetShouldThrow = true;
+
+    const response = await handleStreamRequest({
+      userId: "u1",
+      conversationId: "c1",
+      message: "测试超预算",
+      clientRequestId: "550e8400-e29b-41d4-a716-446655440102",
+    }, fakeSvc() as any);
+    const blocks = await readBlocks(response);
+    const errorBlock = blocks.find((block) => block.startsWith("event: error"));
+
+    expect(errorBlock).toContain("CONTEXT_BUDGET_EXCEEDED");
+    expect(errorBlock).not.toContain("TBOX_UNAVAILABLE");
+    expect(mocks.turnFail).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "CONTEXT_BUDGET_EXCEEDED" }),
+    );
+    mocks.contextBudgetShouldThrow = false;
   });
 });

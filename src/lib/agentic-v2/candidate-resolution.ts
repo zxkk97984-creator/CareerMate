@@ -7,6 +7,8 @@ import {
   type AgentArtifactV1,
 } from "./contracts";
 import type { AgentArtifactCandidateType } from "./candidate-service";
+import { assertPlanDataQuality, PlanQualityError } from "@/lib/plans/task-model";
+import { assertLearningRouteDataQuality, LearningRouteQualityError } from "@/lib/plans/learning-route-quality";
 
 // ── 候选类型白名单 ────────────────────────────────────────
 const ALLOWED_CANDIDATE_TYPES = new Set<string>([
@@ -61,7 +63,7 @@ interface ResolutionTx {
     create(args: { data: Record<string, unknown> }): Promise<{ id: string }>;
   };
   userProfile: {
-    findUnique(args: { where: { userId: string } }): Promise<{ version: number } | null>;
+    findUnique(args: { where: { userId: string } }): Promise<{ version: number; memoryEnabled?: boolean } | null>;
     update(args: { where: { userId: string }; data: Record<string, unknown> }): Promise<unknown>;
     updateMany(args: {
       where: { userId: string; version?: number };
@@ -188,19 +190,24 @@ async function validateVersion(
   candidateType: AgentArtifactCandidateType,
   artifact: AgentArtifactV1,
 ): Promise<void> {
-  if (artifact.baseVersion === null || artifact.baseVersion === undefined) return;
-
   if (PLAN_VERSIONED_TYPES.has(candidateType)) {
     const plan = await tx.careerPlan.findFirst({
       where: { userId, status: "active" },
       orderBy: { version: "desc" },
     });
-    if (plan && plan.version !== artifact.baseVersion) {
+    // null 明确表示“生成候选时不存在活动计划”，不能把后来出现的计划覆盖掉。
+    if (artifact.baseVersion === null) {
+      if (plan) {
+        throw new AgentArtifactCandidateResolutionError("数据版本已变化，请重新生成候选", "BASE_VERSION_CONFLICT", 409);
+      }
+      return;
+    }
+    if (!plan || plan.version !== artifact.baseVersion) {
       throw new AgentArtifactCandidateResolutionError("数据版本已变化，请重新生成候选", "BASE_VERSION_CONFLICT", 409);
     }
   } else if (PROFILE_VERSIONED_TYPES.has(candidateType)) {
     const profile = await tx.userProfile.findUnique({ where: { userId } });
-    if (profile && profile.version !== artifact.baseVersion) {
+    if (!profile || artifact.baseVersion === null || profile.version !== artifact.baseVersion) {
       throw new AgentArtifactCandidateResolutionError("数据版本已变化，请重新生成候选", "BASE_VERSION_CONFLICT", 409);
     }
   }
@@ -220,6 +227,34 @@ function validateCandidateData(
     throw new AgentArtifactCandidateResolutionError(
       `候选数据不符合 ${candidateType} schema`, "INVALID_CANDIDATE_DATA", 400,
     );
+  }
+  if (candidateType === "career_plan" || candidateType === "growth_replan") {
+    try {
+      assertPlanDataQuality(data);
+    } catch (error) {
+      if (error instanceof PlanQualityError) {
+        throw new AgentArtifactCandidateResolutionError(
+          error.message,
+          "PLAN_QUALITY_REJECTED",
+          400,
+        );
+      }
+      throw error;
+    }
+  }
+  if (candidateType === "learning_route") {
+    try {
+      assertLearningRouteDataQuality(data);
+    } catch (error) {
+      if (error instanceof LearningRouteQualityError) {
+        throw new AgentArtifactCandidateResolutionError(
+          error.message,
+          "LEARNING_ROUTE_QUALITY_REJECTED",
+          400,
+        );
+      }
+      throw error;
+    }
   }
 }
 
@@ -522,6 +557,14 @@ async function applyProjection(
     }
 
     case "memory_item": {
+      const profile = await tx.userProfile.findUnique({ where: { userId } });
+      if (profile && profile.memoryEnabled === false) {
+        throw new AgentArtifactCandidateResolutionError(
+          "长期记忆已关闭，不能确认新的记忆候选",
+          "MEMORY_DISABLED",
+          409,
+        );
+      }
       const content = String(data.content).slice(0, 2000);
       if (content) {
         const rawSensitivity = String(data.sensitivity ?? "");

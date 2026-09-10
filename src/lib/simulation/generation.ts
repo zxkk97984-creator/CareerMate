@@ -8,8 +8,14 @@ import {
   type SimulationReportResult,
 } from "@/lib/tbox/capability-schemas";
 import { parseAgentArtifactEnvelope } from "@/lib/agentic-v2/artifact-envelope";
-import type { AgentArtifactV1 } from "@/lib/agentic-v2/contracts";
-import type { SimulationScenarioKey } from "../simulation";
+import { simulationScenarioDataSchema, type AgentArtifactV1 } from "@/lib/agentic-v2/contracts";
+import { buildPlatformContracts } from "@/lib/agentic-v2/platform-contracts";
+import {
+  buildCustomScenario,
+  type CustomScenarioInput,
+  type SimulationScenarioKey,
+  type SimulationScenarioSnapshot,
+} from "../simulation";
 
 // ── 严格 Zod 校验 ────────────────────────────────────────
 const simulationTurnDataSchema = z.object({
@@ -36,6 +42,12 @@ interface SimulationTranscriptTurn {
   content: string;
 }
 
+export interface GeneratedSimulationScenario {
+  scenarioSnapshot: SimulationScenarioSnapshot;
+  sourceType: "custom";
+  sourceRef: null;
+}
+
 /** 归一化问题文本用于去重比较 */
 function normalizeQuestion(text: string): string {
   return text
@@ -54,6 +66,7 @@ export async function generateSimulationTurn(input: {
   remoteConversationId?: string;
   sessionId?: string;
   expectedRound?: number;
+  scenarioSnapshot?: SimulationScenarioSnapshot | null;
 }): Promise<AiResult<NormalizedAssistantResult>> {
   const config = getTboxConfig();
   const history = input.transcript.map((turn) => ({
@@ -75,6 +88,10 @@ export async function generateSimulationTurn(input: {
       permissions: { candidateCreationAllowed: true, officialWritesAllowed: false },
     } : undefined;
 
+    const snapshot = input.scenarioSnapshot;
+    const scenarioContext = snapshot
+      ? `固定场景：你的角色=${snapshot.role}；对话对象=${snapshot.counterpart}；目标=${snapshot.objective}；难度=${snapshot.difficulty}；情境=${snapshot.brief}；评分维度=${snapshot.scoringDimensions.join("、")}；预设追问=${snapshot.prompts.join(" / ")}。`
+      : "";
     const commonRequest = {
       userId: input.userId,
       conversationId: input.remoteConversationId,
@@ -83,7 +100,7 @@ export async function generateSimulationTurn(input: {
       searchPolicy: "off" as const,
     };
     const prompts = [
-      `场景：${input.scenarioTitle}。请根据对话历史给出下一轮追问。不要联网、不要解释、不要 Markdown 围栏；只输出一个 <CAREERMATE_ARTIFACT>...</CAREERMATE_ARTIFACT>，taskType=simulation_turn。`,
+      `场景：${input.scenarioTitle}。${scenarioContext}请根据对话历史给出下一轮追问。不要联网、不要解释、不要 Markdown 围栏；只输出一个 <CAREERMATE_ARTIFACT>...</CAREERMATE_ARTIFACT>，taskType=simulation_turn。`,
       `请只输出下面这一个标签，不要联网、不要解释、不要 Markdown 围栏：\n<CAREERMATE_ARTIFACT>\n{"schemaVersion":"1.0","taskType":"simulation_turn","status":"success","summary":"下一轮追问","data":{"sessionId":"${input.sessionId ?? ""}","scenarioKey":"${input.scenarioKey}","round":${input.expectedRound ?? 0},"nextQuestion":"请按照当前训练场景继续追问一个问题。","isComplete":false},"evidence":[],"sources":[],"assumptions":[],"warnings":[],"requiresUserConfirmation":false,"baseVersion":null,"nextActions":[]}\n</CAREERMATE_ARTIFACT>`,
     ];
 
@@ -152,6 +169,130 @@ export async function generateSimulationTurn(input: {
 }
 
 /**
+ * 自定义场景生成：优先调用主 Agent 的 V2场景生成工作流；
+ * 失败或降级时使用本地模板，并明确返回 degraded 元数据。
+ */
+export async function generateSimulationScenario(input: {
+  userId: string;
+  request: string;
+  custom: CustomScenarioInput;
+}): Promise<AiResult<GeneratedSimulationScenario>> {
+  const config = getTboxConfig();
+  const fallback = (meta: AiResult<NormalizedAssistantResult>["meta"], reason: string) => ({
+    data: {
+      scenarioSnapshot: buildCustomScenario(input.custom),
+      sourceType: "custom" as const,
+      sourceRef: null,
+    },
+    meta: {
+      ...meta,
+      actualMode: config.mode === "api" ? "mock" as const : config.mode,
+      degraded: true,
+      fallbackReason: reason,
+      source: "local-simulation-scenario-fallback",
+    },
+  });
+
+  if (config.mode !== "api") {
+    return fallback({
+      requestedMode: config.mode,
+      actualMode: config.mode,
+      degraded: false,
+      fallbackReason: null,
+      source: "local-mock",
+    }, "degraded");
+  }
+
+  const contracts = buildPlatformContracts({
+    taskType: "simulation_scenario",
+    currentTime: new Date().toISOString(),
+    timezone: "Asia/Shanghai",
+    profileVersion: null,
+    activePlanId: null,
+    basePlanVersion: null,
+    activeLearningRouteKnown: false,
+    baseRouteVersion: null,
+    weeklyBudgetHours: null,
+    requestedPeriod: null,
+    simulationState: null,
+    expectedRound: null,
+    sourceType: "custom",
+    sourceRef: null,
+    purpose: "interactive_artifact",
+    source: "simulation",
+    profileSnapshot: { available: false, version: null, data: null },
+    historySnapshot: { available: false, through: null, data: null },
+    careerBaseline: { available: false, roleKey: null, templateVersion: null, evidence: [] },
+    marketEvidence: {
+      searched: false,
+      skipReason: "自定义场景生成不需要实时市场搜索",
+      collectedAt: null,
+      scope: { region: "全国", experienceLevel: "未指定", timeRange: "本轮" },
+      findings: [],
+      sources: [],
+      conflicts: [],
+      confidence: "low",
+    },
+  });
+  const prompt = [
+    "你是 CareerMate V2 的场景生成任务路由器。",
+    "必须调用已绑定的【V2场景生成】工作流；不得自行生成 simulation_scenario JSON。",
+    "调用工作流时传入以下三个文本参数：",
+    `request=${JSON.stringify([
+      input.request,
+      `你的角色：${input.custom.role}`,
+      `对话对象：${input.custom.counterpart}`,
+      `训练目标：${input.custom.objective}`,
+      `难度：${input.custom.difficulty}`,
+    ].join("\n"))}`,
+    `task_context_json=${JSON.stringify(contracts.taskContext)}`,
+    `evidence_bundle_json=${JSON.stringify(contracts.evidenceBundle)}`,
+    "工作流返回后，只输出其结束节点 artifact 的 <CAREERMATE_ARTIFACT>...</CAREERMATE_ARTIFACT> 信封，不得改写、重生成或补充第二份 JSON。",
+    "顶层必须包含 schemaVersion=\"1.0\"、taskType=\"simulation_scenario\"、status=\"success\"。",
+    "scenarioSnapshot 必须严格包含 key、title、difficulty、durationMinutes、skills、role、counterpart、objective、brief、openingMessage、prompts、scoringDimensions。",
+    "prompts 和 scoringDimensions 必须是字符串数组，不能输出对象数组；skills 也必须是字符串数组。",
+    "所有字符串内部优先使用中文引号“”，不要使用未转义的 ASCII 双引号；换行写成 \\n，不要输出真实换行。",
+    "不要联网，不要 Markdown 围栏，不要解释。",
+  ].join("\n");
+
+  try {
+    const result = await chatWithTbox({
+      question: prompt,
+      userId: input.userId,
+      searchPolicy: "off",
+    }, { config });
+    const envelope = parseAgentArtifactEnvelope(result.data.text, {
+      simulationScenarioDefaults: { sourceType: "custom", sourceRef: null },
+    });
+    if (
+      envelope.artifact?.taskType === "simulation_scenario"
+      && envelope.artifact.status === "success"
+    ) {
+      const parsed = simulationScenarioDataSchema.safeParse(envelope.artifact.data);
+      if (parsed.success && parsed.data.sourceType === "custom") {
+        return {
+          data: {
+            scenarioSnapshot: parsed.data.scenarioSnapshot,
+            sourceType: "custom",
+            sourceRef: null,
+          },
+          meta: result.meta,
+        };
+      }
+    }
+    return fallback(result.meta, "SCHEMA_MISMATCH");
+  } catch (error) {
+    return fallback({
+      requestedMode: "api",
+      actualMode: "mock",
+      degraded: true,
+      fallbackReason: "provider_error",
+      source: "local-mock",
+    }, error instanceof Error ? error.message.slice(0, 120) : "provider_error");
+  }
+}
+
+/**
  * 从一次单轮调用中提取严格 V2 simulation_turn。
  * ok=true 表示可用；repeated=true 表示信封有效但问题重复；null 表示无效。
  */
@@ -200,7 +341,7 @@ function parseSimulationTurnResult(
 
 /** 构建本地降级响应 */
 function buildLocalFallback(
-  input: { scenarioKey: SimulationScenarioKey; scenarioTitle: string; transcript: SimulationTranscriptTurn[]; remoteConversationId?: string },
+  input: { scenarioKey: SimulationScenarioKey; scenarioTitle: string; transcript: SimulationTranscriptTurn[]; remoteConversationId?: string; scenarioSnapshot?: SimulationScenarioSnapshot | null },
   result: { data: { text: string; citations?: unknown[]; warnings: string[]; conversationId?: string | null }; meta: { degraded?: boolean; requestedMode?: string; actualMode?: string; fallbackReason?: string | null; source?: string } },
   reason: string,
 ): AiResult<NormalizedAssistantResult> {
@@ -232,6 +373,7 @@ export async function generateSimulationReport(input: {
   transcript: SimulationTranscriptTurn[];
   remoteConversationId?: string;
   sessionId?: string;
+  scenarioSnapshot?: SimulationScenarioSnapshot | null;
 }): Promise<AiResult<NormalizedAssistantResult>> {
   const config = getTboxConfig();
   const history = input.transcript.map((turn) => ({
@@ -253,6 +395,10 @@ export async function generateSimulationReport(input: {
       permissions: { candidateCreationAllowed: true, officialWritesAllowed: false },
     } : undefined;
 
+    const snapshot = input.scenarioSnapshot;
+    const scenarioContext = snapshot
+      ? `固定场景：你的角色=${snapshot.role}；对话对象=${snapshot.counterpart}；目标=${snapshot.objective}；难度=${snapshot.difficulty}；情境=${snapshot.brief}；评分维度=${snapshot.scoringDimensions.join("、")}。`
+      : "";
     const commonRequest = {
       userId: input.userId,
       conversationId: input.remoteConversationId,
@@ -261,7 +407,7 @@ export async function generateSimulationReport(input: {
       searchPolicy: "off" as const,
     };
     const prompts = [
-      `场景：${input.scenarioTitle}。请根据以上模拟训练的完整对话记录，生成模拟训练报告。不要联网、不要输出解释或 Markdown 代码围栏；只输出一个 <CAREERMATE_ARTIFACT>...</CAREERMATE_ARTIFACT>，JSON 必须严格符合 simulation_report 精确数据契约，data 只包含 sessionId、scenarioKey、score、strengths、improvements、evidence、abilityImpact、candidateUpdates。`,
+      `场景：${input.scenarioTitle}。${scenarioContext}请根据以上模拟训练的完整对话记录，生成模拟训练报告。不要联网、不要输出解释或 Markdown 代码围栏；只输出一个 <CAREERMATE_ARTIFACT>...</CAREERMATE_ARTIFACT>，JSON 必须严格符合 simulation_report 精确数据契约，data 只包含 sessionId、scenarioKey、score、strengths、improvements、evidence、abilityImpact、candidateUpdates。`,
       `请只输出下面这一个标签，不要联网、不要解释、不要 Markdown 围栏：\n<CAREERMATE_ARTIFACT>\n{"schemaVersion":"1.0","taskType":"simulation_report","status":"success","summary":"模拟训练报告","data":{"sessionId":"${input.sessionId ?? ""}","scenarioKey":"${input.scenarioKey}","score":78,"strengths":["优势"],"improvements":["改进项"],"evidence":["证据"],"abilityImpact":{"communication":72},"candidateUpdates":[{"field":"abilityScores.communication","newValue":72,"confidence":0.85,"reason":"理由","evidenceExcerpt":"证据","impactSummary":"影响","requiresConfirmation":true}]},"evidence":[],"sources":[],"assumptions":[],"warnings":[],"requiresUserConfirmation":true,"baseVersion":null,"nextActions":[]}\n</CAREERMATE_ARTIFACT>`,
     ];
 

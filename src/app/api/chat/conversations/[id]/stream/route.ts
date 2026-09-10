@@ -1,3 +1,6 @@
+import { getPrisma } from "@/lib/prisma";
+import { streamTrainingAnswer } from "@/lib/simulation/chat-stream";
+import { after } from "next/server";
 import { requireCurrentUser } from "@/lib/auth";
 import { fail } from "@/lib/api";
 import { createChatService, ServiceError } from "@/lib/chat/service";
@@ -31,6 +34,11 @@ export async function POST(
       return fail("INVALID_PARAMS", "请求参数不合法", 400, input.error.flatten());
     }
 
+    const training = await getPrisma().simulationSession.findFirst({ where: { conversationId, userId: user.id } });
+    if (training && training.status !== "completed") {
+      return streamTrainingAnswer(user, conversationId, training.id, input.data.message.trim(), input.data.clientRequestId);
+    }
+
     // 返回 SSE 流
     return handleStreamRequest({
       userId: user.id,
@@ -38,8 +46,9 @@ export async function POST(
       message: input.data.message.trim(),
       clientRequestId: input.data.clientRequestId,
       actionId: input.data.actionId,
-      interaction: input.data.interaction,
+      interaction: training ? { surface: "chat", action: "message_submit" } : input.data.interaction,
       signal: request.signal,
+      keepAlive: (work) => after(() => work),
     }, service);
   } catch (err) {
     if (err instanceof ServiceError) {

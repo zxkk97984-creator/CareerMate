@@ -1,5 +1,7 @@
 import { getPrisma } from "@/lib/prisma";
 import { validatedAgentArtifactV1Schema, CANDIDATE_DATA_SCHEMA, type AgentArtifactV1 } from "./contracts";
+import { assertPlanDataQuality, PlanQualityError } from "@/lib/plans/task-model";
+import { assertLearningRouteDataQuality, LearningRouteQualityError } from "@/lib/plans/learning-route-quality";
 
 export const AGENT_ARTIFACT_CANDIDATE_TYPES = [
   "profile_patch",
@@ -34,6 +36,15 @@ const VERSIONED_CANDIDATE_TYPES = new Set<AgentArtifactCandidateType>([
   "career_plan",
   "learning_route",
   "growth_replan",
+]);
+
+/**
+ * 首份职业计划/学习路线没有可比较的正式版本。null 表示调用方明确声明
+ * “当前不存在活动对象”，不是省略版本；接受候选时仍会再次做 CAS 检查。
+ */
+const FIRST_CREATABLE_VERSIONED_TYPES = new Set<AgentArtifactCandidateType>([
+  "career_plan",
+  "learning_route",
 ]);
 
 export class AgentArtifactCandidateError extends Error {
@@ -168,6 +179,34 @@ function validateCandidateData(candidateType: string, data: unknown): void {
       400,
     );
   }
+  if (candidateType === "career_plan" || candidateType === "growth_replan") {
+    try {
+      assertPlanDataQuality(data);
+    } catch (error) {
+      if (error instanceof PlanQualityError) {
+        throw new AgentArtifactCandidateError(
+          error.message,
+          "PLAN_QUALITY_REJECTED",
+          400,
+        );
+      }
+      throw error;
+    }
+  }
+  if (candidateType === "learning_route") {
+    try {
+      assertLearningRouteDataQuality(data);
+    } catch (error) {
+      if (error instanceof LearningRouteQualityError) {
+        throw new AgentArtifactCandidateError(
+          error.message,
+          "LEARNING_ROUTE_QUALITY_REJECTED",
+          400,
+        );
+      }
+      throw error;
+    }
+  }
 }
 
 function canonicalJson(value: unknown): string {
@@ -217,7 +256,11 @@ export function createAgentArtifactCandidateService(
       );
     }
     validateCandidateData(candidateType, artifact.data);
-    if (VERSIONED_CANDIDATE_TYPES.has(candidateType) && artifact.baseVersion === null) {
+    if (
+      VERSIONED_CANDIDATE_TYPES.has(candidateType)
+      && artifact.baseVersion === null
+      && !FIRST_CREATABLE_VERSIONED_TYPES.has(candidateType)
+    ) {
       throw new AgentArtifactCandidateError(
         "This candidate type requires a base version",
         "BASE_VERSION_REQUIRED",

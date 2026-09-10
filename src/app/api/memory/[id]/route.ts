@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { fail, ok } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
+import { invalidateMemoryContexts } from "@/lib/memory/context-invalidation";
 import { getPrisma } from "@/lib/prisma";
 
 const patchSchema = z.object({ content: z.string().trim().min(1).max(4_000), sensitivity: z.enum(["normal", "sensitive"]).optional() }).strict();
@@ -22,6 +23,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   const { id } = await context.params;
   const changed = await getPrisma().memoryItem.updateMany({ where: { id, userId: user.id }, data: parsed.data });
   if (changed.count !== 1) return fail("NOT_FOUND", "记忆不存在", 404);
+  await invalidateMemoryContexts(user.id);
   const memory = await getPrisma().memoryItem.findUnique({ where: { id } });
   return ok({ memory });
 }
@@ -32,5 +34,6 @@ export async function DELETE(_request: Request, context: { params: Promise<{ id:
   const { id } = await context.params;
   const deleted = await getPrisma().memoryItem.deleteMany({ where: { id, userId: user.id } });
   if (deleted.count !== 1) return fail("NOT_FOUND", "记忆不存在", 404);
+  await invalidateMemoryContexts(user.id);
   return ok({ deleted: true });
 }

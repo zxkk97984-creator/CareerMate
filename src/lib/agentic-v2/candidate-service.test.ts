@@ -26,7 +26,27 @@ function samplePlan() {
     targetRole: { key: "ai_product_manager", label: "AI 产品经理" },
     summary: "测试计划摘要",
     horizon: { value: 3, unit: "year" as const },
-    phases: [{ id: "phase-1", title: "基础期", objective: "建立基础", duration: { value: 6, unit: "month" as const }, skills: [], actions: [{ id: "a1", title: "学习 PRD", description: "PRD 基础", type: "learning" as const, status: "not_started" as const, resources: [] }], outputs: [], evaluationCriteria: [], risks: [] }],
+    phases: [{
+      id: "phase-1",
+      title: "基础期",
+      objective: "建立基础",
+      duration: { value: 6, unit: "month" as const },
+      skills: [],
+      actions: [{
+        id: "a1",
+        title: "完成 3 份 PRD 练习",
+        description: "选择校园场景撰写完整 PRD，并完成一次同行评审",
+        type: "practice" as const,
+        status: "not_started" as const,
+        estimatedHours: 12,
+        resources: [],
+        outputs: ["3 份 PRD 文档"],
+        acceptanceCriteria: ["每份 PRD 包含用户故事和验收标准"],
+      }],
+      outputs: ["3 份 PRD 文档"],
+      evaluationCriteria: ["每份 PRD 包含用户故事和验收标准"],
+      risks: [],
+    }],
     immediateActions: [],
     assumptions: [],
     riskNotes: [],
@@ -47,7 +67,34 @@ function validDataForCandidateType(candidateType: string): Record<string, unknow
     case "career_plan":
       return { plan: samplePlan() };
     case "learning_route":
-      return { targetRole: "ai_product_manager", stages: [], baseRouteVersion: null };
+      return {
+        targetRole: "ai_product_manager",
+        weeklyBudgetHours: 6,
+        period: "4周",
+        stages: [{
+          title: "基础阶段",
+          description: "第 1-2 周完成基础练习",
+          tasks: [{
+            title: "完成 3 份 PRD 练习",
+            description: "选择校园场景撰写完整 PRD 并完成同行评审",
+            estimatedHours: 4,
+            outputs: ["3 份 PRD 文档"],
+            acceptanceCriteria: ["每份 PRD 包含用户故事和验收标准"],
+          }],
+        }],
+        tasks: [{
+          title: "完成 3 份 PRD 练习",
+          description: "选择校园场景撰写完整 PRD 并完成同行评审",
+          estimatedHours: 4,
+          outputs: ["3 份 PRD 文档"],
+          acceptanceCriteria: ["每份 PRD 包含用户故事和验收标准"],
+        }],
+        resources: [],
+        deliverables: ["PRD 文档"],
+        acceptanceCriteria: ["可解释需求与验收标准"],
+        adjustmentTriggers: [],
+        baseRouteVersion: null,
+      };
     case "growth_replan":
       return { plan: samplePlan(), planPatch: { parentPlanId: "plan-old" } };
     case "memory_item":
@@ -421,8 +468,6 @@ describe("AgentArtifactCandidateService", () => {
     "profile_patch",
     "profile_assessment",
     "ability_evidence",
-    "career_plan",
-    "learning_route",
     "growth_replan",
   ] as const)("requires baseVersion for %s", async (candidateType) => {
     const compatibleTaskType = {
@@ -455,6 +500,20 @@ describe("AgentArtifactCandidateService", () => {
       context: context(`nullable-version-${candidateType}`),
       candidateType,
       artifact: artifact({ taskType: taskType as never, baseVersion: null }),
+    })).resolves.toMatchObject({ candidateType });
+  });
+
+  it.each([
+    ["career_plan", "career_plan"],
+    ["learning_route", "learning_route"],
+  ] as const)("allows null baseVersion for the first %s", async (candidateType, taskType) => {
+    const { service } = setup();
+
+    await expect(service.createCandidate({
+      userId: "user-1",
+      context: context(`first-${candidateType}`),
+      candidateType,
+      artifact: artifact({ taskType: taskType as never, baseVersion: null, _candidateType: candidateType }),
     })).resolves.toMatchObject({ candidateType });
   });
 

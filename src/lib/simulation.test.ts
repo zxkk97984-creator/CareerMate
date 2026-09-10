@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildCareerInterviewScenario,
+  buildJobSimulationScenario,
   canCompleteSimulation,
   formatAbilityImpact,
   getSimulationScenario,
@@ -9,6 +10,7 @@ import {
   nextSimulationPrompt,
   parseSimulationTranscript,
   scenarioMetaForSession,
+  rankSimulationScenarios,
   simulationScenarioKeys,
 } from "./simulation";
 
@@ -23,6 +25,7 @@ describe("simulation domain", () => {
       "data_driven_decision",
       "requirement_clarification",
       "career_interview",
+      "custom",
     ]);
   });
 
@@ -53,6 +56,42 @@ describe("simulation domain", () => {
     expect(scenario.openingMessage).toContain("数据分析师");
     // 通用目录不应把动态面试场景当作可预选场景
     expect(listSimulationScenarios().some((s) => s.key === "career_interview")).toBe(false);
+  });
+
+  it("builds a job scenario only from sanitized job context", () => {
+    const scenario = buildJobSimulationScenario({
+      source: "local_boss_sample",
+      sourceBatch: "boss-20260824",
+      jobId: "job-1",
+      title: "数据分析师",
+      company: "示例公司",
+      city: "上海",
+      experience: "1-3年",
+      education: "本科",
+      salary: {
+        raw: "10-15K",
+        min: 10_000,
+        max: 15_000,
+        unit: "month",
+        months: null,
+        comparable: true,
+        note: "按月薪记录",
+      },
+      skills: ["SQL", "Python"],
+      jd: "负责业务数据分析与看板建设",
+      collectedAt: "2026-08-24T00:00:00.000Z",
+      collectionDateApprox: true,
+      verificationStatus: "unverified",
+    });
+
+    expect(scenario).toMatchObject({
+      key: "career_interview",
+      title: "数据分析师 · 岗位模拟",
+      role: "候选人",
+      counterpart: "面试官",
+    });
+    expect(scenario.brief).toContain("本地岗位样本（未核验）");
+    expect(scenario.brief).toContain("SQL");
   });
 
   it("allows completion from three through six user turns", () => {
@@ -105,6 +144,38 @@ describe("scenarioMetaForSession（T17a：brief 与会话场景对应）", () =>
 
   it("returns null when the session has no scenario key", () => {
     expect(scenarioMetaForSession({}, available)).toBeNull();
+  });
+});
+
+describe("rankSimulationScenarios", () => {
+  it("prioritizes scenarios that cover weaker confirmed abilities", () => {
+    const items = listSimulationScenarios();
+    const ranked = rankSimulationScenarios(items, {
+      abilityScores: {
+        communication: 30,
+        dataAnalysis: 90,
+        businessProduct: 85,
+        aiTooling: 80,
+        projectPractice: 80,
+      },
+      history: [],
+    });
+    expect(ranked[0].skills).toContain("communication");
+  });
+
+  it("uses low historical scores to recommend another attempt", () => {
+    const items = listSimulationScenarios();
+    const ranked = rankSimulationScenarios(items, {
+      abilityScores: {},
+      history: [{ scenarioKey: "remote_collaboration", score: 40 }],
+    });
+    expect(ranked[0].key).toBe("remote_collaboration");
+  });
+
+  it("keeps the catalog order when no ability or history evidence exists", () => {
+    const items = listSimulationScenarios();
+    expect(rankSimulationScenarios(items).map((item) => item.key))
+      .toEqual(items.map((item) => item.key));
   });
 });
 

@@ -1,5 +1,8 @@
 import { z } from "zod";
 import { aiCareerPlanV2Schema } from "@/lib/plans/schema-v2";
+import { learningRouteDataSchema } from "@/lib/plans/learning-route-quality";
+import { simulationScenarioSnapshotSchema } from "@/lib/simulation";
+import { jobSampleContextSchema } from "@/lib/jobs/context";
 
 const shortText = z.string().trim().min(1).max(500);
 
@@ -105,6 +108,24 @@ export type SimulationStateV1 = z.infer<typeof simulationStateV1Schema>;
 export const businessDataV1Schema = z.object({
   schemaVersion: z.literal("1"),
   interaction: interactionV1Schema.optional(),
+  /** 服务端时间；研究员和工作流不能自行猜日期。 */
+  currentTime: z.string().datetime({ offset: true }).optional(),
+  timezone: z.string().trim().min(1).max(80).optional(),
+  /** 由后端白名单指定，用户正文中的同名 JSON 不切换模式。 */
+  executionMode: z.enum(["interactive", "structured_api"]).optional(),
+  /** 稳定契约标识，不接受客户端上传任意 schema。 */
+  responseContract: z.string().trim().min(1).max(120).optional(),
+  taskContext: serializableJsonObjectSchema.optional(),
+  evidenceBundle: serializableJsonObjectSchema.optional(),
+  /** 仅由服务端从已导入岗位样本中脱敏生成，不接受客户端整包上传。 */
+  jobSampleContext: jobSampleContextSchema.optional(),
+  contextCoverage: z.object({
+    algorithmVersion: z.string().trim().min(1).max(80),
+    generatedAt: z.string().datetime({ offset: true }),
+    included: z.array(z.string().trim().min(1).max(120)).max(50),
+    truncated: z.array(z.string().trim().min(1).max(120)).max(50),
+    missing: z.array(z.string().trim().min(1).max(120)).max(50),
+  }).strict().optional(),
   profileSnapshot: profileSnapshotV1Schema,
   historySnapshot: historySnapshotV1Schema,
   simulationState: simulationStateV1Schema.nullable(),
@@ -167,6 +188,7 @@ export const AGENT_ARTIFACT_V1_TASK_TYPES = [
   "growth_review",
   "memory_item",
   "career_template_draft",
+  "simulation_scenario",
 ] as const;
 
 export const AGENT_ARTIFACT_V1_STATUSES = [
@@ -257,20 +279,7 @@ export const growthReplanDataSchema = careerPlanDataSchema.extend({
   }).optional(),
 });
 
-/** learning_route：可确认学习路线候选——接受后写入独立 LearningRoute 模型 */
-export const learningRouteDataSchema = z.object({
-  targetRole: z.string().trim().min(1).max(160),
-  weeklyBudgetHours: z.number().int().min(1).max(80).optional(),
-  period: z.string().trim().min(1).optional(),
-  stages: z.array(z.unknown()).optional(),
-  tasks: z.array(z.unknown()).optional(),
-  resources: z.array(z.unknown()).optional(),
-  deliverables: z.array(z.unknown()).optional(),
-  acceptanceCriteria: z.array(z.unknown()).optional(),
-  adjustmentTriggers: z.array(z.unknown()).optional(),
-  /** 生成候选时当前 active LearningRoute 的版本——用于自身版本冲突检测 */
-  baseRouteVersion: z.number().int().nonnegative().nullable(),
-}).strict();
+export { learningRouteDataSchema };
 
 /** memory_item：长期记忆候选 */
 export const memoryItemDataSchema = z.object({
@@ -296,6 +305,13 @@ export const simulationTurnDataSchema = z.object({
   round: z.number().int().nonnegative(),
   nextQuestion: z.string().trim().min(1).max(2000),
   isComplete: z.literal(false),
+}).strict();
+
+/** simulation_scenario：场景生成工作流的只读产物，不直接创建正式训练会话 */
+export const simulationScenarioDataSchema = z.object({
+  scenarioSnapshot: simulationScenarioSnapshotSchema,
+  sourceType: z.enum(["recommended", "custom", "job"]),
+  sourceRef: z.string().trim().max(200).nullable(),
 }).strict();
 
 /** career_exploration：职业探索（可附带 career_template_draft 候选字段） */
@@ -381,6 +397,7 @@ export const TASK_TYPE_DATA_SCHEMA: Record<string, z.ZodTypeAny> = {
   memory_item: memoryItemDataSchema,
   career_template_draft: careerTemplateDraftDataSchema,
   simulation_turn: simulationTurnDataSchema,
+  simulation_scenario: simulationScenarioDataSchema,
   career_exploration: careerExplorationDataSchema,
 };
 
@@ -485,7 +502,7 @@ export const validatedAgentArtifactV1Schema = agentArtifactV1Schema.superRefine(
 export const researchReportV1Schema = z.object({
   schemaVersion: z.literal("1.0"),
   topic: shortText,
-  collectedAt: z.string().datetime({ offset: true }),
+  collectedAt: z.string().datetime({ offset: true }).nullable(),
   queryScope: marketScopeSchema,
   findings: platformArray,
   sources: platformArray,
