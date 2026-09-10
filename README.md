@@ -1,281 +1,87 @@
 # CareerMate
 
-CareerMate 是一个基于 Next.js、Prisma、SQLite 和百宝箱 AI 适配层的职业成长工作台。它把职业画像、职业路径、模拟训练、学习资源、长期记忆和 AI 对话放在同一套用户数据闭环中。
+CareerMate 是面向大学生与职场新人的 AI 职业成长工作台，提供职业画像、方向探索、成长计划、学习资源、模拟训练和长期记忆。项目使用 Next.js App Router、React、TypeScript、Prisma 与 SQLite，通过百宝箱接入 AI 能力。
 
-当前代码同时支持本地 Mock、手工样例和真实百宝箱 API。Agentic V2 是可选运行路径，不是本地默认值；默认配置以 `.env.example` 和 `src/lib/env.ts` 为准。
+## 当前功能
 
-## 当前用户入口
-
-| 地址 | 代码行为 |
+| 入口 | 功能 |
 |---|---|
-| `/` | 未登录展示 Landing Page；已完成画像的用户跳转 `/chat` |
-| `/login` | 登录和注册 |
-| `/onboarding` | 对话式职业画像引导 |
-| `/dashboard` | 成长概览、岗位匹配度、能力雷达和当前任务 |
-| `/path` | 职业路径、计划版本、时间线和任务状态 |
-| `/simulation` | 多轮职场场景训练与评分 |
-| `/resources` | 本地资源筛选和百宝箱检索 |
-| `/memory` | 待确认建议、画像与证据、长期记忆 |
-| `/settings` | 账号（头像、显示名、密码）、AI 陪伴形象、隐私导出与清空 |
-| `/admin` | 管理员岗位草稿审核和岗位模板库 |
-| `/chat` | 全屏 AI 对话、历史会话、成长档案 |
+| `/chat` | 主聊天、历史会话、引用、待确认候选及独立训练对话 |
+| `/dashboard` | 成长概览、能力与目标差距、当前任务 |
+| `/path` | 职业计划、学习路线、版本和任务进度 |
+| `/simulation` | 推荐/自定义场景、预览和最近训练；开始后进入独立聊天 |
+| `/resources` | 学习资源、岗位样本、筛选及任务关联 |
+| `/memory` | 记忆管理、待确认建议与能力证据 |
+| `/settings` | 账号、隐私与 AI 陪伴形象 |
+| `/onboarding`、`/admin` | 画像引导、管理员岗位资料审核 |
 
-登录后的主入口为 `/chat`；各业务页顶部的 AI 助手与全屏聊天共享会话、消息和草稿。支持历史恢复、重命名、删除、Markdown、引用、候选卡片和失败重试，继续使用现有百宝箱 API / SSE 链路。
+模拟训练采用“选场景 → 预览 → 独立聊天 → 评分报告”的流程。训练记录可恢复，至少 3 轮有效回答后可评分，默认最多 6 轮；结束后可在原对话继续讨论报告。AI 生成的画像、计划、学习路线和能力证据候选须经用户确认才进入正式业务数据。
 
-全局浮动 AI 桌宠参考 K12-Learning-platform 的可拖拽实现，默认霜铃精灵动画，动画跟随输入、等待和回复状态；减少动态效果偏好下保留静态姿态。桌宠可拖到任意位置、用方向键移动，位置会记忆并保存在浏览器 localStorage。形象的切换统一在 `/settings → AI 陪伴形象` 完成（可切换 Kurisu Live2D 或收起），悬浮窗不再提供即时切换菜单；隐藏后可点“打开 AI 陪伴形象”恢复。外观选择只影响形象与位置，不影响业务数据或 AI 接入。
+## 本地启动
 
-## 核心闭环
-
-```text
-登录
-  → 对话式画像引导
-  → 用户确认画像
-  → 工作台聚合画像、计划、资源、训练和记忆
-  → Kurisu 流式对话 / 页面操作
-  → 生成待确认候选
-  → 用户接受或拒绝
-  → 事务化写入正式业务数据
-```
-
-AI 生成的画像更新、能力证据、计划、学习路线和记忆不会直接覆盖正式数据。候选必须通过 Zod Schema、用户所有权、状态和版本校验，并在用户明确确认后投影到数据库。
-
-## 运行架构
-
-```mermaid
-flowchart TB
-    B[浏览器] --> P[Next.js 页面]
-    B --> K[全局 Kurisu 浮窗]
-    P --> API[Next.js API Routes]
-    K --> CHAT["/api/chat/conversations/:id/stream"]
-    API --> S[业务服务层]
-    CHAT --> S
-    S --> DB[("Prisma + SQLite")]
-    S --> T[TBox 适配层]
-    T --> M["Mock / Manual / API"]
-    T --> V2[可选 Agentic V2 快照上下文]
-    V2 --> ART[CAREERMATE_ARTIFACT]
-    ART --> C[候选校验与事务投影]
-    C --> DB
-```
-
-主要代码边界：
-
-- `src/app/`：页面路由和 API Route Handler。
-- `src/components/`：工作台、聊天、Kurisu、候选卡片和通用 UI。
-- `src/features/`：dashboard、onboarding、path、simulation、resources、memory、settings、admin 视图。
-- `src/lib/chat/`：会话、消息、幂等轮次、上下文、SSE 和持久化。
-- `src/lib/tbox/`：百宝箱 HTTP/SSE、检索、Mock/Manual fallback 和结构化结果。
-- `src/lib/agentic-v2/`：ArtifactV1 契约、候选创建、候选接受和正式投影。
-- `prisma/schema.prisma`：用户、画像、计划、对话、训练、记忆、候选和岗位模板模型。
-
-## AI 运行模式
-
-### 基础 TBox 模式
-
-`TBOX_MODE` 支持三种值：
-
-| 模式 | 行为 |
-|---|---|
-| `mock` | 使用仓库内确定性 fixture，不需要外部密钥 |
-| `manual` | 优先读取本地手工样例，缺失时回退到 Mock |
-| `api` | 调用百宝箱 API；失败时依次尝试 Manual，再回退 Mock |
-
-基础适配层位于 `src/lib/tbox/adapter.ts`。运行结果会返回 `requestedMode`、`actualMode`、`degraded`、`fallbackReason` 和 `source`，前端不应把降级结果伪装成实时 AI 结果。
-
-### Agentic V2
-
-设置 `CAREERMATE_AGENTIC_V2=true` 后，聊天请求会按 `TBOX_CONTEXT_TRANSPORT` 发送脱敏业务快照。当前默认 `question_prefix` 会把快照嵌入用户不可见的问题前缀；配置为 `business_data` 时才通过请求字段发送：
-
-- `profileSnapshot`：当前用户画像和已确认能力证据。
-- `historySnapshot`：当前用户的计划、进度、模拟和记忆摘要。
-- `simulationState`：当前页面明确引用的模拟会话状态。
-- `permissions`：允许创建候选，但 `officialWritesAllowed=false`。
-
-V2 返回可读正文和可选的精确 `CAREERMATE_ARTIFACT` 信封。只有 `pending_confirmation` 且通过任务类型、业务数据和版本校验的 artifact 才能创建候选。
-
-### 百宝箱 Agentic V2 架构
-
-百宝箱 Agentic V2 是真实链路中的唯一 AI 决策中枢。前端描述用户请求和页面状态，CareerMate 后端提供经过裁剪和脱敏的业务快照；主 Agent 自主决定是否检索知识库、联网、调用工作流、Skill 或专业子智能体。
-
-```mermaid
-flowchart TB
-    U["用户"] --> UI["CareerMate 前端<br/>页面状态与自然语言请求"]
-    UI --> API["CareerMate 后端<br/>登录、权限、会话与 SSE"]
-
-    DB[("CareerMate 权威数据库<br/>画像、证据、计划、进度、训练、记忆")]
-    DB --> SNAP["脱敏业务快照<br/>profileSnapshot<br/>historySnapshot<br/>simulationState"]
-    SNAP --> API
-
-    API -->|"一个 agent_id<br/>business_data + conversation_id"| AGENT["百宝箱 Agentic V2<br/>唯一 AI 大脑"]
-
-    subgraph TBOX["百宝箱能力层"]
-        AGENT --> KB["职业知识库<br/>稳定基线"]
-        AGENT --> WF["确定性工作流<br/>结构化业务任务"]
-        AGENT --> SKILL["Skill<br/>解析、计算、标准化"]
-        AGENT --> SUB["专业子智能体<br/>研究与伦理审查"]
-        AGENT --> SEARCH["夸克搜索 MCP<br/>当前市场证据"]
-        AGENT --> PMEM["百宝箱长期记忆<br/>低敏感度偏好"]
-    end
-
-    AGENT --> ENVELOPE["一次最终答复<br/>可选 CAREERMATE_ARTIFACT 信封"]
-    ENVELOPE --> VALIDATE["后端严格校验<br/>Schema、所有权、权限、baseVersion"]
-    VALIDATE --> CARD["待确认候选卡片"]
-    CARD -->|"接受"| PROJECT["事务化正式投影"]
-    CARD -->|"拒绝"| REJECT["保留原正式数据"]
-    PROJECT --> DB
-```
-
-#### 职责边界
-
-| 层级 | 负责 | 不负责 |
-|---|---|---|
-| 百宝箱 Agentic V2 | 意图理解、工具路由、联网判断、证据融合、候选生成 | 登录鉴权、直接覆盖正式业务数据 |
-| CareerMate 后端 | 用户身份、数据隔离、脱敏快照、会话绑定、Schema/版本校验、确认与正式写入 | 建立第二套 AI 决策逻辑 |
-| CareerMate 前端 | 用户交互、页面上下文、流式展示、候选确认 | 指定 Agent 必须调用哪个工作流 |
-| CareerMate 数据库 | 保存已确认画像、能力证据、计划、进度、训练和正式记忆 | 将未确认的模型推断视为事实 |
-
-当前真实 API 路径约定：
-
-- 后端只调用一个 V2 `agent_id`，并按本地会话复用百宝箱 `conversation_id`。
-- `business_data` 携带裁剪后的 `profileSnapshot`、`historySnapshot` 和可选 `simulationState`，不携带完整简历、联系方式或无关敏感信息。
-- 页面上下文只描述 `surface`、`action` 和可选目标引用，不能覆盖用户自然语言意图。
-- `TBOX_SEARCH_ENGINE=false`，避免内置搜索和 Agent 已挂载的夸克搜索 MCP 重复执行。
-
-本地默认值见 `.env.example`：
-
-```env
-TBOX_MODE="mock"
-CAREERMATE_AGENTIC_V2="false"
-STATEFUL_CHAT_TURNS="true"
-TBOX_STRUCTURED_MODE="disabled"
-PLAN_V2_WRITE="false"
-```
-
-`PLAN_V2_WRITE=true` 才允许新的 V2 计划写入；关闭时仍可读取和转换历史 V1/V2 计划。
-
-## 快速开始
-
-前置条件：Node.js 20.9+、npm。
+建议使用 Node.js 22 与 npm。
 
 ```bash
-git clone <repository-url>
-cd CareerMate
-npm install
+npm ci
 cp .env.example .env
 npm run prisma:generate
+node -e "require('node:fs').closeSync(require('node:fs').openSync('prisma/dev.db', 'a'))"
 npm run db:migrate:deploy
-npm run seed
 npm run dev
 ```
 
-开发服务器默认地址：`http://localhost:3000`。
+打开 [localhost:3000](http://localhost:3000)。新数据库可直接注册账号；如需演示数据，在**空的开发数据库**上执行 `npm run seed`，然后使用 `student_lin` / `careermate123` 登录。Seed 会重建数据，已有数据库不要运行。
 
-`prisma/seed.ts` 会创建虚构的本地测试用户、岗位模板和资源。演示账号只用于本地验收，不要把账号凭据提交或公开分享。
+`.env.example` 默认使用 Mock，`CAREERMATE_AGENTIC_V2=false`。真实百宝箱接入需在本地 `.env` 设置 API 模式、Agent ID、密钥及相关开关；配置步骤见 [百宝箱实施指南](docs/tbox/百宝箱优化实施指南.md)。不要把真实 `.env`、数据库或原始个人材料提交到仓库。
 
-如果本地数据库需要重建，请先备份 `prisma/dev.db`。E2E 测试会使用独立的 `prisma/e2e.db`，不会复用开发数据库。
+已有数据库升级：备份数据库，安装依赖、生成 Prisma Client，再执行 `npm run db:migrate:deploy`。其中模拟聊天迁移只增加关联字段，不清空原训练记录。
 
-### 使用同伴提供的环境与数据（团队移交）
+## 架构
 
-若同伴给你的是 `careermate-handoff-config-*.zip`（包含 `.env` 与 `prisma/dev.db`），按以下步骤直接配置并运行：
-
-```bash
-# 1. 解压到仓库根目录，覆盖已有 .env，并确保 prisma/dev.db 存在
-unzip <你收到的压缩包名>.zip -d .
-
-# 2. 安装依赖 + 生成 Prisma Client
-npm install
-npm run prisma:generate
-
-# 3. 应用已有迁移（使用现成 dev.db 时通常为无操作）
-npm run db:migrate:deploy
-
-# 4. 启动
-npm run dev
+```mermaid
+flowchart TB
+  UI["浏览器：工作台与统一聊天"] --> API["Next.js Route Handlers"]
+  API --> AUTH["身份与所有权校验"]
+  AUTH --> CHAT["聊天服务 / 模拟训练服务"]
+  CHAT --> DB[("Prisma + SQLite")]
+  CHAT --> CTX["脱敏画像、计划、历史与训练上下文"]
+  CTX --> TBOX["百宝箱主 Agent"]
+  TBOX --> TOOLS["知识库 / 搜索 / 工作流 / Skill / 子智能体"]
+  TOOLS --> TBOX
+  TBOX --> RESULT["正文与结构化结果"]
+  RESULT --> CHECK["Schema、版本与业务校验"]
+  CHECK --> UI
+  CHECK --> CANDIDATE["待确认候选"]
+  CANDIDATE --> CONFIRM["用户确认 + 事务投影"]
+  CONFIRM --> DB
 ```
 
-重要约束：
+普通对话使用 SSE；模拟回答复用训练服务，在模型等待期间发送心跳，校验后发送追问并同步聊天记录。服务器保存场景、有效轮次及报告，客户端不能靠切换 URL 改变所属训练。详细数据流和边界见 [技术架构](docs/architecture.md)。
 
-- **不要执行 `npm run seed`**——seed 会清空现有用户、画像、记忆、聊天等数据并重建演示数据。
-- `.env` 包含百宝箱 API Key 等密钥，`prisma/dev.db` 包含账号、头像、记忆和聊天等个人数据，两者都不得提交 Git 或公开分享，只能私密移交。
-- 数据库中的 `DATABASE_URL` 为相对路径 `file:./dev.db`，换机器无需修改；若开发浏览器插件/MCP，请在 `.env` 中按需配置 `CAREERMATE_MCP_ALLOWED_ORIGINS`、`CAREERMATE_PLUGIN_USER_ID` 和 `ALLOW_UNAUTHENTICATED_PLUGIN`。
-- 启动后可用移交账号登录（默认 `student_lin` / `careermate123`），发一条消息确认走的是“百宝箱 API · 真实链路”而非 Mock/演示回复。
+AI 有 `mock`、`manual`、`api` 三种运行模式。降级结果带来源标识，不能据页面有回复就认定真实 AI 链路成功。Agentic V2 默认通过 `question_prefix` 传递快照，也支持显式配置 `business_data`；平台记忆和本地记忆是不同系统。
 
-## 常用命令
+## 开发与验证
 
 | 命令 | 用途 |
 |---|---|
-| `npm run dev` | 启动 Next.js 开发服务器 |
-| `npm run build` | 生产构建 |
-| `npm run start` | 启动生产服务器 |
-| `npm run test` | Vitest 单元和集成测试 |
-| `npm run test:e2e` | Playwright E2E；自动创建干净 E2E 数据库并使用 3100 端口 |
-| `npm run test:migrations` | 数据库迁移冒烟测试 |
-| `npm run lint` | ESLint |
-| `npm run typecheck` | Prisma generate、Next typegen 和 TypeScript 检查 |
-| `npm run secret:scan` | 敏感信息扫描 |
-| `npm run verify` | secret scan、lint、typecheck、test、migration、build 全量门禁 |
-| `npm run prisma:generate` | 生成 Prisma Client |
-| `npm run db:migrate:deploy` | 应用已有迁移 |
-| `npm run seed` | 写入本地虚构种子数据 |
+| `npm run dev` / `build` / `start` | 开发、生产构建、生产运行 |
+| `npm run verify` | 密钥扫描、lint、类型、单元/集成测试、迁移和构建 |
+| `npm run test:e2e` | 基础 Mock 浏览器测试；独立 `e2e.db` 与 3100 端口 |
+| `npm run test:e2e:v2` | V2 Mock 浏览器测试 |
+| `npm run import:resources` / `import:jobs` | 数据导入，支持 `--dry-run` |
+| `npm run tbox:bundle` | 从当前契约生成平台粘贴包 |
+| `npm run package:skills` | 从源码生成 Skill ZIP |
+| `npm run tbox:probe` | 百宝箱接口探针，使用本地配置 |
 
-Windows 可把 `npm` 替换为 `npm.cmd`。
+浏览器测试本地使用系统 Chrome，CI 安装 Playwright Chromium。Mock 测试验证产品流程，真实百宝箱的模型调用、工作流发布版本和评分质量需单独联调。
 
-## 主要 API 分组
+## 仓库与文档
 
-所有内部 API 都使用本地 session Cookie，并返回 `{ ok, data, meta }` 或 `{ ok: false, error, meta }`。
+- `src/app`：页面、API 和全局样式。
+- `src/components`、`src/features`：共享 UI 与业务页面。
+- `src/lib`：业务服务、契约、数据访问与百宝箱适配。
+- `src/agentic-v2`：可维护的平台提示词、工作流、Skill 与评测集。
+- `prisma`：数据库 Schema、迁移和演示数据；`data`：可提交的资源数据。
+- `scripts`、`e2e`：导入、导出、诊断及浏览器验证。
 
-- `/api/auth/*`：注册、登录、退出。
-- `/api/me`：工作台聚合数据，包括画像、匹配度、计划、进度和 AI 运行状态。
-- `/api/onboarding/*`：画像对话和画像确认。
-- `/api/chat/conversations/*`：会话、消息历史、重命名、软删除和 SSE 流式聊天。
-- `/api/plans/*`：计划生成、当前计划、计划决策和任务状态。
-- `/api/simulations/*`：场景、训练会话、逐轮消息和训练报告。
-- `/api/resources`：资源查询和筛选。
-- `/api/memories`、`/api/memory/*`：记忆增删改、候选决策和记忆开关。
-- `/api/privacy/*`：数据导出和清空成长数据。
-- `/api/account`、`/api/account/password`：账号资料（显示名、头像 base64）更新和修改密码。
-- `/api/agentic-v2/candidates/*`：V2 候选查询、接受和拒绝。
-- `/api/admin/role-drafts/*`：管理员岗位草稿和岗位模板审核。
-
-`/api/tbox/chat`、`/api/tbox/chat/stream` 和旧版 `/api/mcp/*` 保留用于诊断或兼容；产品聊天主链路是 `/api/chat/conversations/:id/stream`。
-
-## 数据模型概览
-
-核心模型位于 `prisma/schema.prisma`：
-
-- 用户与认证：`User`（含头像 `avatarDataUrl`）、`UserProfile`、`AuthSession`。
-- 画像引导：`OnboardingConversation`。
-- 聊天：`ChatConversation`、`ChatMessage`、`QuestionLedger`、`OperationExecution`。
-- 成长计划：`CareerPlan`、`LearningRoute`、`ProgressLog`。
-- 训练与证据：`SimulationSession`、`AbilityEvidence`。
-- 候选与投影：`ProfileUpdateCandidate`、`AgentArtifactCandidate`。
-- 内容与岗位：`ResourceItem`、`RoleTemplate`、`RoleDraft`、`CareerExplorationReport`。
-- 记忆：`MemoryItem`。
-
-SQLite 中的复杂字段以 JSON 字符串保存，边界转换统一经过 `src/lib/json.ts`、DTO 和 Zod Schema。
-
-## 安全边界
-
-- 密码使用 bcrypt，登录态使用 httpOnly session Cookie 和数据库 token hash。
-- 业务查询绑定当前用户，候选决策不会接受客户端传入的任意 `userId`。
-- AI 只能生成候选，不能直接写入正式画像、计划、分数或记忆。
-- 画像、计划和学习路线候选使用 `baseVersion` 防止覆盖新数据。
-- 正式投影使用所有权检查、严格 Schema、幂等键和数据库事务。
-- V2 快照限制字段、数量、文本长度和总字节数；普通敏感度之外的记忆不会进入 V2 上下文。
-- 隐私导出不包含 `passwordHash`、头像 base64 和运行密钥；头像需随 `prisma/dev.db` 整体迁移。清空成长数据保留账号和登录态。
-- 陪伴形象选择和浮动宠物位置保存在浏览器 localStorage（`careermate-companion-appearance`、`careermate-companion-visible-appearance`、`careermate-companion-position`），不入数据库，换机器后在设置页重新选择即可。
-- 真实密钥只能放在未提交的 `.env` 或部署环境变量中。
-
-## 文档与代码真源
-
-代码、`prisma/schema.prisma`、`package.json` 和 `.env.example` 是当前行为的优先真源。其他文档用于解释架构、接口和运行约束；如果文档与代码冲突，应先修正文档或以代码为准，不要依据过时文档推断接口行为。
-
-- [Agentic V2 架构交接](AGENTIC_V2_HANDOFF.md)
-- [当前接口设计](docs/接口设计文档.md)
-- [主 Agent 配置](docs/tbox/main-agent.md)
-- [工作流契约](docs/tbox/workflows.md)
-- [知识库边界](docs/tbox/knowledge-bases.md)
-- [TBox 评测用例](docs/evaluation/tbox-cases.md)
-- [Agentic V2 机器可读评测集](src/agentic-v2/evaluation/cases.json)
-
-`docs/superpowers/` 下的 spec 和 plan 是历史设计记录，不应当被当作当前运行契约。
+维护入口：[文档导航](docs/README.md) · [技术架构](docs/architecture.md) · [接口说明](docs/接口设计文档.md) · [Agentic 交接](AGENTIC_V2_HANDOFF.md)。构建缓存、导出包、临时截图和历史任务中间产物不入库；迁移、源码及可复现测试保留。

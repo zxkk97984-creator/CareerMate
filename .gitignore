@@ -25,6 +25,7 @@ prisma/dev.db-journal
 
 # Local generated exports/uploads/screenshots
 exports/
+dist/
 uploads/
 screenshots/
 private/
@@ -80,3 +81,14 @@ src/agentic-v2/skills/*.zip
 work/
 .env.bak-*
 .superpowers/
+
+# Local BOSS samples: analysis/demo input only; never commit raw files
+date/
+
+# Local sensitive architecture audit (never commit/push)
+docs/tbox/平台架构现状审计-2026-09-08.md
+docs/tbox/平台Prompt原文快照-2026-09-08.md
+
+# Reproducible delivery bundles and local task artifacts
+artifacts/
+tasks/

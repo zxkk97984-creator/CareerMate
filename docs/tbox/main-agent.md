@@ -50,6 +50,10 @@ POST /api/chat/conversations/:id/stream
 ```json
 {
   "schemaVersion": "1",
+  "currentTime": "ISO-8601",
+  "timezone": "Asia/Shanghai",
+  "executionMode": "interactive",
+  "responseContract": "agent_artifact_v1",
   "interaction": {
     "surface": "chat",
     "action": "message_submit"
@@ -65,6 +69,16 @@ POST /api/chat/conversations/:id/stream
     "data": {}
   },
   "simulationState": null,
+  "jobSampleContext": null,
+  "taskContext": {},
+  "evidenceBundle": {},
+  "contextCoverage": {
+    "algorithmVersion": "agentic-v2-snapshot-v2",
+    "generatedAt": "ISO-8601",
+    "included": [],
+    "truncated": [],
+    "missing": []
+  },
   "permissions": {
     "candidateCreationAllowed": true,
     "officialWritesAllowed": false
@@ -90,7 +104,7 @@ V2 需要写入业务数据时，在可读正文末尾输出恰好一个：
 schemaVersion: "1.0"
 taskType: profile_assessment | career_exploration | career_plan |
           learning_route | simulation_turn | simulation_report |
-          resume_review | growth_review | memory_item |
+          simulation_scenario | resume_review | growth_review | memory_item |
           career_template_draft
 status: success | needs_input | pending_confirmation | error
 summary: string
@@ -125,7 +139,9 @@ data.plan = AiCareerPlanV2
 
 `data` 顶层只能有 `plan` 字段，不允许把计划字段直接放在 `data` 顶层。Plan V2 必须包含 `schemaVersion=2`、`title`、`targetRole`、`summary`、`horizon`、`phases`、`immediateActions`、`assumptions`、`riskNotes`、`evidenceRefs`；`phases` 内与 `immediateActions` 的 `action.id` 必须全局唯一。
 
-`baseVersion` 使用 `historySnapshot.data.activePlan.version`；没有 active plan 时填 `0`。`status=pending_confirmation`，`requiresUserConfirmation=true`，后端只创建待确认候选，不直接改写正式计划。
+`baseVersion` 使用 `historySnapshot.data.activePlan.version`；没有 active plan 时填 `null`。`status=pending_confirmation`，`requiresUserConfirmation=true`，后端只创建待确认候选，不直接改写正式计划。
+
+V2 正文通过 `src/lib/agentic-v2/artifact-stream-filter.ts` 增量过滤；信封内 JSON 不发送到前端气泡。平台工作流的三个输入 `request`、`task_context_json`、`evidence_bundle_json` 分别来自用户任务、`taskContext` 和 `evidenceBundle`。
 
 ## 四、旧 AgentResponse 路径
 

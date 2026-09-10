@@ -7,9 +7,9 @@
 产品聊天主链路：
 
 ```text
-Kurisu 浮窗
+主聊天 / 工作台助手
 → /api/chat/conversations/:id/stream
-→ src/lib/chat/stream-service.ts
+→ 普通聊天 stream-service / 关联训练 messages-service
 → TBox 适配器或 Agentic V2
 ```
 
@@ -26,6 +26,7 @@ career_plan
 learning_route
 simulation_turn
 simulation_report
+simulation_scenario
 resume_review
 growth_review
 memory_item
@@ -86,16 +87,16 @@ V2 结构由 `src/lib/plans/schema-v2.ts` 校验，全局 action ID 必须唯一
 
 ## 6. 模拟训练
 
-当前训练由本地 `SimulationSession` 管理：
+当前训练由本地 `SimulationSession` 管理，支持推荐场景、自定义场景和岗位样本三类来源：
 
-1. 创建场景和 opening message。
-2. 最多 6 轮回答。
+1. 先预览并允许编辑；点击开始后保存 `scenarioSnapshot`、`scoringSnapshot`、来源和轮次上限。
+2. 创建独立 ChatConversation 并进入主聊天；训练与聊天通过持久化关联恢复，默认最多 6 轮回答。
 3. 至少 3 轮后才允许完成评分。
 4. 生成结构化报告。
 5. 保存分数、优势、改进项和能力影响。
-6. 非降级报告可以创建 `ability_evidence` 候选。
+6. 非降级报告可以创建 `ability_evidence` 候选。完成后同一对话用于报告讨论，不再推进训练轮次。
 
-`simulation_turn` 是逐轮协议，不会直接创建候选；`simulation_report` 在完成接口中单独校验。
+`simulation_turn` 是逐轮协议，不会直接创建候选；`simulation_scenario` 只读预览；`simulation_report` 在完成接口中单独校验。报告保存与能力证据确认是两步。
 
 ## 7. 记忆
 
@@ -118,3 +119,10 @@ V2 snapshot 只读取已确认、职业作用域、普通敏感度且未过期�
 - 候选、版本、权限和事务投影。
 
 因此文档中的资源名称只能作为职责分类，不能替代百宝箱控制台中的真实资源引用和版本核验。
+
+## 9. 资源中心与岗位样本
+
+- 学习资源由 `ResourceItem` 增量导入，必须带可追溯 URL 或完整实践说明；详情接口不返回无操作占位。
+- 岗位样本由 `JobSample` 按 `jobId` 合并 56 个本地 CSV，保留来源文件、导入批次和字段冲突；招聘者姓名、活跃状态和联系方式不进入应用模型上下文。
+- 岗位样本只用于本地分析和演示，不新增爬虫或公开招聘服务；薪资单位不混算，采集日期未知时保持未知。
+- 平台工作流通过 `evidence_bundle_json.jobSample` 消费脱敏后的单个岗位，不接收原始 CSV 全包。
