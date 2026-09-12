@@ -1,25 +1,31 @@
 # CareerMate
 
-CareerMate 是面向大学生与职场新人的 AI 职业成长工作台，提供职业画像、方向探索、成长计划、学习资源、模拟训练和长期记忆。项目使用 Next.js App Router、React、TypeScript、Prisma 与 SQLite，通过百宝箱接入 AI 能力。
+CareerMate 是面向大学生和职场新人的 AI 职业成长工作台，围绕画像、职业探索、计划、学习资源、模拟训练与成长记录提供持续支持。项目是 **Next.js App Router 全栈应用**：页面和业务 API 在同一应用中运行，Prisma 访问本地 SQLite，真实 AI 能力通过百宝箱接入。
 
-## 当前功能
+本文与核心文档按 2026-09-12 的仓库源码校准；平台挂载、模型选择和发布版本需要以实际百宝箱环境为准。
 
-| 入口 | 功能 |
+## 功能入口
+
+| 路径 | 当前功能 |
 |---|---|
-| `/chat` | 主聊天、历史会话、引用、待确认候选及独立训练对话 |
-| `/dashboard` | 成长概览、能力与目标差距、当前任务 |
-| `/path` | 职业计划、学习路线、版本和任务进度 |
-| `/simulation` | 推荐/自定义场景、预览和最近训练；开始后进入独立聊天 |
-| `/resources` | 学习资源、岗位样本、筛选及任务关联 |
-| `/memory` | 记忆管理、待确认建议与能力证据 |
-| `/settings` | 账号、隐私与 AI 陪伴形象 |
-| `/onboarding`、`/admin` | 画像引导、管理员岗位资料审核 |
+| `/`、`/login` | 未登录展示首页；注册、登录；登录后按画像状态跳转 |
+| `/onboarding` | 对话采集画像、恢复引导草稿、确认完成 |
+| `/chat` | 主聊天、会话历史、引用、业务候选卡片、独立训练聊天 |
+| `/dashboard` | 成长概览、能力差距、任务与进度摘要 |
+| `/path` | 职业计划、学习路线、历史计划与任务状态 |
+| `/simulation` | 推荐/自定义/岗位场景预览、开始与恢复训练 |
+| `/resources` | 学习资源与已导入岗位样本、筛选、资源关联候选 |
+| `/memory` | 本地记忆、画像和能力候选的查看与确认 |
+| `/settings` | 账号、密码、头像、隐私数据与陪伴形象 |
+| `/admin` | 管理员岗位草稿编辑、审核与模板维护 |
 
-模拟训练采用“选场景 → 预览 → 独立聊天 → 评分报告”的流程。训练记录可恢复，至少 3 轮有效回答后可评分，默认最多 6 轮；结束后可在原对话继续讨论报告。AI 生成的画像、计划、学习路线和能力证据候选须经用户确认才进入正式业务数据。
+训练流程为“预览场景 → 开始并固定快照 → 独立聊天 → 完成评分 → 讨论报告”。至少 3 轮有效回答后可评分，轮数上限可设为 3–6，默认 6。推荐及岗位预览可本地构造，自定义预览通过场景生成服务；开始训练并不再调用模型生成开场白，而是保存预览快照中的开场白。
+
+AI 候选与正式业务数据分开保存。用户接受候选后，后端重新核对归属、状态、版本与业务契约再写入；聊天记录、训练过程和报告由各自服务持久化。岗位样本是已导入的数据，不代表实时在招。
 
 ## 本地启动
 
-建议使用 Node.js 22 与 npm。
+使用 Node.js 22 与 npm。以下步骤针对全新开发环境；已有 `.env` 请保留本地配置。
 
 ```bash
 npm ci
@@ -30,58 +36,74 @@ npm run db:migrate:deploy
 npm run dev
 ```
 
-打开 [localhost:3000](http://localhost:3000)。新数据库可直接注册账号；如需演示数据，在**空的开发数据库**上执行 `npm run seed`，然后使用 `student_lin` / `careermate123` 登录。Seed 会重建数据，已有数据库不要运行。
+访问 [localhost:3000](http://localhost:3000)。`.env.example` 使用 `DATABASE_URL="file:./dev.db"`，数据库文件位于 `prisma/dev.db`；默认 `TBOX_MODE=mock`、`CAREERMATE_AGENTIC_V2=false`，无需百宝箱凭据即可启动。
 
-`.env.example` 默认使用 Mock，`CAREERMATE_AGENTIC_V2=false`。真实百宝箱接入需在本地 `.env` 设置 API 模式、Agent ID、密钥及相关开关；配置步骤见 [百宝箱实施指南](docs/tbox/百宝箱优化实施指南.md)。不要把真实 `.env`、数据库或原始个人材料提交到仓库。
+可直接注册账号。需要演示数据时在空的开发数据库执行 `npm run seed`，演示账号为 `student_lin` / `careermate123`。**Seed 会删除并重建业务数据，不用于已有数据库升级。** 升级时先备份 SQLite 文件，安装依赖、生成 Prisma Client，再执行 `npm run db:migrate:deploy`。
 
-已有数据库升级：备份数据库，安装依赖、生成 Prisma Client，再执行 `npm run db:migrate:deploy`。其中模拟聊天迁移只增加关联字段，不清空原训练记录。
+接入真实百宝箱时，在本地 `.env` 设置 `TBOX_MODE=api`、有效的 `TBOX_API_KEY` 与 `TBOX_AGENT_ID`；接入 V2 主 Agent 时另设 `CAREERMATE_AGENTIC_V2=true`。`TBOX_AGENT_VERSION` 可固定已发布版本。上下文默认通过 `question_prefix` 传送。详见 [百宝箱架构](docs/tbox/百宝箱架构.md)。
 
-## 架构
+## 总体架构
+
+箭头表示请求或数据流；百宝箱只在 API 模式参与实际模型调用。
 
 ```mermaid
 flowchart TB
-  UI["浏览器：工作台与统一聊天"] --> API["Next.js Route Handlers"]
-  API --> AUTH["身份与所有权校验"]
-  AUTH --> CHAT["聊天服务 / 模拟训练服务"]
-  CHAT --> DB[("Prisma + SQLite")]
-  CHAT --> CTX["脱敏画像、计划、历史与训练上下文"]
-  CTX --> TBOX["百宝箱主 Agent"]
-  TBOX --> TOOLS["知识库 / 搜索 / 工作流 / Skill / 子智能体"]
-  TOOLS --> TBOX
-  TBOX --> RESULT["正文与结构化结果"]
-  RESULT --> CHECK["Schema、版本与业务校验"]
-  CHECK --> UI
-  CHECK --> CANDIDATE["待确认候选"]
-  CANDIDATE --> CONFIRM["用户确认 + 事务投影"]
-  CONFIRM --> DB
+  Browser["浏览器：聊天与业务工作台"]
+  subgraph App["同一个 Next.js 应用"]
+    Routes["页面服务端守卫与 Route Handlers"]
+    Services["聊天、训练、计划、画像等业务服务"]
+    AI["百宝箱适配层：api / manual / mock"]
+    Candidates["候选校验、用户决定与事务投影"]
+    Prisma["Prisma 数据访问"]
+  end
+  DB[("SQLite：本地权威业务数据")]
+  Tbox["外部百宝箱主 Agent 与挂载能力"]
+  Browser --> Routes
+  Routes --> Services
+  Services --> Prisma
+  Prisma <--> DB
+  Services --> AI
+  AI <-->|"仅 API 模式"| Tbox
+  Services -->|"符合契约的候选"| Candidates
+  Routes -->|"用户接受或拒绝"| Candidates
+  Candidates --> Prisma
+  Services -->|"JSON 或 SSE"| Browser
 ```
 
-普通对话使用 SSE；模拟回答复用训练服务，在模型等待期间发送心跳，校验后发送追问并同步聊天记录。服务器保存场景、有效轮次及报告，客户端不能靠切换 URL 改变所属训练。详细数据流和边界见 [技术架构](docs/architecture.md)。
+V2 主聊天以脱敏快照传递个人上下文，过滤回复中的 `CAREERMATE_ARTIFACT` 信封并校验候选。未完成训练通过专用训练服务处理，结束后才转为普通聊天讨论报告。保留的 MCP 接口是独立集成入口，不是当前 V2 主聊天的必经节点。
 
-AI 有 `mock`、`manual`、`api` 三种运行模式。降级结果带来源标识，不能据页面有回复就认定真实 AI 链路成功。Agentic V2 默认通过 `question_prefix` 传递快照，也支持显式配置 `business_data`；平台记忆和本地记忆是不同系统。
-
-## 开发与验证
+## 开发命令
 
 | 命令 | 用途 |
 |---|---|
-| `npm run dev` / `build` / `start` | 开发、生产构建、生产运行 |
-| `npm run verify` | 密钥扫描、lint、类型、单元/集成测试、迁移和构建 |
-| `npm run test:e2e` | 基础 Mock 浏览器测试；独立 `e2e.db` 与 3100 端口 |
-| `npm run test:e2e:v2` | V2 Mock 浏览器测试 |
-| `npm run import:resources` / `import:jobs` | 数据导入，支持 `--dry-run` |
-| `npm run tbox:bundle` | 从当前契约生成平台粘贴包 |
-| `npm run package:skills` | 从源码生成 Skill ZIP |
-| `npm run tbox:probe` | 百宝箱接口探针，使用本地配置 |
+| `npm run dev` / `build` / `start` | Webpack 开发、生产构建、生产服务 |
+| `npm run lint` / `typecheck` / `test` | ESLint、类型生成与检查、Vitest |
+| `npm run test:migrations` | 独立数据库中的迁移冒烟检查 |
+| `npm run verify` | 密钥扫描、lint、类型、测试、迁移与构建 |
+| `npm run test:e2e` / `test:e2e:v2` | 基础 Mock / V2 Mock 浏览器流程 |
+| `npm run import:resources` / `import:jobs` | 导入学习资源或岗位样本，支持 `--dry-run` |
+| `npm run tbox:bundle` | 从源码和契约生成平台交付包 |
+| `npm run package:skills` | 打包两个可独立运行的 Skill |
+| `npm run tbox:probe` | 使用本地配置进行百宝箱契约诊断 |
+| `npm run secret:scan` | 扫描仓库中的疑似凭据 |
 
-浏览器测试本地使用系统 Chrome，CI 安装 Playwright Chromium。Mock 测试验证产品流程，真实百宝箱的模型调用、工作流发布版本和评分质量需单独联调。
+E2E 服务使用 `prisma/e2e.db`、3100 端口和 Mock；脚本会重建该测试库。本地使用系统 Chrome，CI 使用 Playwright Chromium。Mock 流程、真实 SQLite 契约测试和真实百宝箱验证是不同层次，测试通过不能替代平台发布与联调。
 
-## 仓库与文档
+## 仓库与核心文档
 
-- `src/app`：页面、API 和全局样式。
-- `src/components`、`src/features`：共享 UI 与业务页面。
-- `src/lib`：业务服务、契约、数据访问与百宝箱适配。
-- `src/agentic-v2`：可维护的平台提示词、工作流、Skill 与评测集。
-- `prisma`：数据库 Schema、迁移和演示数据；`data`：可提交的资源数据。
-- `scripts`、`e2e`：导入、导出、诊断及浏览器验证。
+| 目录 | 职责 |
+|---|---|
+| `src/app` | 页面、Route Handlers 与全局样式 |
+| `src/components`、`src/features`、`src/hooks` | 共享 UI、业务视图、聊天与页面数据状态 |
+| `src/lib` | 业务服务、鉴权、DTO、契约、百宝箱与 MCP 适配 |
+| `src/agentic-v2` | 平台提示词、工作流源文件、知识库、Skill 与评测资产 |
+| `prisma`、`data` | 数据模型、迁移、Seed 与可提交的资源数据 |
+| `scripts`、`e2e` | 数据导入、打包、诊断与浏览器测试 |
 
-维护入口：[文档导航](docs/README.md) · [技术架构](docs/architecture.md) · [接口说明](docs/接口设计文档.md) · [Agentic 交接](AGENTIC_V2_HANDOFF.md)。构建缓存、导出包、临时截图和历史任务中间产物不入库；迁移、源码及可复现测试保留。
+- [项目架构](docs/项目架构文档.md)：系统边界、业务模块及功能闭环。
+- [技术架构](docs/architecture.md)：运行分层、请求分支、数据关系与并发控制。
+- [API 文档](docs/接口设计文档.md)：完整路由、参数、返回值、SSE 与 MCP。
+- [百宝箱架构](docs/tbox/百宝箱架构.md)：主 Agent、工作流、证据和本地集成边界。
+- [文档导航](docs/README.md)。
+
+环境变量模板以 [.env.example](.env.example) 为准，依赖版本以 [package-lock.json](package-lock.json) 为准。真实 `.env`、数据库、原始个人材料和临时导出包不入库。

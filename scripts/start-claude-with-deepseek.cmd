@@ -18,7 +18,7 @@ set "CLAUDE_CODE_EFFORT_LEVEL=max"
 if /i "%~1"=="--check" goto check
 
 pushd "%~dp0.."
-call claude.cmd "Read AGENTIC_V2_HANDOFF.md completely, verify the current Git branch and worktree, then continue from section 5. Never modify an existing TBox resource and never claim an unexecuted platform operation is complete."
+call claude.cmd "Read README.md, docs/architecture.md, and docs/README.md, verify the current Git branch and worktree, then follow the user task. Never modify an existing TBox resource and never claim an unexecuted platform operation is complete."
 set "CLAUDE_EXIT_CODE=%ERRORLEVEL%"
 popd
 exit /b %CLAUDE_EXIT_CODE%
