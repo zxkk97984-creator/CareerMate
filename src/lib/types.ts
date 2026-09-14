@@ -22,6 +22,16 @@ export const abilityLabels: Record<AbilityKey, string> = {
 
 export const abilityKeys = Object.keys(abilityLabels) as AbilityKey[];
 
+/** 图表轴等窄空间的短标签；展示型长文案仍以 abilityLabels 为准 */
+export const abilityShortLabels: Record<AbilityKey, string> = {
+  aiTooling: "AI 工具",
+  roleFoundation: "岗位基础",
+  dataAnalysis: "数据分析",
+  businessProduct: "业务产品",
+  communication: "沟通协作",
+  projectPractice: "项目实践",
+};
+
 export type AiMode = "api" | "manual" | "mock";
 
 export type TboxMode = AiMode;

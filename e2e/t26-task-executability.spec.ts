@@ -51,6 +51,16 @@ test.describe("T26 七项真实用户任务的可执行性走查", () => {
     await expect(abilities.getByText("成长参考分", { exact: true })).toBeVisible();
     await expect(abilities.locator(".growth-score strong")).toHaveText(/^(\d+|待评估)$/);
     await expect(abilities.getByText(/不代表岗位胜任概率/)).toBeVisible();
+    // 能力雷达图：seed 用户六维齐全，应渲染实心多边形并给出可读摘要
+    const radar = abilities.getByRole("img", { name: /^能力雷达图：/ });
+    await expect(radar).toBeVisible();
+    await expect(radar).toHaveAttribute(
+      "aria-label",
+      /^能力雷达图：AI 工具 \d+ 分、岗位基础 \d+ 分、数据分析 \d+ 分、业务产品 \d+ 分、沟通协作 \d+ 分、项目实践 \d+ 分$/,
+    );
+    await expect(abilities.locator(".growth-radar-polygon")).toHaveCount(1);
+    await expect(abilities.locator(".growth-radar-polyline")).toHaveCount(0);
+    await expect(abilities.getByText("6 项维度均有评估数据。")).toBeVisible();
   });
 
   test(v2Mock ? "任务3 V2 Mock 规划请求遵守不写入契约" : "任务3 生成职业计划并进入可执行", async ({ page }) => {

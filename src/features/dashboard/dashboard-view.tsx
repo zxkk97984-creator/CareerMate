@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { ArrowRight, Check, CheckCircle2, Clock3, Flag, ListTodo, Target } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AbilityRadarChart } from "./ability-radar-chart";
 import { fetchApi } from "@/lib/client-api";
 import type { DashboardDto } from "@/lib/dashboard/model";
 import type { UnifiedPlanTask } from "@/lib/plans/task-model";
@@ -142,6 +143,7 @@ export function DashboardView({ dashboard, loading, error, refresh, setNotice }:
 
         <section className="growth-panel growth-abilities" aria-labelledby="growth-abilities-title">
           <header className="growth-section-heading"><h2 id="growth-abilities-title">能力与成长</h2><a className="growth-link" href="/memory?tab=profile">查看依据</a></header>
+          <AbilityRadarChart abilities={dashboard.abilities} />
           <div className="growth-score"><span>成长参考分</span><div><strong>{dashboard.match?.score ?? "待评估"}</strong>{dashboard.match?.score != null && <span> / 100</span>}</div><p>{dashboard.match?.explanation ?? "积累能力证据后，这里会显示成长参考分。"}</p></div>
           <ul className="growth-ability-list">{dashboard.abilities.map((ability) => <li key={ability.key}><div><span>{ability.label}</span><strong>{ability.score ?? "待评估"}</strong></div>{ability.score !== null && <progress aria-label={ability.label} value={ability.score} max={100} />}</li>)}</ul>
           <p className="growth-footnote">只展示已有记录的能力；参考分用于安排学习，不代表岗位胜任概率。</p>

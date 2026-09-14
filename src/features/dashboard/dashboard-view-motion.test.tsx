@@ -107,5 +107,37 @@ describe("DashboardView (SSR)", () => {
 
     expect(html).not.toContain("value=\"0\"");
     expect(html).toContain("待评估");
+    // 雷达图同样不得把缺失维度落到圆心(等价于 0 分)
+    expect(html).not.toContain("growth-radar-polygon");
+    expect(html).not.toContain("growth-radar-polyline");
+    expect(html).toContain("还没有可展示的能力评估");
+  });
+
+  it("renders the ability radar chart once every dimension is evaluated", () => {
+    const data = makeData();
+    data.profile!.abilityScores = {
+      aiTooling: 58, roleFoundation: 42, dataAnalysis: 45, businessProduct: 50, communication: 62, projectPractice: 38,
+    };
+    const html = renderToStaticMarkup(
+      <DashboardView dashboard={dashboard(data)} refresh={vi.fn(async () => undefined)} setNotice={vi.fn()} />,
+    );
+
+    expect(html).toContain("能力雷达图：AI 工具 58 分");
+    expect(html).toContain("growth-radar-polygon");
+    expect(html).not.toContain("growth-radar-polyline");
+    expect(html).toContain("6 项维度均有评估数据。");
+    expect(html).not.toContain("opacity:0");
+  });
+
+  it("keeps partial ability data out of a closed polygon while still plotting evaluated axes", () => {
+    const data = makeData();
+    data.profile!.abilityScores = { aiTooling: 58, communication: 62 };
+    const html = renderToStaticMarkup(
+      <DashboardView dashboard={dashboard(data)} refresh={vi.fn(async () => undefined)} setNotice={vi.fn()} />,
+    );
+
+    expect(html).not.toContain("growth-radar-polygon");
+    expect(html).toContain("growth-radar-polyline");
+    expect(html).toContain("4 项待评估不会按 0 分计入。");
   });
 });
