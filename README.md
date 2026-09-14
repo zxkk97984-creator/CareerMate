@@ -104,6 +104,7 @@ E2E 服务使用 `prisma/e2e.db`、3100 端口和 Mock；脚本会重建该测�
 - [技术架构](docs/architecture.md)：运行分层、请求分支、数据关系与并发控制。
 - [API 文档](docs/接口设计文档.md)：完整路由、参数、返回值、SSE 与 MCP。
 - [百宝箱架构](docs/tbox/百宝箱架构.md)：主 Agent、工作流、证据和本地集成边界。
+- [MCP 与外部工具对接协议](docs/MCP与外部工具对接协议.md)：夸克搜索、研究证据交换与业务 MCP V2 接入。
 - [文档导航](docs/README.md)。
 
 环境变量模板以 [.env.example](.env.example) 为准，依赖版本以 [package-lock.json](package-lock.json) 为准。真实 `.env`、数据库、原始个人材料和临时导出包不入库。
