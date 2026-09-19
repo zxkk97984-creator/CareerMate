@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { runBin } from '@/test/bin-path';
 const fixture = vi.hoisted(() => ({ db: null as unknown as PrismaClient, user: null as any, generate: vi.fn(), report: vi.fn() }));
 vi.mock('@/lib/prisma', () => ({ getPrisma: () => fixture.db }));
 vi.mock('@/lib/auth', () => ({ requireCurrentUser: async () => fixture.user }));
@@ -18,7 +18,7 @@ beforeAll(async () => {
  directory = mkdtempSync(join(tmpdir(), 'training-chat-'));
  writeFileSync(join(directory, 'test.db'), '');
  const url = `file:${join(directory, 'test.db')}`;
- execFileSync('npx', ['prisma', 'migrate', 'deploy'], { env: { ...process.env, DATABASE_URL: url, NODE_ENV: "development" }, stdio: 'pipe' });
+ runBin('prisma', ['migrate', 'deploy'], { env: { ...process.env, DATABASE_URL: url, NODE_ENV: "development" } });
  fixture.db = new PrismaClient({ datasources: { db: { url } } });
  fixture.user = await fixture.db.user.create({ data: { username: 'training-test', displayName: '测试', passwordHash: 'not-a-real-login', profile: { create: { targetRole: 'data_analyst', targetRoleLabel: '数据分析师' } } }, include: { profile: true } });
  fixture.generate.mockResolvedValue({ data: { text: '请说明你会如何验证这一结果。', warnings: [], conversationId: 'remote-test' }, meta });

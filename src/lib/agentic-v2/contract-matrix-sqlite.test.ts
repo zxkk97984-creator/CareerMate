@@ -10,9 +10,10 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { existsSync, unlinkSync, writeFileSync } from "node:fs";
-import { execSync } from "node:child_process";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
+
+import { runBin } from "@/test/bin-path";
 
 import { parseAgentArtifactEnvelope } from "./artifact-envelope";
 import { validatedAgentArtifactV1Schema } from "./contracts";
@@ -70,10 +71,11 @@ beforeAll(async () => {
   // Match the E2E harness: initialize the empty SQLite file before schema push.
   writeFileSync(testDbPath, "", { flag: "wx" });
   const url = `file:${testDbPath}`;
-  execSync(
-    `npx prisma db push --skip-generate --accept-data-loss --schema="${join(PRISMA_DIR, "schema.prisma")}"`,
-    { env: { ...process.env, DATABASE_URL: url, NODE_ENV: "development" }, stdio: "pipe", cwd: join(PRISMA_DIR, ".."), timeout: 60000 },
-  );
+  runBin("prisma", ["db", "push", "--skip-generate", "--accept-data-loss", `--schema=${join(PRISMA_DIR, "schema.prisma")}`], {
+    env: { ...process.env, DATABASE_URL: url, NODE_ENV: "development" },
+    cwd: join(PRISMA_DIR, ".."),
+    timeout: 60000,
+  });
   prisma = new PrismaClient({ datasources: { db: { url } } });
 }, 120000);
 

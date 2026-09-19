@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { CheckCircle, XCircle, ChevronDown, ChevronUp } from "lucide-react";
+import { readApiJson } from "@/lib/client-api";
 import { playSettle } from "@/lib/motion/settle";
 
 interface AgentArtifactCandidateCardProps {
@@ -132,12 +133,14 @@ export function AgentArtifactCandidateCard({
     setLoading(true);
     try {
       const res = await fetch(`/api/agentic-v2/candidates/${candidateId}`);
-      const body = await res.json();
-      if (body.ok && body.data) {
-        setDetail(body.data);
+      const body = await readApiJson<Record<string, unknown>>(res);
+      if (body?.ok && body.data) {
+        const loaded = body.data;
+        setDetail(loaded);
         // 同步已 resolved 状态
-        if (body.data.status === "accepted" || body.data.status === "rejected") {
-          setStatus(body.data.status as "accepted" | "rejected");
+        const remoteStatus = loaded.status;
+        if (remoteStatus === "accepted" || remoteStatus === "rejected") {
+          setStatus(remoteStatus);
         }
       }
     } catch {

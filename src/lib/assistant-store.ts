@@ -1,5 +1,6 @@
 import type { ConversationItem, MessageItem } from "@/lib/chat/schemas";
 import type { AgenticV2Interaction } from "@/lib/chat/agentic-v2-context";
+import { readApiJson } from "@/lib/client-api";
 import { consumeFrontendSseResponse } from "@/lib/tbox/frontend-sse";
 
 export interface AssistantState {
@@ -58,8 +59,16 @@ export function createAssistantStore(fetcher: typeof fetch = (...args) => fetch(
   };
   async function request<T>(url: string, init?: RequestInit): Promise<T> {
     const response = await fetcher(url, init);
-    const body = await response.json();
-    if (!response.ok || !body?.ok) throw new Error(body?.error?.message ?? "请求失败，请稍后重试");
+    // 服务端异常时 Next 会返回 HTML 错误页，直接 response.json() 会把
+    // "Unexpected token '<' ... is not valid JSON" 这类原始 JS 报错抛到界面上。
+    // 统一走安全解析：拿不到 JSON 时回落到按状态码给出的中文提示。
+    const body = await readApiJson<T>(response);
+    if (!body) {
+      if (response.status >= 500) throw new Error("服务暂时不可用，请稍后重试");
+      if (response.status === 401) throw new Error("登录已过期，请重新登录");
+      throw new Error("请求失败，请稍后重试");
+    }
+    if (!response.ok || !body.ok) throw new Error(body.error?.message ?? "请求失败，请稍后重试");
     return body.data as T;
   }
   function applyHistory(messages: MessageItem[], id: string, token: number) {

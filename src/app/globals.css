@@ -2007,14 +2007,19 @@ select.cm-select {
   transform: scale(0.98);
 }
 
-.login-demo summary {
+.login-demo-toggle {
   cursor: pointer;
   font-size: 13px;
   color: var(--cm-text-muted);
   transition: color var(--cm-duration-fast) ease;
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  text-align: left;
 }
 
-.login-demo summary:hover {
+.login-demo-toggle:hover {
   color: var(--cm-brand);
 }
 
@@ -3840,7 +3845,7 @@ select.cm-select {
   box-shadow: 0 10px 22px rgba(14, 118, 255, 0.30);
 }
 
-.login-demo summary:hover {
+.login-demo-toggle:hover {
   color: var(--cm-brand);
 }
 

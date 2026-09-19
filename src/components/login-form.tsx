@@ -25,6 +25,7 @@ export function LoginForm() {
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [demoOpen, setDemoOpen] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -206,28 +207,37 @@ export function LoginForm() {
           </form>
 
           {/* 演示账号 */}
-          <details className="login-demo" style={{ marginTop: 20, fontSize: 13 }}>
-            <summary style={{ cursor: "pointer", marginBottom: 8 }}>
+          <div className="login-demo" style={{ marginTop: 20, fontSize: 13 }}>
+            <button
+              type="button"
+              className="login-demo-toggle"
+              aria-expanded={demoOpen}
+              aria-controls="login-demo-accounts"
+              onClick={() => setDemoOpen((value) => !value)}
+              style={{ marginBottom: 8 }}
+            >
               演示账号（点击展开）
-            </summary>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <p style={{ margin: 0, fontSize: 12, color: "var(--cm-text-subtle)" }}>
-                选择一个账号快速填入，密码统一为 {DEMO_PASSWORD}
-              </p>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {DEMO_ACCOUNTS.map((acc) => (
-                  <button
-                    key={acc.username}
-                    type="button"
-                    onClick={() => fillDemo(acc.username)}
-                    className="login-demo-btn"
-                  >
-                    {acc.label}
-                  </button>
-                ))}
+            </button>
+            {demoOpen && (
+              <div id="login-demo-accounts" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <p style={{ margin: 0, fontSize: 12, color: "var(--cm-text-subtle)" }}>
+                  选择一个账号快速填入，密码统一为 {DEMO_PASSWORD}
+                </p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {DEMO_ACCOUNTS.map((acc) => (
+                    <button
+                      key={acc.username}
+                      type="button"
+                      onClick={() => fillDemo(acc.username)}
+                      className="login-demo-btn"
+                    >
+                      {acc.label}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-          </details>
+            )}
+          </div>
         </section>
       </div>
     </main>

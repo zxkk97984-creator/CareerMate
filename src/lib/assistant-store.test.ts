@@ -106,6 +106,29 @@ describe("assistant initialization", () => {
     resolve(json({ items: [conv] })); await loading;
     expect(store.getSnapshot()).toMatchObject({ activeConversationId: null, draft: "我自己的新问题" });
   });
+  it("shows a readable message instead of a raw JSON parse error when the server returns an HTML error page", async () => {
+    // 服务端 500 时 Next 返回的是 HTML 错误页；过去直接 response.json() 会把
+    // "Unexpected token '<' ... is not valid JSON" 原样显示到侧边栏。
+    const htmlError = () => new Response("<!DOCTYPE html><html><body>Internal Server Error</body></html>", {
+      status: 500,
+      headers: { "Content-Type": "text/html" },
+    });
+    const store = createAssistantStore(vi.fn().mockImplementation(() => Promise.resolve(htmlError())));
+    await store.reloadConversations();
+    const message = store.getSnapshot().historyError;
+    expect(message).toBe("服务暂时不可用，请稍后重试");
+    expect(message).not.toMatch(/JSON|Unexpected token|DOCTYPE/i);
+  });
+  it("keeps the server-provided message when the error body is a valid envelope", async () => {
+    const store = createAssistantStore(vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ok: false, error: { message: "会话不存在" } }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      }),
+    ));
+    await store.reloadConversations();
+    expect(store.getSnapshot().historyError).toBe("会话不存在");
+  });
 });
 
 
