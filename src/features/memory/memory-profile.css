@@ -1,0 +1,20 @@
+.memory-ability-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 300px) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(20px, 3vw, 48px);
+  min-width: 0;
+}
+
+.memory-ability-list {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding-right: 112px;
+}
+
+@media (max-width: 1100px) {
+  .memory-ability-layout { grid-template-columns: minmax(0, 1fr); }
+  .memory-ability-list { padding-right: 0; }
+  .memory-profile-card { margin-bottom: 112px; }
+}

@@ -11,6 +11,8 @@ import type { CandidateDto } from "@/lib/types";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { AbilityRadarChart } from "@/features/dashboard/ability-radar-chart";
+import "./memory-profile.css";
 
 /** 把决策接口的失败归一化为用户可读提示；409 提示需重生成，404 提示已不存在。 */
 function decisionMessage(status: number, code: string, fallback: string): string {
@@ -429,7 +431,7 @@ export function MemoryView({ memories, candidates, v2Candidates = [], profile, m
       )}
 
       {activeTab === "profile" && (
-        <SurfaceCard title="画像与证据" description="当前画像基础信息与能力记录（只读，不直接编辑分数）">
+        <SurfaceCard className="memory-profile-card" title="画像与证据" description="当前画像基础信息与能力记录（只读，不直接编辑分数）">
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <div className="memory-profile-grid">
               {profileBasics.map((row) => (
@@ -441,13 +443,16 @@ export function MemoryView({ memories, candidates, v2Candidates = [], profile, m
             </div>
             <div style={{ borderTop: "1px solid var(--cm-border)", paddingTop: 14 }}>
               <div style={{ fontSize: 14, fontWeight: 500, color: "var(--cm-text-strong)", marginBottom: 10 }}>能力记录</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {abilityScoreEntries.map((entry) => (
-                  <div key={entry.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, fontSize: 13.5 }}>
-                    <span style={{ color: "var(--cm-text-strong)" }}>{entry.label}</span>
-                    <span style={{ color: "var(--cm-text-muted)" }}>{entry.value != null ? `${entry.value} / 100` : "未评估"}</span>
-                  </div>
-                ))}
+              <div className="memory-ability-layout">
+                <AbilityRadarChart abilities={abilityScoreEntries.map(({ key, label, value }) => ({ key, label, score: value }))} />
+                <div className="memory-ability-list">
+                  {abilityScoreEntries.map((entry) => (
+                    <div key={entry.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, fontSize: 13.5 }}>
+                      <span style={{ color: "var(--cm-text-strong)" }}>{entry.label}</span>
+                      <span style={{ color: "var(--cm-text-muted)" }}>{entry.value != null ? `${entry.value} / 100` : "未评估"}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
               <p style={{ margin: "10px 0 0", fontSize: 12.5, color: "var(--cm-text-subtle)" }}>如需更新能力或画像，请通过右上角“待确认建议”里的候选流程，确认后才写入正式画像。</p>
             </div>

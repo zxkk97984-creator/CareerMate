@@ -4,6 +4,7 @@ import { useLayoutEffect, useRef } from "react";
 import gsap from "gsap";
 import { useMotionSafe } from "@/lib/motion/motion-safe";
 import { buildRadarGeometry, RADAR_CENTER, type RadarAbilityInput } from "@/lib/dashboard/radar";
+import "./ability-radar-chart.css";
 
 interface AbilityRadarChartProps {
   abilities: RadarAbilityInput[];

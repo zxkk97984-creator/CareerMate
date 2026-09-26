@@ -71,19 +71,6 @@
 .growth-evidence-list p { font-size: 12px; margin-top: 3px; overflow-wrap: anywhere; }
 .growth-evidence-list time { display: block; font-size: 11px; color: var(--cm-text-muted); margin-top: 6px; }
 .growth-abilities { grid-area: abilities; }
-/* 能力雷达图：几何与配色统一由这里承载，组件不写内联颜色 */
-.growth-radar { margin: 8px 0 20px; }
-.growth-radar-svg { display: block; width: 100%; max-width: 320px; height: auto; margin: 0 auto; }
-.growth-radar-ring { fill: none; stroke: var(--cm-border-strong); stroke-width: 1; }
-.growth-radar-ring-outer { stroke-opacity: .9; }
-.growth-radar-spoke { stroke: var(--cm-border-strong); stroke-width: 1; stroke-opacity: .55; }
-.growth-radar-polygon { fill: var(--cm-brand); fill-opacity: .14; stroke: var(--cm-brand); stroke-width: 1.8; stroke-linejoin: round; }
-.growth-radar-polyline { fill: none; stroke: var(--cm-brand); stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; }
-.growth-radar-dot { fill: var(--cm-brand); }
-.growth-radar-label { font-size: 11px; fill: var(--cm-text-muted); }
-.growth-radar-label-missing { font-size: 9.5px; }
-.growth-radar-empty { font-size: 11px; fill: var(--cm-text-muted); }
-.growth-radar-caption { margin-top: 6px; font-size: 11px; line-height: 1.6; color: var(--cm-text-muted); text-align: center; }
 .growth-score { margin: 16px 0 24px; padding-bottom: 20px; border-bottom: 1px solid var(--cm-border); }
 .growth-score > span { font-size: 12px; color: var(--cm-text-muted); }
 .growth-score > div { margin-top: 6px; }

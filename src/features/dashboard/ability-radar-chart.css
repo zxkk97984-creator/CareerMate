@@ -1,0 +1,13 @@
+/* Shared by the growth dashboard and the read-only profile view. */
+.growth-radar { min-width: 0; margin: 0; }
+.growth-radar-svg { display: block; width: 100%; max-width: 280px; height: auto; margin: 0 auto; }
+.growth-radar-ring { fill: none; stroke: var(--cm-border-strong); stroke-width: 1; }
+.growth-radar-ring-outer { stroke-opacity: .9; }
+.growth-radar-spoke { stroke: var(--cm-border-strong); stroke-width: 1; stroke-opacity: .55; }
+.growth-radar-polygon { fill: var(--cm-brand); fill-opacity: .14; stroke: var(--cm-brand); stroke-width: 1.8; stroke-linejoin: round; }
+.growth-radar-polyline { fill: none; stroke: var(--cm-brand); stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; }
+.growth-radar-dot { fill: var(--cm-brand); }
+.growth-radar-label { font-size: 11px; fill: var(--cm-text-muted); }
+.growth-radar-label-missing { font-size: 9.5px; }
+.growth-radar-empty { font-size: 11px; fill: var(--cm-text-muted); }
+.growth-radar-caption { margin-top: 6px; font-size: 11px; line-height: 1.6; color: var(--cm-text-subtle); text-align: center; }

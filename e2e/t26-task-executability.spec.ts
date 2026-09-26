@@ -61,6 +61,14 @@ test.describe("T26 七项真实用户任务的可执行性走查", () => {
     await expect(abilities.locator(".growth-radar-polygon")).toHaveCount(1);
     await expect(abilities.locator(".growth-radar-polyline")).toHaveCount(0);
     await expect(abilities.getByText("6 项维度均有评估数据。")).toBeVisible();
+    const radarLabel = await radar.getAttribute("aria-label");
+    expect(radarLabel).not.toBeNull();
+    await abilities.getByRole("link", { name: "查看依据" }).click();
+    await expect(page).toHaveURL(/\/memory\?tab=profile/);
+    const profileRadar = page.getByRole("img", { name: /^能力雷达图：/ });
+    await expect(profileRadar).toBeVisible();
+    await expect(profileRadar).toHaveAttribute("aria-label", radarLabel!);
+    await expect(page.locator(".memory-ability-layout .growth-radar-polygon")).toHaveCount(1);
   });
 
   test(v2Mock ? "任务3 V2 Mock 规划请求遵守不写入契约" : "任务3 生成职业计划并进入可执行", async ({ page }) => {
