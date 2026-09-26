@@ -1,0 +1,52 @@
+/* OD-LAYOUT-PRIMITIVES v1 — structure only: display, flex/grid, overflow, wrapping, ratio.
+   Put this @layer first; product CSS outside the layer always wins. */
+@layer od-layout {
+  :where(.cm-auth) :where(.od-stack,.od-row,.od-row-top,.od-cluster,.od-grid,.od-field,.od-stat,.od-cell,.od-tile) > :where(*) { min-width: 0; }
+
+  /* containers */
+  :where(.cm-auth) .od-stack   { display: flex; flex-direction: column; gap: var(--od-gap, 8px); }
+  :where(.cm-auth) .od-row     { display: flex; align-items: center; gap: var(--od-gap, 8px); }
+  :where(.cm-auth) .od-row-top { display: flex; align-items: flex-start; gap: var(--od-gap, 8px); }
+  :where(.cm-auth) .od-cluster { display: flex; flex-wrap: wrap; align-items: center; gap: var(--od-gap, 8px); }
+  :where(.cm-auth) .od-fill    { flex: 1 1 0; min-width: 0; }
+  :where(.cm-auth) .od-fixed   { flex: none; }
+  :where(.cm-auth) .od-grid    { display: grid; gap: var(--od-gap, 12px); grid-template-columns: repeat(var(--od-cols, 3), minmax(0, 1fr)); }
+
+  /* stacked information: each piece is its own line — never sibling inline spans */
+  :where(.cm-auth) :is(.od-stat, .od-field, .od-cell) { display: grid; gap: var(--od-gap, 2px); }
+  :where(.cm-auth) :where(.od-stat,.od-field,.od-cell) > :where(*) { display: block; }
+  :where(.cm-auth) .od-tile { display: grid; grid-template-rows: auto 1fr; }
+  :where(.cm-auth) :where(.od-tile) > :where(*) { display: block; }
+
+  /* media keeps its intrinsic ratio by default; never a distorted or cropped
+     cover by accident. height:auto lets the ratio win over an <img height="…">
+     attribute. Cropping to a uniform box is an explicit opt-in: set --od-ratio
+     AND add .od-media-cover together (per the core rule, only where a crop is
+     deliberate — tile thumbs, decorative fills — never on full-frame content). */
+  :where(.cm-auth) .od-media { display: block; width: 100%; height: auto; aspect-ratio: var(--od-ratio, auto); }
+  :where(.cm-auth) .od-media-cover { object-fit: cover; }
+
+  /* data text only — authored copy is rewritten to its budget instead */
+  :where(.cm-auth) .od-truncate { display: block; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  :where(.cm-auth) :is(.od-clamp-2, .od-clamp-3) { display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+  :where(.cm-auth) .od-clamp-2 { -webkit-line-clamp: 2; }
+  :where(.cm-auth) .od-clamp-3 { -webkit-line-clamp: 3; }
+  :where(.cm-auth) .od-lines-2 { min-height: calc(2 * 1.4em); }   /* block-level reservation for a shared baseline */
+  :where(.cm-auth) .od-nowrap  { white-space: nowrap; }           /* 数字+单位 · 价格+起 · 日期+星期 */
+  :where(.cm-auth) .od-keep    { word-break: keep-all; overflow-wrap: anywhere; } /* CJK labels break at spaces / <wbr> first */
+
+  /* screen skeleton (optional): bars take their own space, the middle scrolls — no padding guessed for chrome */
+  :where(.cm-auth) .od-screen { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; height: 100%; }
+  :where(.cm-auth) .od-scroll { overflow-y: auto; overscroll-behavior: contain; min-height: 0; }
+
+  /* horizontal rail: the next item peeks at the edge; trailing room survives overflow */
+  :where(.cm-auth) .od-rail { display: flex; gap: var(--od-gap, 8px); overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: none;
+             padding-inline: var(--od-rail-pad, 16px); scroll-padding-inline: var(--od-rail-pad, 16px); }
+  :where(.cm-auth) .od-rail::-webkit-scrollbar { display: none; }
+  :where(.cm-auth) :where(.od-rail) > :where(*) { flex: none; scroll-snap-align: start; }
+  :where(.cm-auth) :where(.od-rail) > :where(:last-child) { margin-inline-end: var(--od-rail-pad, 16px); }
+
+  :where(.cm-auth) .od-spacer { flex: none; visibility: hidden; pointer-events: none; }
+  :where(.cm-auth) .od-touch  { min-width: 44px; min-height: 44px; }
+}
+/* /OD-LAYOUT-PRIMITIVES v1 */

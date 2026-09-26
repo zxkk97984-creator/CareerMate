@@ -1,0 +1,219 @@
+.loginPage {
+  --ca-bg: #ffffff;
+  --ca-section: #f8f8f6;
+  --ca-ink: #202124;
+  --ca-muted: #54565b;
+  --ca-helper: #667085;
+  --ca-brand: #0e76ff;
+  --ca-action: #0b5ed9;
+  --ca-action-hover: #0a50b8;
+  --ca-on-action: #ffffff;
+  --ca-selected: #eaf2ff;
+  --ca-soft-blue: #f4f8ff;
+  --ca-border: #e5e7eb;
+  --ca-control-border: #7b8492;
+  --ca-success: #167344;
+  --ca-success-bg: #f0f8f3;
+  --ca-error: #b42318;
+  --ca-error-bg: #fef3f2;
+  --ca-error-border: #f0b9b4;
+  --ca-focus: #0b5ed9;
+  --ca-font: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
+  --ca-s1: 4px;
+  --ca-s2: 8px;
+  --ca-s3: 12px;
+  --ca-s4: 16px;
+  --ca-s5: 24px;
+  --ca-s6: 32px;
+  --ca-s7: 48px;
+  --ca-s8: 64px;
+  --ca-s9: 96px;
+  --ca-radius-control: 8px;
+  --ca-radius-panel: 12px;
+  --ca-brand-size: clamp(32px,4vw,52px);
+  --ca-form-size: 32px;
+  --ca-body-size: 16px;
+  --ca-lead-size: 18px;
+  --ca-small-size: 14px;
+  --ca-micro: 200ms;
+  --ca-enter: 360ms;
+  --ca-exit: 240ms;
+  --ca-stagger: 40ms;
+  --ca-ease: cubic-bezier(.23,1,.32,1);
+  --ca-shadow: 0 8px 32px rgba(32,33,36,.045);
+  --ca-gutter: 64px;
+  --ca-page-width: 1200px;
+  --ca-form-width: 432px;
+  min-height: 100dvh;
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  color-scheme: light;
+  color: var(--ca-ink);
+  background: var(--ca-bg);
+  font: 400 var(--ca-body-size)/1.65 var(--ca-font);
+  -webkit-font-smoothing: antialiased;
+  isolation: isolate;
+}
+.loginPage, .loginPage * { box-sizing: border-box; }
+.loginPage *::before, .loginPage *::after { box-sizing: border-box; }
+.loginPage [hidden] { display: none !important; }
+.loginPage h1, .loginPage h2, .loginPage p, .loginPage figure { margin: 0; }
+.loginPage a { color: inherit; text-decoration: none; cursor: pointer; }
+.loginPage button, .loginPage input { font: inherit; }
+.loginPage button { color: inherit; cursor: pointer; }
+.loginPage button:disabled { cursor: not-allowed; }
+.loginPage a:focus-visible, .loginPage button:focus-visible, .loginPage summary:focus-visible, .loginPage [tabindex="-1"]:focus-visible { outline: 2px solid var(--ca-focus); outline-offset: 4px; }
+.loginPage ::selection { color: var(--ca-on-action); background: var(--ca-action); }
+.loginPage :global(.cm-auth-icon) { display: block; flex: none; width: 20px; height: 20px; stroke-width: 1.7; }
+.loginPage :global(.cm-auth-header), .loginPage :global(.cm-auth-main), .loginPage :global(.cm-auth-footer) { width: calc(100% - var(--ca-gutter) * 2); max-width: var(--ca-page-width); margin-inline: auto; }
+.loginPage :global(.cm-auth-header) { min-height: 88px; gap: var(--ca-s5); justify-content: space-between; border-bottom: 1px solid var(--ca-border); }
+.loginPage :global(.cm-auth-brand) { gap: var(--ca-s3); font-size: 22px; font-weight: 650; letter-spacing: -.03em; }
+.loginPage :global(.cm-auth-brand) > span { display: block; }
+.loginPage :global(.cm-auth-brand-dot) { color: var(--ca-brand); }
+.loginPage :global(.cm-auth-brand-mark) { display: grid !important; place-items: center; width: 36px; height: 36px; border-radius: var(--ca-radius-control); color: var(--ca-on-action); background: var(--ca-brand); }
+.loginPage :global(.cm-auth-brand-mark) :global(.cm-auth-icon) { width: 22px; height: 22px; }
+.loginPage :global(.cm-auth-back) { gap: var(--ca-s2); min-height: 44px; color: var(--ca-muted); }
+.loginPage :global(.cm-auth-back) :global(.cm-auth-icon) { width: 16px; height: 16px; }
+.loginPage :global(.cm-auth-main) { display: grid; grid-template-columns: minmax(0,1fr) minmax(320px,var(--ca-form-width)); gap: var(--ca-s9); align-items: center; padding-block: var(--ca-s7); }
+.loginPage :global(.cm-auth-intro) { min-width: 0; max-width: 540px; padding-block: var(--ca-s5); }
+.loginPage :global(.cm-auth-eyebrow) { gap: var(--ca-s3); color: var(--ca-action); margin-bottom: var(--ca-s6); font-size: var(--ca-small-size); font-weight: 500; letter-spacing: .02em; }
+.loginPage :global(.cm-auth-signal) { display: block; width: 8px; height: 8px; background: var(--ca-brand); border-radius: 50%; }
+.loginPage :global(.cm-auth-brand-title) { font-size: var(--ca-brand-size); font-weight: 650; line-height: 1.4; letter-spacing: -.04em; text-wrap: balance; }
+.loginPage :global(.cm-auth-brand-title) > span { color: var(--ca-action); }
+.loginPage :global(.cm-auth-brand-description) { color: var(--ca-muted); font-size: var(--ca-lead-size); margin-top: var(--ca-s5); line-height: 1.8; text-wrap: pretty; }
+.loginPage :global(.cm-auth-visual) { margin-top: var(--ca-s6); transform-origin: center; }
+.loginPage :global(.cm-auth-path) { display: block; width: 100%; height: auto; }
+.loginPage :global(.cm-auth-path-ground) { fill: var(--ca-soft-blue); }
+.loginPage :global(.cm-auth-path-back) { stroke: var(--ca-selected); stroke-width: 2; }
+.loginPage :global(.cm-auth-path-guide) { stroke: var(--ca-selected); stroke-width: 1; }
+.loginPage :global(.cm-auth-path-main) { stroke: var(--ca-brand); stroke-width: 2.5; stroke-linecap: round; }
+.loginPage :global(.cm-auth-path-node) circle { fill: var(--ca-bg); stroke: var(--ca-action); stroke-width: 1.5; }
+.loginPage :global(.cm-auth-path-node) path { stroke: var(--ca-action); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.loginPage :global(.cm-auth-path-node) :global(.cm-auth-path-dot), .loginPage :global(.cm-auth-path-small) { fill: var(--ca-action); }
+.loginPage :global(.cm-auth-path-captions) { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: var(--ca-s5); padding-inline: var(--ca-s4); }
+.loginPage :global(.cm-auth-path-captions) :global(.od-stat) { gap: var(--ca-s2); font-size: var(--ca-body-size); }
+.loginPage :global(.cm-auth-path-captions) :global(.od-stat):nth-child(2) { text-align: center; }
+.loginPage :global(.cm-auth-path-captions) :global(.od-stat):last-child { text-align: right; }
+.loginPage :global(.cm-auth-step-no) { color: var(--ca-helper); font-size: var(--ca-small-size); font-variant-numeric: tabular-nums; }
+.loginPage :global(.cm-auth-intro-note) { gap: var(--ca-s3); margin-top: var(--ca-s7); padding-top: var(--ca-s5); border-top: 1px solid var(--ca-border); color: var(--ca-muted); font-size: var(--ca-small-size); }
+.loginPage :global(.cm-auth-intro-note) :global(.cm-auth-icon) { color: var(--ca-action); width: 18px; height: 18px; }
+.loginPage :global(.cm-auth-panel) { min-width: 0; border: 1px solid var(--ca-border); background: var(--ca-bg); border-radius: var(--ca-radius-panel); padding: var(--ca-s6); box-shadow: var(--ca-shadow); }
+.loginPage :global(.cm-auth-title) { font-size: var(--ca-form-size); line-height: 1.4; font-weight: 650; letter-spacing: -.035em; text-wrap: balance; }
+.loginPage :global(.cm-auth-subtitle) { color: var(--ca-muted); margin-top: var(--ca-s2); font-size: var(--ca-body-size); }
+.loginPage :global(.cm-auth-tabs) { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: var(--ca-s2); padding: var(--ca-s1); background: var(--ca-section); border-radius: var(--ca-radius-control); margin-top: var(--ca-s5); }
+.loginPage :global(.cm-auth-tab) { display: block; min-height: 44px; padding: var(--ca-s2) var(--ca-s4); background: transparent; border: 1px solid transparent; border-radius: var(--ca-radius-control); color: var(--ca-muted); font-weight: 500; }
+.loginPage :global(.cm-auth-tab)[aria-selected="true"] { color: var(--ca-action); background: var(--ca-bg); border-color: var(--ca-border); font-weight: 650; }
+.loginPage :global(.cm-auth-tab):disabled { opacity: .65; }
+.loginPage :global(.cm-auth-form) { margin-top: var(--ca-s5); display: flex; flex-direction: column; gap: var(--ca-s5); }
+.loginPage :global(.cm-auth-fields) { display: grid; gap: var(--ca-s4); min-width: 0; }
+.loginPage :global(.cm-auth-field) { display: grid; gap: var(--ca-s2); min-width: 0; }
+.loginPage :global(.cm-auth-label) { display: flex; align-items: baseline; gap: var(--ca-s1); font-weight: 500; }
+.loginPage :global(.cm-auth-required) { color: var(--ca-helper); font-weight: 400; }
+.loginPage :global(.cm-auth-input) { display: block; width: 100%; min-width: 0; height: 52px; border: 1px solid var(--ca-control-border); border-radius: var(--ca-radius-control); padding: var(--ca-s3) var(--ca-s4); font-size: var(--ca-body-size); background: var(--ca-bg); color: var(--ca-ink); outline-offset: 2px; }
+.loginPage :global(.cm-auth-input)::placeholder { color: var(--ca-helper); opacity: 1; }
+.loginPage :global(.cm-auth-input):focus { border-color: var(--ca-focus); outline: 2px solid var(--ca-focus); }
+.loginPage :global(.cm-auth-input):global(.is-invalid) { border-color: var(--ca-error); }
+.loginPage :global(.cm-auth-input):disabled { background: var(--ca-section); color: var(--ca-muted); cursor: wait; }
+.loginPage :global(.cm-auth-password) { display: grid; grid-template-columns: minmax(0,1fr) 48px; align-items: center; border: 1px solid var(--ca-control-border); border-radius: var(--ca-radius-control); background: var(--ca-bg); }
+.loginPage :global(.cm-auth-password) :global(.cm-auth-input) { border: 0; height: 50px; border-radius: var(--ca-radius-control) 0 0 var(--ca-radius-control); padding-right: var(--ca-s2); outline: none; }
+.loginPage :global(.cm-auth-password):focus-within { outline: 2px solid var(--ca-focus); outline-offset: 2px; border-color: var(--ca-focus); }
+.loginPage :global(.cm-auth-password):global(.is-invalid) { border-color: var(--ca-error); }
+.loginPage :global(.cm-auth-eye) { display: grid; place-items: center; min-height: 44px; width: 44px; border: 0; padding: 0; border-radius: var(--ca-radius-control); color: var(--ca-muted); background: transparent; }
+.loginPage :global(.cm-auth-eye):disabled { opacity: .5; }
+.loginPage :global(.cm-auth-hint) { color: var(--ca-helper); font-size: var(--ca-body-size); line-height: 1.5; }
+.loginPage :global(.cm-auth-field-error) { display: flex; align-items: start; gap: var(--ca-s2); color: var(--ca-error); font-size: var(--ca-body-size); line-height: 1.5; }
+.loginPage :global(.cm-auth-field-error) :global(.cm-auth-icon) { width: 16px; height: 16px; margin-top: var(--ca-s1); }
+.loginPage :global(.cm-auth-error-summary) { padding: var(--ca-s4); border: 1px solid var(--ca-error-border); border-radius: var(--ca-radius-control); background: var(--ca-error-bg); color: var(--ca-error); font-size: var(--ca-body-size); overflow-wrap: anywhere; }
+.loginPage :global(.cm-auth-error-summary) > p { font-weight: 600; }
+.loginPage :global(.cm-auth-error-summary) ul { margin: var(--ca-s2) 0 0; padding-left: var(--ca-s5); }
+.loginPage :global(.cm-auth-error-summary) li + li { margin-top: var(--ca-s2); }
+.loginPage :global(.cm-auth-error-summary) a { text-decoration: underline; text-underline-offset: 3px; }
+.loginPage :global(.cm-auth-submit) { display: flex; align-items: center; justify-content: center; gap: var(--ca-s3); min-height: 52px; width: 100%; border: 0; border-radius: var(--ca-radius-control); padding: var(--ca-s3) var(--ca-s4); color: var(--ca-on-action); background: var(--ca-action); font-weight: 600; white-space: nowrap; transition: transform var(--ca-micro) var(--ca-ease); }
+.loginPage :global(.cm-auth-submit) > span { display: block; }
+.loginPage :global(.cm-auth-submit):active:not(:disabled) { transform: scale(.985); }
+.loginPage :global(.cm-auth-submit):disabled { opacity: .72; }
+.loginPage :global(.cm-auth-submit) :global(.cm-auth-icon) { width: 18px; height: 18px; }
+.loginPage :global(.cm-auth-submit-wrap) { display: grid; gap: var(--ca-s2); }
+.loginPage :global(.cm-auth-progress) { display: block; height: 4px; border-radius: var(--ca-radius-control); background: var(--ca-selected); visibility: hidden; }
+.loginPage :global(.cm-auth-progress) > span { display: block; width: 100%; height: 100%; border-radius: inherit; background: var(--ca-brand); transform: scaleX(.45); transform-origin: left; }
+.loginPage :global(.cm-auth-content)[data-state="pending"] :global(.cm-auth-progress) { visibility: visible; }
+.loginPage :global(.cm-auth-result) { display: grid; gap: var(--ca-s3); padding: var(--ca-s4); background: var(--ca-success-bg); color: var(--ca-success); border-radius: var(--ca-radius-control); border: 1px solid var(--ca-success); margin-top: var(--ca-s4); }
+.loginPage :global(.cm-auth-result) p { font-size: var(--ca-body-size); }
+.loginPage :global(.cm-auth-result-actions) { display: flex; flex-wrap: wrap; gap: var(--ca-s2); }
+.loginPage :global(.cm-auth-result-actions) a, .loginPage :global(.cm-auth-result-actions) button { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: var(--ca-s2) var(--ca-s3); background: var(--ca-bg); color: var(--ca-action); border: 1px solid var(--ca-border); border-radius: var(--ca-radius-control); font-size: var(--ca-body-size); }
+.loginPage :global(.cm-auth-demo) { margin-top: var(--ca-s4); padding-top: var(--ca-s4); border-top: 1px solid var(--ca-border); }
+.loginPage :global(.cm-auth-demo-toggle) { display: flex; align-items: center; justify-content: space-between; gap: var(--ca-s4); width: 100%; min-height: 44px; padding: 0; border: 0; background: transparent; color: var(--ca-muted); text-align: left; font-size: var(--ca-body-size); }
+.loginPage :global(.cm-auth-demo-toggle) :global(.cm-auth-icon) { width: 16px; height: 16px; transition: transform var(--ca-micro) var(--ca-ease); }
+.loginPage :global(.cm-auth-demo-toggle)[aria-expanded="true"] :global(.cm-auth-icon) { transform: rotate(180deg); }
+.loginPage :global(.cm-auth-demo-description) { margin-top: var(--ca-s2); color: var(--ca-helper); font-size: var(--ca-body-size); line-height: 1.65; }
+.loginPage :global(.cm-auth-demo-grid) { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: var(--ca-s2); margin-top: var(--ca-s4); }
+.loginPage :global(.cm-auth-demo-account) { display: block; min-height: 44px; padding: var(--ca-s2); border: 1px solid var(--ca-border); border-radius: var(--ca-radius-control); color: var(--ca-action); background: var(--ca-soft-blue); font-size: var(--ca-body-size); }
+.loginPage :global(.cm-auth-demo-account):disabled { opacity: .5; }
+.loginPage :global(.cm-auth-demo-status) { margin-top: var(--ca-s3); color: var(--ca-success); font-size: var(--ca-body-size); }
+.loginPage :global(.cm-auth-preview-note) { color: var(--ca-helper); font-size: var(--ca-small-size); margin-top: var(--ca-s4); line-height: 1.7; }
+.loginPage :global(.cm-auth-footer) { justify-content: space-between; gap: var(--ca-s5); min-height: 72px; padding-block: var(--ca-s5); border-top: 1px solid var(--ca-border); color: var(--ca-helper); font-size: var(--ca-small-size); }
+.loginPage :global(.cm-auth-sr) { position: absolute; display: block; width: 1px; height: 1px; padding: 0; margin: 0; border: 0; clip-path: inset(50%); overflow: hidden; white-space: nowrap; }
+@keyframes cm-auth-enter { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes cm-auth-progress { from { transform: scaleX(.25); opacity: .6; } to { transform: scaleX(.85); opacity: 1; } }
+@media (prefers-reduced-motion: no-preference) {
+  .loginPage :global(.cm-auth-intro), .loginPage :global(.cm-auth-panel) { animation: cm-auth-enter var(--ca-enter) var(--ca-ease) both; }
+  .loginPage :global(.cm-auth-panel) { animation-delay: var(--ca-stagger); }
+  .loginPage :global(.cm-auth-path-node) { animation: cm-auth-enter var(--ca-enter) var(--ca-ease) both; }
+  .loginPage :global(.cm-auth-path-node-two) { animation-delay: var(--ca-stagger); }
+  .loginPage :global(.cm-auth-path-node-three) { animation-delay: calc(var(--ca-stagger) * 2); }
+  .loginPage :global(.cm-auth-nickname), .loginPage :global(.cm-auth-demo-content), .loginPage :global(.cm-auth-result) { animation: cm-auth-enter var(--ca-exit) var(--ca-ease) both; }
+  .loginPage :global(.cm-auth-content)[data-state="pending"] :global(.cm-auth-progress) > span { animation: cm-auth-progress var(--ca-enter) var(--ca-ease) infinite alternate; }
+}
+@media (hover: hover) {
+  .loginPage :global(.cm-auth-back):hover { color: var(--ca-action); }
+  .loginPage :global(.cm-auth-submit):hover:not(:disabled) { background: var(--ca-action-hover); transform: translateY(-1px); }
+  .loginPage :global(.cm-auth-tab):hover:not(:disabled), .loginPage :global(.cm-auth-eye):hover:not(:disabled) { color: var(--ca-action); background: var(--ca-selected); }
+  .loginPage :global(.cm-auth-demo-toggle):hover { color: var(--ca-action); }
+  .loginPage :global(.cm-auth-demo-account):hover:not(:disabled) { border-color: var(--ca-action); background: var(--ca-selected); }
+  .loginPage :global(.cm-auth-result-actions) a:hover, .loginPage :global(.cm-auth-result-actions) button:hover { border-color: var(--ca-action); }
+}
+@media (min-width: 1440px) {
+  .loginPage :global(.cm-auth-main) { padding-block: var(--ca-s8); }
+}
+@media (max-width: 1199px) {
+  .loginPage { --ca-gutter: 48px; }
+  .loginPage :global(.cm-auth-main) { gap: var(--ca-s7); }
+  .loginPage :global(.cm-auth-brand-title) { font-size: clamp(32px,3.8vw,44px); }
+  .loginPage :global(.cm-auth-brand-description) { font-size: var(--ca-body-size); }
+}
+@media (max-width: 1023px) {
+  .loginPage { --ca-gutter: 32px; }
+  .loginPage :global(.cm-auth-main) { grid-template-columns: minmax(0,1fr); justify-items: center; gap: var(--ca-s6); padding-block: var(--ca-s7); }
+  .loginPage :global(.cm-auth-intro) { text-align: center; max-width: 560px; padding: 0; }
+  .loginPage :global(.cm-auth-eyebrow) { justify-content: center; margin-bottom: var(--ca-s4); }
+  .loginPage :global(.cm-auth-brand-title) { font-size: 32px; }
+  .loginPage :global(.cm-auth-brand-title) br { display: none; }
+  .loginPage :global(.cm-auth-brand-description) { margin-top: var(--ca-s4); }
+  .loginPage :global(.cm-auth-visual), .loginPage :global(.cm-auth-intro-note) { display: none; }
+  .loginPage :global(.cm-auth-panel) { width: 100%; max-width: var(--ca-form-width); }
+}
+@media (max-width: 767px) {
+  .loginPage { --ca-gutter: 24px; --ca-form-size: 28px; }
+  .loginPage :global(.cm-auth-header) { min-height: 80px; gap: var(--ca-s4); }
+  .loginPage :global(.cm-auth-brand) { font-size: 20px; gap: var(--ca-s2); }
+  .loginPage :global(.cm-auth-brand-mark) { width: 32px; height: 32px; }
+  .loginPage :global(.cm-auth-back) { font-size: var(--ca-small-size); gap: var(--ca-s2); }
+  .loginPage :global(.cm-auth-main) { padding-block: var(--ca-s6); gap: var(--ca-s5); }
+  .loginPage :global(.cm-auth-intro) { text-align: left; width: 100%; max-width: var(--ca-form-width); }
+  .loginPage :global(.cm-auth-eyebrow) { justify-content: start; margin-bottom: var(--ca-s2); }
+  .loginPage :global(.cm-auth-brand-title) { font-size: 24px; letter-spacing: -.03em; }
+  .loginPage :global(.cm-auth-brand-description) { display: none; }
+  .loginPage :global(.cm-auth-panel) { padding: var(--ca-s5); }
+  .loginPage :global(.cm-auth-footer) { flex-wrap: wrap; gap: var(--ca-s2); padding-block: var(--ca-s4); }
+  .loginPage :global(.cm-auth-footer) > span { display: block; }
+}
+@media (max-width: 374px) {
+  .loginPage { --ca-gutter: 16px; }
+  .loginPage :global(.cm-auth-panel) { padding: var(--ca-s4); }
+  .loginPage :global(.cm-auth-back) { gap: var(--ca-s1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .loginPage *, .loginPage *::before, .loginPage *::after { animation: none !important; transition: none !important; }
+}

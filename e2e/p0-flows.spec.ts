@@ -37,6 +37,8 @@ test("login recovers when the server returns an empty error response", async ({ 
     await route.fulfill({ status: 500, body: "" });
   });
   await page.goto("/login");
+  await page.getByLabel("账号").fill("student_lin");
+  await page.getByLabel("密码").fill("careermate123");
   await page.getByRole("button", { name: "进入 CareerMate" }).click();
   await expect(page.getByText("登录服务暂时不可用，请稍后重试")).toBeVisible();
   await expect(page.getByRole("button", { name: "进入 CareerMate" })).toBeEnabled();
