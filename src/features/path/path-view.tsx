@@ -3,18 +3,20 @@
 /**
  * 职业路径：长期方向与近期执行分开。
  *
- * 桌面端使用“阶段导航 + 任务主区 + 任务详情”；移动端阶段横向切换，
- * 任务详情进入全屏抽屉。任务数据只读 CareerPlanDto.tasks（V1/V2 共享）。
+ * 阶段导航与任务主区保持两栏，详情按需打开；移动端阶段横向切换。
+ * 任务数据只读 CareerPlanDto.tasks（V1/V2 共享）。
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { AlertTriangle, ArrowRight, CalendarRange, CheckCircle2, Clock3, History, Lightbulb, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, CalendarRange, Check, CheckCircle2, Clock3, History, Lightbulb, RotateCcw, Route } from "lucide-react";
 import { LearningRouteDisplay } from "@/components/path/learning-route-view";
 import { UnifiedTaskDetail } from "@/components/path/unified-task-detail";
 import { Button } from "@/components/ui/button";
 import { InlineAlert } from "@/components/ui/inline-alert";
+import { TaskDetailDrawer } from "./task-detail-drawer";
+import "./path.css";
 import { fetchApi } from "@/lib/client-api";
 import {
   selectUnifiedNextTask,
@@ -98,44 +100,54 @@ function summaryFor(plan: CareerPlanDto | null): PlanTaskSummary | null {
 
 function TaskCard({
   task,
+  index,
   busy,
   selected,
   onOpen,
   onStatusChange,
 }: {
   task: UnifiedPlanTask;
+  index: number;
   busy: boolean;
   selected: boolean;
   onOpen: () => void;
   onStatusChange: (taskId: string, status: TaskStatus) => void;
 }) {
   return (
-    <article className={`path-task-card ${selected ? "selected" : ""}`}>
-      <button type="button" className="path-task-card-main" onClick={onOpen} aria-label={`查看 ${task.title} 详情`}>
-        <div className="path-task-card-head">
-          <h4>{task.title}</h4>
-          <span className={`path-task-state path-task-state-${task.status}`}>{taskStatusLabels[task.status]}</span>
-        </div>
-        <p>{task.description || "待补充可执行说明。"}</p>
+    <article className={`path-task-card ${selected ? "selected" : ""}`} data-status={task.status}>
+      <div className="path-task-card-head">
+        <span className="path-task-number" aria-hidden="true">
+          {task.status === "done" ? <Check size={15} /> : String(index + 1).padStart(2, "0")}
+        </span>
+        <h4>{task.title}</h4>
+        <label className="path-task-card-status">
+          <span className="sr-only">更新 {task.title} 状态</span>
+          <select
+            className="cm-status-select"
+            disabled={busy}
+            value={task.status}
+            onChange={(event) => onStatusChange(task.id, event.target.value as TaskStatus)}
+          >
+            {taskStatuses.map((status) => (
+              <option key={status} value={status}>{taskStatusLabels[status]}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <p className="path-task-description">{task.description || "执行说明待补充，可与 AI 讨论细化。"}</p>
+      <dl className="path-task-deliverables">
+        <div><dt>任务产出</dt><dd>{task.outputs.join("、") || "产出待细化"}</dd></div>
+        <div><dt>验收标准</dt><dd>{task.acceptanceCriteria.join("、") || "验收标准待细化"}</dd></div>
+      </dl>
+      <div className="path-task-card-footer">
         <div className="path-task-card-meta">
-          <span><Clock3 size={13} />{task.estimatedHours != null ? `约 ${task.estimatedHours} 小时` : task.cadence ?? "投入待细化"}</span>
-          {task.dueWeek != null ? <span><CalendarRange size={13} />第 {task.dueWeek} 周</span> : null}
-          <span><CheckCircle2 size={13} />{task.outputs.length > 0 ? `产出：${task.outputs.join("、")}` : "产出待细化"}</span>
+          <span><Clock3 size={14} />{task.estimatedHours != null ? `约 ${task.estimatedHours} 小时` : task.cadence ?? "投入待细化"}</span>
+          {task.dueWeek != null ? <span><CalendarRange size={14} />第 {task.dueWeek} 周</span> : null}
         </div>
-      </button>
-      <label className="path-task-card-status">
-        <span className="sr-only">更新 {task.title} 状态</span>
-        <select
-          className="cm-status-select"
-          disabled={busy}
-          value={task.status}
-          onChange={(event) => onStatusChange(task.id, event.target.value as TaskStatus)}
-        >
-          {taskStatuses.map((status) => (
-            <option key={status} value={status}>{taskStatusLabels[status]}</option>
-          ))}
-        </select>
-      </label>
+        <button type="button" className="path-task-open" onClick={onOpen} aria-label={`查看 ${task.title} 详情`} aria-haspopup="dialog">
+          查看任务详情 <ArrowRight size={14} />
+        </button>
+      </div>
     </article>
   );
 }
@@ -237,6 +249,8 @@ export function PathView({
   setNotice,
 }: PathViewProps) {
   const searchParams = useSearchParams();
+  const taskIdFromUrl = searchParams.get("taskId");
+  const openedTaskParam = useRef<string | null>(null);
   const [busyTaskId, setBusyTaskId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [decisionBusy, setDecisionBusy] = useState(false);
@@ -257,13 +271,17 @@ export function PathView({
   const summary = summaryFor(plan);
 
   useEffect(() => {
-    const taskIdFromUrl = searchParams.get("taskId");
-    if (!taskIdFromUrl) return;
+    if (!taskIdFromUrl) {
+      openedTaskParam.current = null;
+      return;
+    }
+    if (openedTaskParam.current === taskIdFromUrl) return;
     const task = tasks.find((item) => item.id === taskIdFromUrl);
     if (!task) return;
+    openedTaskParam.current = taskIdFromUrl;
     setSelectedTaskId(task.id);
-    setSelectedPhaseId(task.phaseId ?? null);
-  }, [searchParams, tasks]);
+    setSelectedPhaseId(task.phaseId ?? "unassigned");
+  }, [taskIdFromUrl, tasks]);
 
   useEffect(() => {
     let active = true;
@@ -350,34 +368,44 @@ export function PathView({
     }
   }
 
+  function openTask(task: UnifiedPlanTask) {
+    setSelectedPhaseId(task.phaseId ?? "unassigned");
+    setSelectedTaskId(task.id);
+  }
+
   return (
     <div className="path-layout" data-od-id="path-layout">
       <section className="path-head">
-        <div>
-          <span className="path-eyebrow">当前执行</span>
-          <h2>{plan?.targetRoleLabel ?? profileRoleLabel ?? plan?.targetRole ?? "还没有职业路径"}</h2>
-          <p className="path-head-desc">
-            {plan
-              ? `${summary?.currentPhaseTitle ?? "当前阶段"} · 执行版本 v${plan.version} · 每周预算 ${summary?.weeklyBudgetHours ?? "未设置"} 小时`
-              : "先生成一个可执行的计划，再从本周第一步开始。"}
-          </p>
-          {executionMeta ? (
-            <span
-              className="path-execution-badge"
-              data-mode={executionMeta.actualMode}
-            >
-              {executionMeta.actualMode === "api" ? "百宝箱 API · 真实链路" : `AI 来源：${executionMeta.actualMode}`}
-              {executionMeta.degraded ? "（已降级）" : ""}
-            </span>
-          ) : null}
+        <div className="path-goal">
+          <span className="path-goal-icon" aria-hidden="true"><Route size={22} /></span>
+          <div>
+            <span className="path-eyebrow">当前职业目标</span>
+            <h2>{plan?.targetRoleLabel ?? profileRoleLabel ?? plan?.targetRole ?? "还没有职业路径"}</h2>
+            <p className="path-head-desc">
+              {plan
+                ? summary?.currentPhaseTitle ?? "当前阶段"
+                : "先生成一个可执行的计划，再从本周第一步开始。"}
+            </p>
+            {plan ? <div className="path-plan-meta">
+              <span>执行版本 v{plan.version}</span>
+              <span><Clock3 size={13} />每周预算 {summary?.weeklyBudgetHours != null ? `${summary.weeklyBudgetHours} 小时` : "待设置"}</span>
+            </div> : null}
+          </div>
         </div>
-        <div className="path-head-actions">
-          <Button variant="secondary" onClick={() => setShowVersions((value) => !value)}>
-            <History size={15} /> {showVersions ? "收起历史版本" : "历史版本"}
-          </Button>
-          <Button disabled={generating} onClick={generatePlan}>
-            {generating ? "生成中..." : plan ? "重规划" : "生成路径"}
-          </Button>
+        <div className="path-head-side">
+          <div className="path-head-actions">
+            <Button variant="secondary" aria-expanded={showVersions} onClick={() => setShowVersions((value) => !value)}>
+              <History size={15} /> {showVersions ? "收起历史版本" : "历史版本"}
+            </Button>
+            <Button variant={plan ? "secondary" : "primary"} className={!plan ? "path-generate" : undefined} loading={generating} disabled={generating} onClick={generatePlan}>
+              {!generating ? <RotateCcw size={15} /> : null}
+              {generating ? "生成中..." : plan ? "重规划" : "生成路径"}
+            </Button>
+          </div>
+          {summary?.completionRate != null ? <div className="path-plan-progress">
+            <div><span>计划进度 · {summary.done}/{summary.total} 已完成</span><strong>{summary.completionRate}%</strong></div>
+            <progress aria-label="职业计划完成进度" value={summary.done} max={summary.total} />
+          </div> : null}
         </div>
       </section>
 
@@ -436,52 +464,58 @@ export function PathView({
                   <span><CheckCircle2 size={13} />{nextTask.outputs.join("、") || "产出待细化"}</span>
                 </div>
               </div>
-              <a href={`#task-${nextTask.id}`} onClick={() => setSelectedTaskId(nextTask.id)}>
+              <button type="button" onClick={() => openTask(nextTask)} aria-haspopup="dialog">
                 查看任务 <ArrowRight size={15} />
-              </a>
+              </button>
             </section>
           ) : null}
 
           <div className="path-workspace">
-            <nav className="path-stage-nav" aria-label="计划阶段">
-              {groups.map((group, index) => {
-                const groupDone = group.tasks.filter((task) => task.status === "done").length;
-                return (
-                  <button
-                    key={group.id}
-                    type="button"
-                    className={group.id === activeGroup?.id ? "active" : ""}
-                    onClick={() => setSelectedPhaseId(group.id)}
-                  >
-                    <span className="path-stage-index">{String(index + 1).padStart(2, "0")}</span>
-                    <span>
-                      <strong>{group.title}</strong>
-                      <small>{group.durationLabel || `${group.tasks.length} 项任务`} · {groupDone}/{group.tasks.length} 完成</small>
-                    </span>
-                  </button>
-                );
-              })}
-            </nav>
+            <div className="path-stage-rail">
+              <div className="path-stage-rail-head"><h3>成长阶段</h3><span>{groups.length} 个阶段</span></div>
+              <nav className="path-stage-nav" aria-label="计划阶段">
+                {groups.map((group, index) => {
+                  const groupDone = group.tasks.filter((task) => task.status === "done").length;
+                  return (
+                    <button
+                      key={group.id}
+                      type="button"
+                      className={group.id === activeGroup?.id ? "active" : ""}
+                      aria-current={group.id === activeGroup?.id ? "step" : undefined}
+                      onClick={() => setSelectedPhaseId(group.id)}
+                    >
+                      <span className="path-stage-index">{String(index + 1).padStart(2, "0")}</span>
+                      <span>
+                        <strong>{group.title}</strong>
+                        <small>{group.durationLabel ? `${group.durationLabel} · ` : ""}{groupDone}/{group.tasks.length} 完成</small>
+                      </span>
+                    </button>
+                  );
+                })}
+              </nav>
+            </div>
 
             <section className="path-stage-main" data-od-id="path-stage-main">
               {activeGroup ? (
                 <>
                   <div className="path-section-head">
                     <div>
-                      <span className="path-eyebrow">阶段目标</span>
+                      <span className="path-eyebrow">阶段 {String(groups.indexOf(activeGroup) + 1).padStart(2, "0")} · 阶段目标</span>
                       <h3>{activeGroup.title}</h3>
-                      <p>{activeGroup.objective || "该阶段目标待补充。"}</p>
+                      {activeGroup.objective ? <p>{activeGroup.objective}</p> : null}
                     </div>
                     <span className="path-stage-count">{activeGroup.tasks.length} 项任务</span>
                   </div>
                   <div className="path-task-cards">
-                    {activeGroup.tasks.map((task) => (
+                    {activeGroup.tasks.length === 0 ? <p className="path-empty-inline">这个阶段暂无任务，可与 AI 讨论下一步安排。</p> : null}
+                    {activeGroup.tasks.map((task, index) => (
                       <TaskCard
                         key={task.id}
                         task={task}
-                        busy={busyTaskId === task.id}
+                        index={index}
+                        busy={busyTaskId !== null}
                         selected={selectedTaskId === task.id}
-                        onOpen={() => setSelectedTaskId(task.id)}
+                        onOpen={() => openTask(task)}
                         onStatusChange={(id, status) => void updateTask(id, status)}
                       />
                     ))}
@@ -491,28 +525,18 @@ export function PathView({
                 <p className="path-empty-inline">当前计划没有可读取的任务，请重新生成并预览。</p>
               )}
             </section>
-
-            <aside className="path-stage-detail" aria-label="任务详情">
-              {selectedTask ? (
-                <>
-                  <button type="button" className="path-detail-close" onClick={() => setSelectedTaskId(null)} aria-label="关闭任务详情">
-                    <X size={16} />
-                  </button>
-                  <UnifiedTaskDetail
-                    task={selectedTask}
-                    planId={plan.id}
-                    busy={busyTaskId === selectedTask.id}
-                    onStatusChange={(id, status) => void updateTask(id, status)}
-                  />
-                </>
-              ) : (
-                <div className="path-detail-empty">
-                  <span>任务详情</span>
-                  <p>选择一项任务，查看做什么、预计投入、产出和验收标准。</p>
-                </div>
-              )}
-            </aside>
           </div>
+
+          {selectedTask ? (
+            <TaskDetailDrawer onClose={() => setSelectedTaskId(null)}>
+              <UnifiedTaskDetail
+                task={selectedTask}
+                planId={plan.id}
+                busy={busyTaskId !== null}
+                onStatusChange={(id, status) => void updateTask(id, status)}
+              />
+            </TaskDetailDrawer>
+          ) : null}
 
           <section className="path-section">
             <div className="path-section-head">
@@ -548,6 +572,12 @@ export function PathView({
           </div>
         </>
       )}
+      {executionMeta ? (
+        <p className="path-execution-meta" data-mode={executionMeta.actualMode}>
+          {executionMeta.actualMode === "api" ? "计划来源：百宝箱 API" : `计划来源：${executionMeta.actualMode}`}
+          {executionMeta.degraded ? "（已降级）" : ""}
+        </p>
+      ) : null}
     </div>
   );
 }

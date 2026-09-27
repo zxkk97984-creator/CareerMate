@@ -98,7 +98,7 @@ export function ChatComposer({ onSend, disabled, value, onChange, placeholder, m
         </button>
       </div>
       <p className="composer-hint">
-        {text.length > 0 && `${text.length}/8000 `}
+        {text.length > 0 && `${text.length}/${maxLength} `}
         AI 建议仅供参考，重要变更由你确认。
       </p>
     </div>

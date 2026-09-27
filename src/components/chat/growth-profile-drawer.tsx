@@ -21,7 +21,7 @@ export function GrowthProfileDrawer({ open, onClose }: { open: boolean; onClose:
       {error ? <p role="alert">档案暂时无法加载，请关闭后重试。</p> : !profile ? <p role="status">正在读取档案…</p> : <>
         <section className="drawer-section"><Target size={20}/><p className="drawer-label">目标岗位</p><h3>{profile.targetRoleLabel || "还没有确定方向"}</h3><p>{profile.major || "可以在对话中补充你的背景"}</p></section>
         <section className="drawer-section"><Clock size={20}/><p className="drawer-label">每周可投入</p><h3>{profile.weeklyAvailableHours == null ? "尚未填写" : `${profile.weeklyAvailableHours} 小时`}</h3></section>
-        {!profile.onboardingCompleted && <Link className="drawer-link" href="/onboarding">完善职业画像<ArrowUpRight size={16}/></Link>}
+        <Link className="drawer-link" href="/chat?intent=profile" onClick={onClose}>在对话中完善画像<ArrowUpRight size={16}/></Link>
       </>}
       <Link className="drawer-link" href="/path">查看职业路径<ArrowUpRight size={16}/></Link>
       <Link className="drawer-link" href="/memory">审阅建议与成长证据<ArrowUpRight size={16}/></Link>

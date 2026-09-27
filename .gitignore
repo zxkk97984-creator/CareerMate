@@ -49,6 +49,10 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 *.log
+.careermate/
+.runtime/
+/submission/
+__pycache__/
 
 # Testing
 coverage/

@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { homeDestination } from "@/lib/onboarding-routing";
-import { LandingPage } from "@/components/landing-page";
+import { LandingPage } from "@/components/careermate-landing/landing-page";
 
 export default async function HomePage() {
   const user = await getCurrentUser();

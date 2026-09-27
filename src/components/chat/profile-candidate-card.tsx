@@ -188,11 +188,11 @@ export function ProfileCandidateCard({
               {editError && <p className="mt-1 text-xs text-[var(--cm-danger)]">{editError}</p>}
             </div>
           )}
-          <div className="flex gap-2" role="group" aria-label="候选操作">
+          <div className="profile-candidate-actions flex gap-2" role="group" aria-label="候选操作">
             <button
               onClick={() => handleAction("accept")}
               disabled={loading}
-              className="px-3 py-1.5 text-xs rounded-lg bg-[var(--cm-gradient-brand)] text-white hover:brightness-95 disabled:opacity-50 transition-colors"
+              className="profile-candidate-confirm px-3 py-1.5 text-xs rounded-lg bg-[var(--cm-gradient-brand)] text-white hover:brightness-95 disabled:opacity-50 transition-colors"
             >
               确认
             </button>

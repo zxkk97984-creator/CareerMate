@@ -104,6 +104,12 @@ export function createAssistantStore(fetcher: typeof fetch = (...args) => fetch(
       initialized = true;
       const token = sequence;
       await actions.reloadConversations();
+      // An explicit profile entry owns the first screen; don't replace it with a
+      // restored training/history URL before the user has chosen a conversation.
+      if (typeof window !== "undefined" && window.location.pathname === "/chat") {
+        const params = new URLSearchParams(window.location.search);
+        if (["profile", "onboarding"].includes(params.get("intent") ?? "") || params.has("conversationId")) return;
+      }
       let saved: string | null = null;
       try { saved = sessionStorage.getItem("careermate-active-conversation"); } catch { /* unavailable */ }
       const restored = state.conversations.find(item => item.id === saved) ?? state.conversations[0];
@@ -182,6 +188,13 @@ export function createAssistantStore(fetcher: typeof fetch = (...args) => fetch(
           if (token !== sequence) return;
           conversationId = conversation.id;
           rememberConversation(conversationId);
+          if (typeof window !== "undefined" && window.location.pathname === "/chat") {
+            const params = new URLSearchParams(window.location.search);
+            if (params.get("intent") === "profile") {
+              params.set("conversationId", conversationId);
+              window.history.replaceState(null, "", `/chat?${params.toString()}`);
+            }
+          }
           update({ activeConversationId: conversationId, conversations: [conversation, ...state.conversations] });
         }
         const makeMessage = (role: string, id: string, value: string): MessageItem => ({ id, conversationId: conversationId!, role, content: value, parts: [], status: role === "user" ? "completed" : "streaming", executionMeta: {}, contextMeta: {}, createdAt: new Date().toISOString() });
@@ -243,7 +256,10 @@ export function createAssistantStore(fetcher: typeof fetch = (...args) => fetch(
         if (token === sequence && !state.recovering) update({ streaming: false, phase: "idle" });
       }
     },
-    async retry(text: string) { await actions.send(text); },
+    async retry(text: string) {
+      const previous = retryRequest?.text === text.trim() ? retryRequest : null;
+      await actions.send(text, previous?.actionId, previous?.interaction);
+    },
   };
   return actions;
 }

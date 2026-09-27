@@ -2,14 +2,32 @@
 
 CareerMate 是面向大学生和职场新人的 AI 职业成长工作台，围绕画像、职业探索、计划、学习资源、模拟训练与成长记录提供持续支持。项目是 **Next.js App Router 全栈应用**：页面和业务 API 在同一应用中运行，Prisma 访问本地 SQLite，真实 AI 能力通过百宝箱接入。
 
-本文与核心文档按 2026-09-12 的仓库源码校准；平台挂载、模型选择和发布版本需要以实际百宝箱环境为准。
+平台挂载、模型选择和发布版本需要以实际百宝箱环境为准。
+
+## 比赛交付与一键启动
+
+Windows 双击 `start.bat`，macOS 双击 `start.command`，Linux 执行 `bash start.sh`。脚本自动下载缺失的 Node.js 与锁定依赖，建立独立的 `prisma/review.db`，构建并打开 `http://localhost:3000`。只监听本机；按 Ctrl+C 停止。
+
+全新评审数据库自动创建体验账号 `reviewer / careermate123`，重复启动保留数据。从仓库启动时，未配置 `.env` 会复制 mock 模板；比赛私有交付包可附带作者提供的真实 API 配置。
+
+制作精简评委包（需要打包机已安装 Node.js 22/24 与 Python 3.9+）：
+
+```bash
+python3 scripts/package-submission.py --with-api
+```
+
+输出到被 Git 忽略的 `submission/`，包含 ZIP 和 SHA256 校验文件。包内保留必要源码、静态资源、迁移和启动说明，排除开发文档、测试、依赖、构建、Git 历史和个人数据库。`--with-api` 只将本地 `.env` 中已知应用配置加入压缩包，不会提交密钥；不传该参数可生成不含密钥的源码包。打包程序不会删除本地资料。正式包应在工作区提交完成后生成，以便 `release-manifest.json` 对应确切提交。
+
+详细评审说明见 [启动说明](scripts/submission/README.md)。已在 Linux 验证全新依赖安装、缺少 Node.js 时的官方下载、数据库初始化、生产启动与真实 API 对话；Windows/macOS 启动器尚未在目标系统实机验证。
+
+2026-09-27 交付审计：Next.js 更新到 16.3.3，Sharp 更新到 0.35.4，并更新兼容范围内的受影响间接依赖。完整开发依赖仍有 `deepmerge-ts` 经 Prisma 配置加载链的 3 个 high 条目，以及 Vitest mock 服务的 2 个 moderate 条目：本项目无 Prisma JS/TS 配置文件、远程配置或来自用户的配置合并输入；Vitest 仅用于本地 `run` 测试，不启动对外 mock 服务。暂不跨主版本升级数据库与测试框架。评委包剔除测试与 lint 工具依赖，服务固定监听本机；后续复查日期为 2026-10-27，新增 Prisma 配置或公开测试服务前需重新评估。
 
 ## 功能入口
 
 | 路径 | 当前功能 |
 |---|---|
 | `/`、`/login` | 未登录展示首页；注册、登录；登录后按画像状态跳转 |
-| `/onboarding` | 对话采集画像、恢复引导草稿、确认完成 |
+| `/chat?intent=profile`、`/onboarding` | 在主聊天中完善画像；旧引导地址兼容跳转，首次建档支持草稿恢复与确认保存 |
 | `/chat` | 主聊天、会话历史、引用、业务候选卡片、独立训练聊天 |
 | `/dashboard` | 成长概览、能力差距、任务与进度摘要 |
 | `/path` | 职业计划、学习路线、历史计划与任务状态 |
@@ -22,6 +40,8 @@ CareerMate 是面向大学生和职场新人的 AI 职业成长工作台，围�
 训练流程为“预览场景 → 开始并固定快照 → 独立聊天 → 完成评分 → 讨论报告”。至少 3 轮有效回答后可评分，轮数上限可设为 3–6，默认 6。推荐及岗位预览可本地构造，自定义预览通过场景生成服务；开始训练并不再调用模型生成开场白，而是保存预览快照中的开场白。
 
 AI 候选与正式业务数据分开保存。用户接受候选后，后端重新核对归属、状态、版本与业务契约再写入；聊天记录、训练过程和报告由各自服务持久化。岗位样本是已导入的数据，不代表实时在招。
+
+画像入口统一到主聊天：已有画像的用户通过普通会话补充背景和变化，沿用现有画像更新与候选确认能力；首次建档在同一聊天界面中使用 `/api/onboarding/chat`、`/api/onboarding/complete`，仍需草稿完整度达到 80% 并明确确认。旧的未确认草稿可从 `/chat?intent=onboarding` 继续整理；草稿完整度不代表正式画像的完整度。`/onboarding` 只保留兼容跳转，鉴权和其他工作台页面的建档守卫保持原有规则。
 
 ## 本地启动
 
@@ -37,6 +57,16 @@ npm run dev
 ```
 
 访问 [localhost:3000](http://localhost:3000)。`.env.example` 使用 `DATABASE_URL="file:./dev.db"`，数据库文件位于 `prisma/dev.db`；默认 `TBOX_MODE=mock`、`CAREERMATE_AGENTIC_V2=false`，无需百宝箱凭据即可启动。
+
+macOS/Linux 可以用项目根目录的脚本在后台管理开发服务；启动脚本会等待服务响应后自动打开默认浏览器：
+
+```bash
+chmod +x start-dev.sh stop-dev.sh
+./start-dev.sh
+./stop-dev.sh
+```
+
+启动脚本把 PID 和日志放在被 Git 忽略的 `.careermate/` 目录。可用 `CAREERMATE_PORT=3001 ./start-dev.sh` 修改端口；关闭时使用相同的 `CAREERMATE_RUNTIME_DIR`（如有设置）。
 
 可直接注册账号。需要演示数据时在空的开发数据库执行 `npm run seed`，演示账号为 `student_lin` / `careermate123`。**Seed 会删除并重建业务数据，不用于已有数据库升级。** 升级时先备份 SQLite 文件，安装依赖、生成 Prisma Client，再执行 `npm run db:migrate:deploy`。
 

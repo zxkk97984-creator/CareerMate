@@ -3,6 +3,7 @@
 import { TrainingReportRef } from "./training-controls";
 import { CHAT_WARNING_PART_CODES, describeChatWarnings, isInternalToolCitation } from "@/lib/chat/display-diagnostics";
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { ChatMessagePart } from "@/lib/chat/persistence";
 import { Reveal } from "@/components/ui/reveal";
 import { AlertCircle, UserCheck, Map, Compass, Link2, BookOpenCheck, Globe2, Sparkles } from "lucide-react";
@@ -123,6 +124,7 @@ function ProfileCandidateRef({ candidateId }: { candidateId: string }) {
 }
 
 function PlanRef({ planId, version }: { planId: string; version: number }) {
+  const router = useRouter();
   const [plan, setPlan] = useState<CareerPlanDto | null>(null);
   const [generationError, setGenerationError] = useState("");
   const generationStarted = useRef(false);
@@ -234,7 +236,7 @@ function PlanRef({ planId, version }: { planId: string; version: number }) {
           await requireApiOk(response);
           setPlan((current) => current ? { ...current, status: "active" } : current);
         }}
-        onViewPlan={() => { window.location.href = "/path"; }}
+        onViewPlan={() => router.push("/path")}
       />
     );
   }

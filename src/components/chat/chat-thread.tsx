@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import gsap from "gsap";
 import { useMotionSafe } from "@/lib/motion/motion-safe";
 import type { MessageItem } from "@/lib/chat/schemas";
@@ -25,6 +25,8 @@ interface ChatThreadProps {
   streaming?: boolean;
   /** Kurisu 动作阶段：idle / waiting / speaking */
   kurisuPhase?: "idle" | "waiting" | "speaking";
+  welcome?: ReactNode;
+  footer?: ReactNode;
 }
 
 function CopyMessage({ content }: { content: string }) {
@@ -35,7 +37,7 @@ function CopyMessage({ content }: { content: string }) {
   }}>{copied ? <Check size={15}/> : <Copy size={15}/>}<span>{failed ? "请选中文字复制" : copied ? "已复制" : "复制"}</span></button>;
 }
 
-export function ChatThread({ messages, activeConversationId, onNewChat, onQuickAction }: ChatThreadProps) {
+export function ChatThread({ messages, activeConversationId, onNewChat, onQuickAction, welcome, footer }: ChatThreadProps) {
   const { chatAppearance } = useCompanionAppearance();
   const assistantName = companionDisplayName(chatAppearance);
   const assistantAvatar = companionAvatarUrl(chatAppearance);
@@ -92,6 +94,7 @@ export function ChatThread({ messages, activeConversationId, onNewChat, onQuickA
   }, [messages, motionSafe]);
 
   if (!activeConversationId && messages.length === 0) {
+    if (welcome) return welcome;
     return <div className="chat-welcome" data-od-id="chat-welcome">
       <p className="welcome-eyebrow">{assistantName} · 你的职业成长伙伴</p>
       <h1 className="welcome-title">把下一步，聊清楚。</h1>
@@ -103,7 +106,7 @@ export function ChatThread({ messages, activeConversationId, onNewChat, onQuickA
           { icon: BookOpen, title: "寻找学习资源", text: "根据我的职业目标，推荐适合当前阶段的学习资源" },
         ].map(item => <button className="suggested-btn" key={item.title} onClick={() => onNewChat(item.text)}><item.icon size={20}/><span>{item.title}</span><ArrowUpRight size={16}/></button>)}
       </div>
-      <Link href="/onboarding" className="welcome-profile-link"><UserRoundCheck size={16}/>完善职业画像，让建议更适合你<ArrowUpRight size={15}/></Link>
+      <Link href="/chat?intent=profile" className="welcome-profile-link"><UserRoundCheck size={16}/>在对话中完善个人画像<ArrowUpRight size={15}/></Link>
     </div>;
   }
 
@@ -152,6 +155,7 @@ export function ChatThread({ messages, activeConversationId, onNewChat, onQuickA
           </div>
         </div>
       ))}
+      {footer}
       <div ref={bottomRef} />
     </div>
   );

@@ -1,0 +1,193 @@
+/* Career path tokens stay local to this workspace; other views retain their theme. */
+.workspace-path {
+  --cm-canvas: #f5f7fb;
+  --cm-surface: #fff;
+  --cm-text-strong: #18253b;
+  --cm-text-muted: #526079;
+  --cm-text-subtle: #68758b;
+  --cm-border: #e4e9f1;
+  --cm-border-strong: #d6deeb;
+  --cm-brand: #275ae8;
+  --cm-brand-hover: #204ac2;
+  --cm-brand-ink: #275ae8;
+  --cm-brand-soft: #edf2ff;
+}
+
+.workspace-path .chat-main { background: var(--cm-canvas); }
+.workspace-path .workspace-topbar { min-height: 64px; background: var(--cm-surface); }
+.workspace-path .workspace-content { padding: 28px clamp(24px, 2.5vw, 40px) 48px; }
+.workspace-path .workspace-content > :not(.sr-only) { max-width: 1280px; }
+.workspace-path .cm-page-header { padding-bottom: 22px; }
+.workspace-path .cm-page-header h1 { font-size: 26px; color: var(--cm-text-strong); }
+.workspace-path .cm-page-header p { margin-top: 5px; color: var(--cm-text-subtle); }
+.workspace-path .path-layout { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.workspace-path .path-layout svg { flex-shrink: 0; }
+.workspace-path .path-layout :is(h2, h3, h4, p, dd, strong) { overflow-wrap: anywhere; }
+.workspace-path .path-eyebrow { margin: 0 0 6px; font-weight: 500; font-family: inherit; font-size: 12px; line-height: 1.5; letter-spacing: 0; color: var(--cm-text-subtle); }
+
+.workspace-path .path-head { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin: 0; padding: 22px 24px; background: var(--cm-surface); border: 1px solid var(--cm-border); border-radius: 14px; }
+.workspace-path .path-goal { display: flex; align-items: flex-start; gap: 14px; min-width: 0; }
+.workspace-path .path-goal > div { min-width: 0; }
+.workspace-path .path-goal-icon { display: grid; place-items: center; flex-shrink: 0; width: 44px; height: 44px; border-radius: 12px; background: var(--cm-brand-soft); color: var(--cm-brand); }
+.workspace-path .path-head h2 { margin: 0; color: var(--cm-text-strong); font-size: 22px; font-weight: 650; line-height: 1.4; letter-spacing: -.4px; }
+.workspace-path .path-head-desc { margin: 5px 0 0; font-size: 13px; line-height: 1.7; color: var(--cm-text-muted); }
+.workspace-path .path-plan-meta { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; color: var(--cm-text-subtle); font-size: 12px; }
+.workspace-path .path-plan-meta span { display: inline-flex; align-items: center; gap: 5px; }
+.workspace-path .path-head-side { flex: 0 0 240px; display: grid; gap: 15px; }
+.workspace-path .path-head-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.workspace-path .path-head-actions button { border-radius: 9px; font-size: 13px; box-shadow: none; }
+.workspace-path .path-plan-progress > div { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 12px; color: var(--cm-text-subtle); }
+.workspace-path .path-plan-progress strong { color: var(--cm-brand); font-size: 16px; font-weight: 650; }
+.workspace-path .path-plan-progress progress { display: block; width: 100%; height: 5px; margin-top: 7px; border: 0; border-radius: 3px; overflow: hidden; background: #edf0f6; accent-color: var(--cm-brand); }
+.workspace-path .path-plan-progress progress::-webkit-progress-bar { background: #edf0f6; }
+.workspace-path .path-plan-progress progress::-webkit-progress-value { background: var(--cm-brand); border-radius: 3px; }
+.workspace-path .path-plan-progress progress::-moz-progress-bar { background: var(--cm-brand); border-radius: 3px; }
+
+.workspace-path .path-primary-action { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 20px 24px; border: 1px solid #dbe5ff; border-radius: 14px; background: #edf3ff; }
+.workspace-path .path-primary-action > div { min-width: 0; }
+.workspace-path .path-primary-action .path-eyebrow { color: var(--cm-brand); font-weight: 600; }
+.workspace-path .path-primary-action h3 { margin: 0; font-size: 18px; line-height: 1.55; font-weight: 650; color: var(--cm-text-strong); }
+.workspace-path .path-primary-action p { margin: 6px 0 0; font-size: 13px; line-height: 1.7; color: var(--cm-text-muted); }
+.workspace-path .path-primary-meta { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 12px; font-size: 12px; color: var(--cm-text-muted); }
+.workspace-path .path-primary-meta span { display: inline-flex; align-items: flex-start; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
+.workspace-path .path-primary-meta svg { margin-top: 2px; }
+.workspace-path :is(.path-primary-action > button, .path-generate) { display: inline-flex; align-items: center; justify-content: center; gap: 8px; flex-shrink: 0; min-height: 44px; padding: 0 18px; border: 0; border-radius: 9px; background: var(--cm-brand); color: #fff; font-size: 13px; font-weight: 600; }
+.workspace-path :is(.path-primary-action > button, .path-generate):hover { background: var(--cm-brand-hover); }
+
+.workspace-path .path-workspace { display: grid; grid-template-columns: 248px minmax(0, 1fr); align-items: start; gap: 20px; }
+.workspace-path .path-stage-rail { position: sticky; top: 0; min-width: 0; border: 1px solid var(--cm-border); border-radius: 14px; background: var(--cm-surface); overflow: hidden; }
+.workspace-path .path-stage-rail-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 18px 16px 12px; }
+.workspace-path .path-stage-rail-head h3 { margin: 0; font-size: 14px; font-weight: 650; }
+.workspace-path .path-stage-rail-head > span { color: var(--cm-text-subtle); font-size: 11px; }
+.workspace-path .path-stage-nav { display: flex; flex-direction: column; gap: 4px; max-height: min(620px, calc(100dvh - 180px)); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #d6deeb transparent; padding: 0 8px 10px; }
+.workspace-path .path-stage-nav button { display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 12px 10px; border: 1px solid transparent; border-radius: 9px; background: transparent; text-align: left; color: var(--cm-text-muted); }
+.workspace-path .path-stage-nav button:hover { background: #f5f7fb; }
+.workspace-path .path-stage-nav button.active { border-color: #dce5ff; background: var(--cm-brand-soft); color: #214bc2; }
+.workspace-path .path-stage-index { flex-shrink: 0; padding-top: 2px; font-size: 11px; line-height: 1.6; font-variant-numeric: tabular-nums; color: var(--cm-text-subtle); }
+.workspace-path .active .path-stage-index { color: var(--cm-brand); }
+.workspace-path .path-stage-nav strong { display: block; font-size: 13px; line-height: 1.6; font-weight: 550; }
+.workspace-path .path-stage-nav small { display: block; margin-top: 5px; font-size: 11px; line-height: 1.5; color: var(--cm-text-subtle); }
+.workspace-path .path-stage-main { min-width: 0; padding: 22px; border: 1px solid var(--cm-border); border-radius: 14px; background: var(--cm-surface); }
+.workspace-path .path-section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.workspace-path .path-section-head h3 { margin: 0; font-size: 18px; line-height: 1.5; font-weight: 650; color: var(--cm-text-strong); }
+.workspace-path .path-section-head p { margin: 6px 0 0; font-size: 13px; line-height: 1.7; color: var(--cm-text-muted); }
+.workspace-path .path-stage-count { flex-shrink: 0; padding: 4px 9px; border-radius: 6px; background: #f3f5f9; color: var(--cm-text-muted); font-size: 12px; }
+.workspace-path .path-task-cards { display: grid; gap: 14px; margin-top: 20px; }
+.workspace-path .path-task-card { min-width: 0; padding: 18px; border: 1px solid var(--cm-border); border-radius: 10px; background: var(--cm-surface); transition: border-color 150ms; }
+.workspace-path .path-task-card:hover, .workspace-path .path-task-card.selected { border-color: #b6c8f5; }
+.workspace-path .path-task-card-head { display: flex; align-items: flex-start; gap: 10px; }
+.workspace-path .path-task-number { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 26px; height: 26px; border-radius: 7px; background: #f0f3f9; color: var(--cm-text-subtle); font-size: 11px; font-variant-numeric: tabular-nums; }
+.workspace-path .path-task-card[data-status="done"] .path-task-number { background: #edf8f0; color: #21804a; }
+.workspace-path .path-task-card h4 { flex: 1; min-width: 0; margin: 1px 0 0; font-size: 15px; line-height: 1.65; font-weight: 600; color: var(--cm-text-strong); }
+.workspace-path .path-task-card-status { flex-shrink: 0; }
+.workspace-path .path-task-card-status select { min-height: 32px; max-width: 110px; border-radius: 7px; border-color: var(--cm-border); background-color: #f7f9fc; color: var(--cm-text-muted); font-size: 12px; }
+.workspace-path .path-task-card[data-status="in_progress"] select { color: #214bc2; background-color: #edf2ff; }
+.workspace-path .path-task-card[data-status="done"] select { color: #21804a; background-color: #edf8f0; }
+.workspace-path .path-task-card[data-status="delayed"] select { color: #b23f31; background-color: #fff1ef; }
+.workspace-path .path-task-description { margin: 10px 0 0; color: var(--cm-text-subtle); font-size: 13px; line-height: 1.7; }
+.workspace-path .path-task-deliverables { display: grid; gap: 8px; margin: 14px 0; }
+.workspace-path .path-task-deliverables > div { display: grid; grid-template-columns: 60px minmax(0, 1fr); gap: 10px; align-items: baseline; font-size: 13px; line-height: 1.7; }
+.workspace-path .path-task-deliverables dt { color: var(--cm-text-subtle); font-size: 12px; }
+.workspace-path .path-task-deliverables dd { margin: 0; color: var(--cm-text-muted); }
+.workspace-path .path-task-card-footer { display: flex; justify-content: flex-start; align-items: center; gap: 24px; padding-top: 10px; border-top: 1px solid #edf0f5; }
+.workspace-path .path-task-card-meta { display: flex; flex-wrap: wrap; gap: 7px 14px; font-size: 12px; color: var(--cm-text-subtle); }
+.workspace-path .path-task-card-meta span { display: inline-flex; align-items: center; gap: 5px; }
+.workspace-path .path-task-open { display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex-shrink: 0; min-height: 36px; padding: 0 8px; margin-right: -8px; border: 0; border-radius: 6px; background: transparent; color: var(--cm-brand); font-size: 12px; font-weight: 550; }
+.workspace-path .path-task-open:hover { background: var(--cm-brand-soft); }
+
+.workspace-path .path-section { padding: 22px 24px; border: 1px solid var(--cm-border); border-radius: 14px; background: var(--cm-surface); }
+.workspace-path .path-empty-inline { margin: 10px 0 0; color: var(--cm-text-subtle); font-size: 13px; line-height: 1.7; }
+.workspace-path .path-empty { padding: 48px 24px; border: 1px dashed var(--cm-border-strong); border-radius: 14px; background: var(--cm-surface); }
+.workspace-path .path-notes { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; padding: 0 4px; }
+.workspace-path .path-notes h4 { display: flex; align-items: center; gap: 7px; margin: 0 0 10px; font-size: 13px; font-weight: 550; color: var(--cm-text-muted); }
+.workspace-path .path-notes .note-list { font-size: 12px; line-height: 1.8; color: var(--cm-text-subtle); }
+.workspace-path .path-execution-meta { margin: -4px 0 0; font-size: 11px; color: var(--cm-text-subtle); }
+
+.workspace-path :is(.path-versions, .path-pending) { min-width: 0; padding: 22px 24px; border: 1px solid var(--cm-border); border-radius: 14px; background: var(--cm-surface); }
+.workspace-path .path-versions ul { list-style: none; margin: 16px 0 0; padding: 0; }
+.workspace-path .path-versions li { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 13px 0; border-top: 1px solid var(--cm-border); font-size: 13px; }
+.workspace-path .path-versions li strong { display: block; color: var(--cm-text-strong); }
+.workspace-path .path-versions li span { color: var(--cm-text-subtle); font-size: 12px; }
+.workspace-path .path-pending { border-color: #ebd6ad; background: #fffcf5; }
+.workspace-path .path-pending-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+.workspace-path .path-pending h3 { margin: 6px 0 0; font-size: 18px; font-weight: 650; }
+.workspace-path .path-pending p { margin: 6px 0 0; font-size: 13px; line-height: 1.7; color: var(--cm-text-muted); }
+.workspace-path .path-pending-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.workspace-path .path-pending-actions > button:first-child { background: var(--cm-brand); color: #fff; }
+.workspace-path .path-adjust-link { display: inline-flex; align-items: center; min-height: 44px; padding: 0 12px; color: var(--cm-brand); font-size: 13px; text-decoration: none; }
+.workspace-path .path-diff-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+.workspace-path .path-diff-grid > div { padding: 12px; border: 1px solid #eee7d8; border-radius: 9px; background: #fff; }
+.workspace-path .path-diff-grid strong { font-size: 13px; color: #8a5a00; }
+.workspace-path .path-diff-grid ul { margin: 7px 0 0; padding-left: 16px; font-size: 12px; line-height: 1.7; color: var(--cm-text-muted); }
+.workspace-path .path-pending-full { margin-top: 16px; }
+.workspace-path .path-pending-full summary { cursor: pointer; min-height: 32px; font-size: 13px; font-weight: 550; color: var(--cm-brand); }
+.workspace-path .path-pending-task-list { display: grid; gap: 10px; margin-top: 12px; }
+.workspace-path .path-pending-task-list > div { padding: 14px; border: 1px solid #eee7d8; border-radius: 9px; background: #fff; }
+.workspace-path .path-pending-task-list strong { display: block; font-size: 14px; }
+.workspace-path .path-pending-task-list span { display: block; margin-top: 3px; font-size: 12px; color: var(--cm-text-subtle); }
+
+/* The native dialog lives in the top layer, above the companion and app shell. */
+.workspace-path .path-detail-drawer { position: fixed; inset: 0 0 0 auto; width: min(560px, 100vw); max-width: 100vw; height: 100dvh; max-height: 100dvh; margin: 0; padding: 0; border: 0; border-left: 1px solid var(--cm-border); background: var(--cm-surface); color: var(--cm-text-strong); box-shadow: -12px 0 48px rgb(24 37 59 / 12%); overflow: hidden; }
+.workspace-path .path-detail-drawer[open] { display: flex; animation: path-drawer-enter 180ms ease-out; }
+.workspace-path .path-detail-drawer::backdrop { background: rgb(24 37 59 / 25%); }
+.workspace-path .path-detail-panel { display: flex; flex-direction: column; width: 100%; min-height: 0; }
+.workspace-path .path-detail-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-shrink: 0; padding: 16px 24px; border-bottom: 1px solid var(--cm-border); }
+.workspace-path .path-detail-header h2 { margin: 0; font-size: 15px; font-weight: 600; }
+.workspace-path .path-detail-header button { display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 9px; background: #f3f5f9; color: var(--cm-text-muted); }
+.workspace-path .path-detail-header button:hover { background: #e8edf5; }
+.workspace-path .path-detail-body { padding: 26px 28px calc(28px + env(safe-area-inset-bottom)); overflow-y: auto; overscroll-behavior: contain; }
+.workspace-path .path-detail-body :is(h3, dd) { overflow-wrap: anywhere; }
+.workspace-path .path-detail-body select { color: var(--cm-text-strong); }
+.workspace-path:has(.path-detail-drawer[open]) .workspace-content { overflow: hidden; }
+@keyframes path-drawer-enter { from { transform: translateX(32px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+@media (max-width: 1180px) {
+  .workspace-path .path-workspace { grid-template-columns: 210px minmax(0, 1fr); gap: 16px; }
+  .workspace-path .path-stage-main { padding: 18px; }
+  .workspace-path .path-task-card-head { flex-wrap: wrap; }
+  .workspace-path .path-task-card h4 { flex-basis: calc(100% - 40px); }
+  .workspace-path .path-task-card-status { margin-left: 36px; }
+}
+
+@media (max-width: 767px) {
+  .workspace-path .workspace-content { padding: 20px 16px 40px; }
+  .workspace-path .cm-page-header { padding-bottom: 18px; }
+  .workspace-path .cm-page-header h1 { font-size: 24px; }
+  .workspace-path .path-layout { gap: 16px; }
+  .workspace-path .path-head { flex-direction: column; align-items: stretch; gap: 18px; padding: 18px; }
+  .workspace-path .path-goal { gap: 10px; }
+  .workspace-path .path-goal-icon { width: 36px; height: 36px; border-radius: 9px; }
+  .workspace-path .path-head h2 { font-size: 20px; }
+  .workspace-path .path-head-side { flex-basis: auto; }
+  .workspace-path .path-head-actions { justify-content: flex-start; }
+  .workspace-path .path-primary-action { flex-direction: column; align-items: stretch; gap: 14px; padding: 18px; }
+  .workspace-path .path-primary-action h3 { font-size: 16px; }
+  .workspace-path .path-primary-action > button { align-self: flex-start; }
+  .workspace-path .path-workspace { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .workspace-path .path-stage-rail { position: static; }
+  .workspace-path .path-stage-rail-head { padding: 14px 14px 10px; }
+  .workspace-path .path-stage-nav { flex-direction: row; max-height: none; overflow-x: auto; padding: 0 8px 10px; }
+  .workspace-path .path-stage-nav button { flex: 0 0 210px; }
+  .workspace-path .path-stage-main { padding: 18px 14px; }
+  .workspace-path .path-section-head { flex-wrap: wrap; gap: 10px; }
+  .workspace-path .path-section-head h3 { font-size: 16px; }
+  .workspace-path .path-task-card { padding: 14px; }
+  .workspace-path .path-task-card h4 { font-size: 14px; }
+  .workspace-path .path-task-card-status select { min-height: 44px; }
+  .workspace-path .path-task-card-footer { flex-wrap: wrap; }
+  .workspace-path .path-task-open { min-height: 44px; }
+  .workspace-path .path-task-deliverables > div { grid-template-columns: 52px minmax(0, 1fr); gap: 8px; }
+  .workspace-path .path-notes { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .workspace-path :is(.path-section, .path-versions, .path-pending) { padding: 18px; }
+  .workspace-path .path-pending-head { flex-direction: column; align-items: stretch; }
+  .workspace-path .path-pending-actions { justify-content: flex-start; }
+  .workspace-path .path-diff-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .workspace-path .path-detail-drawer { width: 100vw; border-left: 0; }
+  .workspace-path .path-detail-header { padding: 12px 18px; }
+  .workspace-path .path-detail-body { padding: 22px 20px calc(24px + env(safe-area-inset-bottom)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace-path .path-detail-drawer[open] { animation: none; }
+  .workspace-path .path-task-card { transition: none; }
+}

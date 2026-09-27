@@ -103,7 +103,7 @@ test("custom simulation previews, starts, and completes with a fixed snapshot", 
   await expect(preview).toBeVisible();
   await expect(preview).toContainText("来源：自定义场景");
   await expect(preview).toContainText("最多 6 轮 · 至少 3 轮有效回答后可评分");
-  await preview.getByRole("button", { name: "开始训练" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "开始训练" }).click();
   await expect(page.locator(".training-chat-bar").filter({ hasText: "0/6" })).toBeVisible();
 
   const answers = [
@@ -156,8 +156,8 @@ test("new account registers and enters the workspace", async ({ page }) => {
   await page.getByLabel("昵称").fill("端到端用户");
   await page.getByLabel("密码").fill("careermate123");
   await page.getByRole("button", { name: "创建账号" }).click();
-  // 新账号注册后进入 /onboarding（新手引导），登录账号才落在 /dashboard
-  await expect(page).toHaveURL(/\/onboarding/);
+  // 旧引导入口兼容跳转到主聊天；首次建档仍需要明确确认。
+  await expect(page).toHaveURL(/\/chat\?intent=profile/);
   await expect(page.locator('[data-testid="page-content"]')).toBeVisible();
 });
 

@@ -13,8 +13,14 @@ describe("primary chat entry", () => {
   it("renders the current user's chat page", async () => {
     mocks.user.mockResolvedValue({ id: "u1", displayName: "小林", role: "user", profile: { onboardingCompleted: true } });
     const page = await ChatPage({ searchParams: Promise.resolve({ jobId: "job-1", intent: "job-gap" }) });
-    expect(page.props).toMatchObject({ userId: "u1", displayName: "小林" });
+    expect(page.props).toMatchObject({ userId: "u1", displayName: "小林", profileCompleted: true });
     expect(page.props).toMatchObject({ jobId: "job-1", jobIntent: "job-gap" });
+    expect(mocks.redirect).not.toHaveBeenCalled();
+  });
+  it("keeps incomplete profiles in the chat shell with first-time confirmation enabled", async () => {
+    mocks.user.mockResolvedValue({ id: "u2", displayName: "新人", role: "user", profile: { onboardingCompleted: false } });
+    const page = await ChatPage({ searchParams: Promise.resolve({ intent: "profile" }) });
+    expect(page.props).toMatchObject({ profileCompleted: false, jobIntent: "profile" });
     expect(mocks.redirect).not.toHaveBeenCalled();
   });
 });

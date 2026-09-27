@@ -9,8 +9,9 @@ import { ScenarioDrawer } from '@/features/simulation/scenario-drawer';
 import { SimulationReport } from '@/features/simulation/simulation-view';
 import '@/features/simulation/simulation-lobby.css';
 
-export function TrainingControls({ conversationId, streaming, onReload, onTrainingChange, onBusyChange }: {
+export function TrainingControls({ conversationId, streaming, onReload, onTrainingChange, onBusyChange, onContextStatus }: {
  conversationId: string | null; streaming: boolean; onReload: () => Promise<void>; onTrainingChange: (session: SimulationSessionDto | null) => void; onBusyChange: (busy: boolean) => void;
+ onContextStatus?: (conversationId: string, status: "loading" | "ready" | "failed") => void;
 }) {
  const [session, setSession] = useState<SimulationSessionDto | null>(null);
  const [details, setDetails] = useState(false);
@@ -24,11 +25,13 @@ export function TrainingControls({ conversationId, streaming, onReload, onTraini
   let cancelled = false;
   setError('');
   if (!conversationId || streaming) return;
+  onContextStatus?.(conversationId, "loading");
   void fetchApi<{ simulation: SimulationSessionDto | null }>(`/api/chat/conversations/${conversationId}`).then(result => {
    if (!cancelled && result.ok) { setSession(result.data.simulation); onTrainingChange(result.data.simulation); }
-  }).catch(() => { if (!cancelled) setError('训练状态读取失败，请重新打开对话'); });
+   if (!cancelled) onContextStatus?.(conversationId, result.ok ? "ready" : "failed");
+  }).catch(() => { if (!cancelled) { setError('训练状态读取失败，请重新打开对话'); onContextStatus?.(conversationId, "failed"); } });
   return () => { cancelled = true; };
- }, [conversationId, streaming, onTrainingChange]);
+ }, [conversationId, streaming, onTrainingChange, onContextStatus]);
  async function complete() {
   if (!session || busy) return;
   setBusy(true); setError('');

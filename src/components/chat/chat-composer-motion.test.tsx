@@ -12,6 +12,12 @@ describe("ChatComposer (SSR)", () => {
     expect(html).toContain("输入你的问题");
     expect(html).not.toContain("opacity:0");
   });
+  it("shows the configured message limit for the profile draft composer", () => {
+    const html = renderToStaticMarkup(<ChatComposer onSend={vi.fn()} disabled={false} activeConversationId={null} value="你好" maxLength={2000} />);
+    expect(html).toContain("2/2000");
+    expect(html).toContain('maxLength="2000"');
+    expect(html).not.toContain("/8000");
+  });
 });
 
 describe("ChatComposer send-btn motion wiring", () => {

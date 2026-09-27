@@ -18,6 +18,7 @@ export default async function ChatPage({
       displayName={user.displayName}
       avatar={user.avatarDataUrl}
       isAdmin={user.role === "admin"}
+      profileCompleted={Boolean(user.profile?.onboardingCompleted)}
       jobId={jobId}
       jobIntent={jobIntent}
     />

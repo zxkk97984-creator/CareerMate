@@ -9,7 +9,7 @@ vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("@/lib/auth", () => ({ getCurrentUser: mocks.getCurrentUser }));
 
 // LandingPage 是真实组件，这里仅验证未登录时渲染它；mock 掉以减少对渲染细节的依赖
-vi.mock("@/components/landing-page", () => ({
+vi.mock("@/components/careermate-landing/landing-page", () => ({
   LandingPage: () => <div data-testid="landing">landing</div>,
 }));
 

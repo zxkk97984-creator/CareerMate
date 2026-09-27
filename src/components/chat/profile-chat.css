@@ -1,0 +1,61 @@
+.chat-topbar-actions { display: flex; align-items: center; flex-shrink: 0; gap: 10px; }
+.profile-entry-link { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 40px; padding: 0 12px; border-radius: 9px; color: var(--cm-text-muted); font-size: 13px; text-decoration: none; }
+.profile-entry-link:hover { background: #f3f6fc; color: var(--cm-brand); }
+.profile-chat-welcome { display: flex; flex-direction: column; justify-content: center; min-height: 100%; width: min(100%, 800px); margin: 0 auto; padding: 48px 30px; }
+.profile-chat-icon { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 13px; margin-bottom: 22px; color: #275ae8; background: #edf2ff; }
+.profile-chat-welcome h1 { margin: 0 0 12px; font-size: 30px; line-height: 1.5; font-weight: 650; letter-spacing: -.5px; color: #18253b; }
+.profile-chat-welcome > p { margin: 0; color: #68758b; font-size: 14px; line-height: 1.8; overflow-wrap: anywhere; }
+.profile-saved-context { margin-top: 28px; padding: 20px 22px; border: 1px solid #e4e9f1; border-radius: 12px; background: #f8faff; }
+.profile-saved-context h2 { margin: 0 0 16px; font-size: 12px; font-weight: 550; color: #68758b; }
+.profile-saved-context dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; margin: 0; }
+.profile-saved-context dt { margin-bottom: 6px; font-size: 12px; color: #68758b; }
+.profile-saved-context dd { margin: 0; font-size: 14px; line-height: 1.7; color: #18253b; overflow-wrap: anywhere; }
+.profile-saved-context p { margin: 0; color: #68758b; font-size: 13px; }
+.profile-saved-context button { margin-left: 8px; border: 0; background: none; color: #275ae8; min-height: 36px; }
+.profile-chat-prompts { display: flex; flex-wrap: wrap; gap: 10px; margin: 24px 0 16px; }
+.profile-chat-prompts button { display: inline-flex; align-items: center; gap: 12px; min-height: 44px; padding: 0 14px; border: 1px solid #e4e9f1; border-radius: 9px; background: #fff; color: #526079; font-size: 13px; }
+.profile-chat-prompts button:hover { border-color: #b5c8f5; background: #f5f8ff; color: #275ae8; }
+.profile-chat-welcome .profile-resume-note { margin: 4px 0 10px; font-size: 12px; }
+.profile-resume-note a { display: inline-flex; align-items: center; gap: 4px; color: #275ae8; text-decoration: none; min-height: 36px; }
+.profile-chat-welcome .profile-chat-note { font-size: 12px; }
+.profile-chat-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 30px; border-bottom: 1px solid #e4e9f1; background: #f8faff; color: #526079; font-size: 12px; }
+.profile-chat-banner :is(a, button) { flex-shrink: 0; display: inline-flex; align-items: center; min-height: 32px; padding: 0; color: #275ae8; border: 0; background: none; text-decoration: none; font-size: 12px; }
+.profile-draft-card { margin: 0 0 0 56px; min-width: 0; padding: 20px; border: 1px solid #dce5f5; border-radius: 12px; background: #f8faff; }
+.profile-draft-card summary { display: flex; justify-content: space-between; align-items: center; gap: 16px; min-height: 32px; list-style: none; cursor: pointer; color: #18253b; font-size: 14px; font-weight: 550; }
+.profile-draft-card summary::-webkit-details-marker { display: none; }
+.profile-draft-card summary > span:last-child { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; color: #68758b; font-size: 12px; font-weight: 400; }
+.profile-draft-card details[open] summary svg { transform: rotate(180deg); }
+.profile-draft-card dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 22px; margin: 18px 0 0; }
+.profile-draft-card dl > div { min-width: 0; padding-bottom: 10px; border-bottom: 1px solid #e4e9f1; }
+.profile-draft-card dt { font-size: 12px; color: #68758b; }
+.profile-draft-card dd { margin: 5px 0 0; color: #18253b; font-size: 14px; line-height: 1.7; overflow-wrap: anywhere; }
+.profile-draft-card dd.is-missing { color: #7d8797; }
+.profile-draft-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; margin-top: 20px; }
+.profile-draft-actions .profile-save-button { background: #275ae8; color: #fff; font-size: 13px; border-radius: 9px; }
+.profile-save-button:disabled { background: #e4e9f1; color: #68758b; box-shadow: none; transform: none; }
+.profile-draft-actions p { margin: 0; font-size: 12px; line-height: 1.7; color: #68758b; }
+.primary-chat .profile-candidate-actions { flex-wrap: wrap; }
+.primary-chat .profile-candidate-actions button { min-height: 44px; padding: 0 14px; font-size: 13px; border-radius: 8px; }
+.primary-chat .profile-candidate-confirm { background: #275ae8; color: #fff; }
+.primary-chat .profile-candidate-confirm:hover:not(:disabled) { background: #204ac2; }
+@media (max-width: 767px) {
+  /* The companion remains draggable; keep the send control out of its default corner. */
+  body:has(.companion-dock) .primary-chat[data-profile-entry="true"] .chat-composer { padding-right: 156px; }
+  .chat-topbar-actions { gap: 4px; }
+  .profile-entry-link { width: 40px; padding: 0; }
+  .profile-entry-link span { display: none; }
+  .profile-chat-welcome { padding: 30px 20px; }
+  .profile-chat-welcome h1 { font-size: 24px; }
+  .profile-chat-icon { margin-bottom: 18px; }
+  .profile-saved-context { margin-top: 20px; padding: 18px; }
+  .profile-saved-context dl { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .profile-saved-context dl > div { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 10px; }
+  .profile-saved-context dt { margin: 2px 0 0; }
+  .profile-chat-prompts { gap: 8px; margin-top: 18px; }
+  .profile-chat-prompts button { gap: 8px; padding: 0 10px; }
+  .profile-chat-banner { padding: 10px 18px; }
+  .profile-draft-card { margin-left: 0; padding: 16px; }
+  .profile-draft-card dl { gap: 12px 16px; }
+  .profile-draft-card summary { gap: 8px; }
+  .profile-draft-actions { align-items: flex-start; flex-direction: column; }
+}

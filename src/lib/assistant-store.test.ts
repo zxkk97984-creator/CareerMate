@@ -90,8 +90,37 @@ describe("shared assistant state", () => {
     expect(JSON.parse(calls[0][1].body).clientRequestId).toBe(JSON.parse(calls[1][1].body).clientRequestId);
     expect(store.getSnapshot().messages).toHaveLength(2);
   });
+  it("preserves profile interaction context and request identity on retry", async () => {
+    const fetcher = vi.fn().mockImplementation((url: string) => url.endsWith("/stream") ? Promise.reject(new Error("离线")) : Promise.resolve(json(conv)));
+    const store = createAssistantStore(fetcher);
+    await store.send("更新每周投入", undefined, { surface: "onboarding", action: "message_submit" });
+    await store.retry("更新每周投入");
+    const bodies = fetcher.mock.calls.filter(([url]) => url.endsWith("/stream")).map(([, init]) => JSON.parse(init.body));
+    expect(bodies[1]).toEqual(bodies[0]);
+    expect(bodies[1].interaction).toEqual({ surface: "onboarding", action: "message_submit" });
+  });
 });
 describe("assistant initialization", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it.each(["?intent=profile", "?intent=onboarding", "?conversationId=chosen"])("does not replace an explicit chat entry %s with the latest history", async (search) => {
+    const replaceState = vi.fn();
+    vi.stubGlobal("window", { location: { pathname: "/chat", search }, history: { replaceState } });
+    const fetcher = vi.fn().mockResolvedValue(json({ items: [conv] }));
+    const store = createAssistantStore(fetcher);
+    await store.initialize();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(store.getSnapshot()).toMatchObject({ activeConversationId: null, messages: [], conversations: [conv] });
+    expect(replaceState).not.toHaveBeenCalled();
+  });
+  it("makes a newly created profile chat addressable for refresh and history", async () => {
+    const replaceState = vi.fn();
+    vi.stubGlobal("window", { location: { pathname: "/chat", search: "?intent=profile" }, history: { replaceState } });
+    const fetcher = vi.fn().mockImplementation((url: string) => Promise.resolve(url.endsWith("/stream") ? stream() : json(url.includes("/messages?") ? [] : conv)));
+    const store = createAssistantStore(fetcher);
+    await store.send("我想更新可用时间", undefined, { surface: "onboarding", action: "message_submit" });
+    expect(replaceState).toHaveBeenCalledWith(null, "", "/chat?intent=profile&conversationId=c1");
+    expect(store.getSnapshot().messages).toHaveLength(2);
+  });
   it("restores the latest persisted conversation on reload", async () => {
     const message = { id: "m1", conversationId: "c1", role: "assistant", content: "历史正文", parts: [{ type: "text", text: "历史正文" }], status: "completed", executionMeta: { actualMode: "api" }, contextMeta: {}, createdAt: "2026-09-07" };
     const store = createAssistantStore(vi.fn().mockResolvedValueOnce(json({ items: [conv] })).mockResolvedValueOnce(json([message])));

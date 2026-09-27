@@ -83,7 +83,7 @@ export function Workspace({ initialView, isAdmin = false }: { initialView: View;
 
   return (
     <div
-      className="chat-home-layout workspace-layout"
+      className={`chat-home-layout workspace-layout${activeView === "path" ? " workspace-path" : ""}${activeView === "dashboard" ? " workspace-dashboard" : ""}`}
       data-testid="app-shell"
       data-ai-mode={data.aiRuntime.actualMode}
     >

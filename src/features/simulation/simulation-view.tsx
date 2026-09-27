@@ -12,7 +12,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ScenarioDrawer } from "./scenario-drawer";
 import "./simulation-lobby.css";
-import { ArrowLeft, BarChart3, Bot, CheckCircle2, ListChecks, MessagesSquare, Sparkles, Timer, Users } from "lucide-react";
+import { ArrowLeft, ArrowRight, BarChart3, Bot, CheckCircle2, ListChecks, MessagesSquare, Sparkles, Timer, Users } from "lucide-react";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import { Button } from "@/components/ui/button";
 import { InlineAlert } from "@/components/ui/inline-alert";
@@ -160,14 +160,10 @@ export function SimulationReport({ active, onRestart }: { active: SimulationSess
 
 export function ScenarioPreview({
   draft,
-  busy,
   onEdit,
-  onStart,
 }: {
   draft: ScenarioDraft;
-  busy: boolean;
   onEdit: (snapshot: SimulationScenarioSnapshot) => void;
-  onStart: () => void;
 }) {
   const snapshot = draft.scenarioSnapshot;
   const update = (patch: Partial<SimulationScenarioSnapshot>) => {
@@ -185,7 +181,6 @@ export function ScenarioPreview({
           <h3>{snapshot.title}</h3>
           <p>确认角色和目标后，进入专属对话开始练习。训练将围绕以下情境展开。</p>
         </div>
-        <Button disabled={busy} onClick={onStart}>开始训练</Button>
       </div>
       <div className="sim-preview-grid">
         <label>场景标题<input className="cm-input" value={snapshot.title} onChange={(event) => update({ title: event.target.value })} /></label>
@@ -276,6 +271,19 @@ export function SimulationView({ simulations, profile, setNotice }: {
    <div className="training-wide"><Button disabled={loading || busy || custom.description.trim().length < 10 || custom.objective.trim().length < 5} onClick={() => void preview({ mode: 'custom', ...custom })}>生成场景预览</Button></div>
   </div></SurfaceCard>}
   <section className="training-history"><div className="training-section-heading"><h2>最近训练</h2><span>每一次练习，都值得回看</span></div>{simulations.length ? simulations.slice(0, 8).map(item => <button className="training-history-item" key={item.id} disabled={busy} onClick={() => void resume(item.id)}><span className="training-icon"><MessagesSquare size={19}/></span><span><strong>{item.scenarioTitle}</strong><small>{item.status === 'completed' ? (item.score == null ? '未产生正式评分' : `已完成 · ${item.score} 分`) : `进行中 · ${item.turnCount}/${item.roundLimit ?? 6} 轮`} · {new Date(item.createdAt).toLocaleDateString('zh-CN')}</small></span><span className="training-history-action">{item.status === 'completed' ? '查看报告' : '继续训练'} →</span></button>) : <p className="training-empty">还没有训练记录。从上方选一个场景，开始第一次练习。</p>}</section>
-  <ScenarioDrawer open={!!draft} onClose={() => { if (!busy) setDraft(null); }} title="训练场景预览">{draft && <>{error && <InlineAlert tone="error">{error}</InlineAlert>}<ScenarioPreview draft={draft} busy={busy} onEdit={snapshot => { requestId.current = null; setDraft({ ...draft, scenarioSnapshot: snapshot }); }} onStart={() => void start()}/></>}</ScenarioDrawer>
+  <ScenarioDrawer
+   open={!!draft}
+   onClose={() => { if (!busy) setDraft(null); }}
+   title="训练场景预览"
+   footer={draft ? <div className="training-drawer-action">
+    {error && <InlineAlert tone="error">{error}</InlineAlert>}
+    <p>确认场景内容后，进入对话练习</p>
+    <Button className="training-start-button" icon={ArrowRight} loading={busy} onClick={() => void start()}>
+     {busy ? '正在开始训练…' : '开始训练'}
+    </Button>
+   </div> : null}
+  >
+   {draft && <ScenarioPreview draft={draft} onEdit={snapshot => { requestId.current = null; setDraft({ ...draft, scenarioSnapshot: snapshot }); }} />}
+  </ScenarioDrawer>
  </div>;
 }
