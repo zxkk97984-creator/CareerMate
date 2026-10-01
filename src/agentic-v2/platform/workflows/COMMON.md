@@ -44,7 +44,7 @@
 8. 结束节点只返回代码节点的 `artifact` 变量；若平台调用链要求直接回复，只引用同一 artifact 一次，并在联调中确认无重复。
 9. 结构化结果必须由代码节点解析、校验后输出；主 Agent 只能原样复制该 artifact，不能重新生成 JSON、补字段或改写类型。
 10. 字符串数组字段必须是字符串数组，不能输出对象数组；字符串内部使用中文引号“”或以 `\"` 转义 ASCII 双引号，换行使用 `\n`（均为一个反斜杠），禁止尾随逗号和注释。
-11. 顶层 `schemaVersion` 必须为字符串 `"1.0"`；缺少、数字类型或错误版本均视为无效输出。
+11. 模型输出必须显式包含顶层字符串 `schemaVersion="1.0"`；数字类型或错误版本会被拒绝。当前代码节点兼容省略该字段的旧输出，会先补为字符串 `"1.0"` 再校验；这不是模型可省略字段的约定，不得依赖兼容处理生成新结果。
 
 ## 状态与版本速查
 
@@ -53,7 +53,7 @@
 | `profile_assessment` | `pending_confirmation` | `profileVersion` | 画像/能力候选 |
 | `career_exploration` | `success` | `null` | 只读比较；模板草稿另用 pending |
 | `career_plan` | `pending_confirmation` | `basePlanVersion` | 完整 Plan V2 |
-| `learning_route` | `pending_confirmation` | `baseVersion` + `data.baseRouteVersion` | 路线独立版本 |
+| `learning_route` | `pending_confirmation` | `task_context_json.basePlanVersion` + `task_context_json.baseRouteVersion` | 分别填外壳 `baseVersion` 与 `data.baseRouteVersion`；路线独立版本 |
 | `simulation_turn` | `success` | `null` | 单轮追问 |
 | `simulation_report` | `success` | `null` | 完整报告；能力证据候选由后端完成 API 派生 |
 | `simulation_scenario` | `success` | `null` | 只读场景预览 |

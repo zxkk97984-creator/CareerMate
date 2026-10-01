@@ -1,23 +1,27 @@
 ---
 name: CareerMate成长数据分析
-description: 对已脱敏的计划、任务、能力评分与模拟训练记录进行确定性统计，输出完成率、能力趋势、时间趋势、计划偏差与异常依据。用于成长复盘和重规划；不用于联网、推断性格、生成最终建议或写入正式数据。
+description: 对已脱敏的计划、任务、能力评分与模拟训练记录进行确定性统计，输出完成率、能力趋势、时间趋势和薄弱项。用于成长复盘和重规划的解释依据；不用于联网、推断性格、生成最终建议或写入正式数据。
 ---
 
 # CareerMate成长数据分析
 
-## 概述
+## 当前实现
 
-分析用户职业成长数据，从画像快照、历史计划、进度日志和模拟训练记录中提取趋势、计算关键指标并标记薄弱项。不做判断或建议，只产出标准化量化数据。
+源码校准日期：2026-10-01。核心函数为 `analyzer.ts` 的 `analyzeGrowthData`，输入/输出 Schema 见 `schema.ts`。它分析调用方明确提供的结构化记录，不自动读取数据库，不把缺少记录解释成能力下降。
 
-## 输入
+## 可复现输入
+
+以下合成数据仅说明独立 Skill CLI。示例只有当前能力分数、一个已完成计划、一次学习进度和一次已评分训练，没有历史能力评分；因此不能推断能力上涨或训练表现正在改善。`python`/`sql` 是这个独立统计器可接受的示例键，不是本地画像六维评分接口的字段清单。
 
 ```json
 {
   "profileSnapshot": {
     "available": true,
-    "version": 3,
     "data": {
-      "abilityScores": { "python": 65, "sql": 55 },
+      "abilityScores": {
+        "python": 65,
+        "sql": 55
+      },
       "targetRole": "data_analyst"
     }
   },
@@ -49,63 +53,98 @@ description: 对已脱敏的计划、任务、能力评分与模拟训练记录�
       "turnCount": 4,
       "createdAt": "2026-03-01T00:00:00.000Z"
     }
-  ]
+  ],
+  "historicalScores": []
 }
 ```
 
-## 输出
+## 对应完整输出
+
+以下输出由当前 `cli.ts` 实际执行上面的输入获得；`analyzedAt` 使用执行时刻，复验时该值会变化。示例的一次训练与缺少历史评分都返回 `insufficient_data`，计划完成率为 1，最长连续训练天数为 1，事件不足时一致性评分为 null。
 
 ```json
 {
   "schemaVersion": "1.0",
-  "analyzedAt": "2026-07-22T00:00:00.000Z",
+  "analyzedAt": "2026-10-01T11:39:04.777Z",
   "trends": {
     "abilityChanges": [
-      { "abilityKey": "python", "initialScore": 40, "currentScore": 65, "delta": 25, "direction": "up", "dataPoints": 3 }
+      {
+        "abilityKey": "python",
+        "initialScore": 65,
+        "currentScore": 65,
+        "delta": 0,
+        "direction": "insufficient_data",
+        "dataPoints": 1
+      },
+      {
+        "abilityKey": "sql",
+        "initialScore": 55,
+        "currentScore": 55,
+        "delta": 0,
+        "direction": "insufficient_data",
+        "dataPoints": 1
+      }
     ],
-    "planCompletionRate": 0.75,
+    "planCompletionRate": 1,
     "totalCompletedPlans": 1,
     "totalActivePlans": 0,
+    "totalArchivedPlans": 0,
     "simulationProgress": [
-      { "scenarioKey": "tech_interview", "bestScore": 72, "attempts": 1, "trend": "improving" }
+      {
+        "scenarioKey": "tech_interview",
+        "bestScore": 72,
+        "attempts": 1,
+        "trend": "insufficient_data"
+      }
     ],
-    "continuousTrainingDays": 14,
-    "totalProgressEvents": 12,
-    "weaknesses": ["sql", "dataVisualization"]
+    "continuousTrainingDays": 1,
+    "totalProgressEvents": 1,
+    "weaknesses": []
   },
   "summary": {
-    "overallDirection": "improving",
-    "strongAreas": ["python", "statistics"],
-    "weakAreas": ["sql", "dataVisualization"],
-    "consistencyScore": 0.68
+    "overallDirection": "insufficient_data",
+    "strongAreas": [],
+    "weakAreas": [],
+    "consistencyScore": null
   }
 }
 ```
 
-## 功能
+## 统计规则
 
-1. **能力变化计算** — 对比能力评分的历史变化（需要至少两个数据点）
-2. **计划完成率** — 已完成计划数 / 总计划数
-3. **模拟训练进步** — 按场景聚合最佳分数和尝试次数
-4. **连续训练天数** — 从进度日志计算最长连续打卡天数
-5. **薄弱项标记** — 分数低于阈值或进步缓慢的能力
-6. **一致性评分** — 0-1 衡量学习节奏的规律性
+1. 能力变化比较当前分数与最早的 `historicalScores`；没有历史评分时方向为 `insufficient_data`。差值大于 5 判 up，小于 -5 判 down，其余判 stable。
+2. 计划完成率为 `completed` 计划数 / 所有输入计划数；没有计划为 null。`archived` 单独计数，不能视为完成。
+3. 训练统计只使用 `status=completed` 且 `score` 非 null 的记录，按场景汇总最佳分数和次数；同场景不足两次有效评分时趋势为 `insufficient_data`。
+4. 连续训练天数是有效学习事件与已评分训练日期的最长连续天数，不是一定延续到今天的当前连续天数。学习事件包括 task_completed、simulation_completed，以及说明完成状态的 task_status_updated；进度按 ID 去重后计数。
+5. 当前分数低于 45 标记薄弱项，达到 70 标记优势；没有当前评分不生成对应项。该规则不根据岗位市场要求自动评分。
+6. 一致性评分需要至少三个事件时间点且有非零平均间隔，否则为 null。整体方向按已有 up/down 能力项计数，不从一次训练或完成率推断长期改善。
+7. 输入必须通过 Schema，非法数据抛出 `GrowthAnalyzerInputError`；CLI 返回错误 JSON 并以非零状态退出。
 
-## 约束
+## 本地适配范围与隐私
 
-- 不发起网络请求
-- 不写入数据库或文件系统
-- 不推断用户性格、情绪或潜力
-- 不生成建议或评价性文本
-- 不读取其他用户的数据
-- 所有输入中的敏感信息应在调用前由上游脱敏
+`src/lib/agentic-v2/verified-analysis.ts` 已直接调用此核心函数，当前只传入活动计划、近期进度及已完成训练，`historicalScores` 为空；不能将该适配结果描述为包含所有历史计划或已经测出长期能力提升。
 
-## 使用方式
+核心函数不联网、不写入数据库或文件，不生成新的职业建议。调用前由上游裁剪、脱敏；`detectSensitiveFields` 是独立的格式提示函数，主分析入口没有调用它，不保证自动拒绝所有敏感信息。
 
-在工作流中作为数据分析节点，接收上游（如 MCP 工具或职业证据解析 Skill）提供的结构化数据，产出量化趋势指标供后续节点（如画像评估、学习路线、成长复盘）消费。
+## 执行方式
+
+平台包由 `npm run package:skills` 生成，ZIP 内已打包依赖：
+
+```bash
+node run.mjs input.json
+node run.mjs < input.json
+```
+
+仓库已安装依赖时可直接调用源码 CLI：
+
+```bash
+node node_modules/tsx/dist/cli.mjs src/agentic-v2/skills/growth-analyzer/cli.ts input.json
+```
+
+主 Agent 优先解释 `evidenceBundle.verifiedAnalysis`，按需补充调用平台 Skill。`validate.mjs` 会执行核心 CLI 并检查样例（含非法输入），通过仅证明这些合成输入的执行结果，不能证明平台挂载或完整业务已验收。
 
 ## 版本
 
 - 版本：1.0.0
-- 更新日期：2026-07-22
-- 适用平台：百宝箱 Skill 节点
+- 说明校准日期：2026-10-01
+- 适用方式：本地核心函数、仓库 CLI、百宝箱 Skill 包

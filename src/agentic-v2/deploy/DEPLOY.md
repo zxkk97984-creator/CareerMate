@@ -1,120 +1,113 @@
 # CareerMate 部署说明
 
-本文只记录当前仓库代码支持的部署边界。部署前请以 `package.json`、`next.config.ts`、`.env.example` 和 `prisma/schema.prisma` 为准。
+校准日期：2026-10-01。本文按当前仓库源码描述部署和验证方式；未连接平台控制台核验当前 Agent、工作流挂载或发布版本。配置依据是 [package.json](../../../package.json)、[next.config.ts](../../../next.config.ts)、[.env.example](../../../.env.example) 和 [Prisma schema](../../../prisma/schema.prisma)。
 
 ## 1. 当前部署形态
 
-CareerMate 是 Next.js 16 App Router 应用，当前 Prisma provider 是 SQLite：
+CareerMate 是 Next.js 16 App Router 全栈应用，页面和 Route Handler 在同一个进程中运行，Prisma provider 为 SQLite。项目要求 Node.js 22 或 24。
 
-- 适合本地开发、单实例自托管或带持久卷的演示环境。
-- 不应仅修改 `DATABASE_URL` 就声称支持 PostgreSQL、Turso 或多实例 Vercel 部署。
-- 多实例生产环境需要单独完成 Prisma provider、迁移、锁和持久化策略迁移。
+- 支持本地开发、单实例自托管或带持久卷的演示环境。
+- SQLite 文件必须可持久化；当前头像作为 `User.avatarDataUrl` 存在数据库中，没有独立上传目录。不能只改 `DATABASE_URL` 就宣称支持 PostgreSQL、Turso 或无持久磁盘的多实例部署。
+- 多实例部署需要另行迁移数据库 provider、迁移文件、锁与持久化策略。
 
-应用端口由启动命令决定：
+生产构建和监听端口由启动命令决定，例如：
 
 ```bash
 npm run build
 npm run start -- --hostname 0.0.0.0 --port 3000
 ```
 
-反向代理或平台需要提供 HTTPS。当前产品聊天使用 SSE，因此代理必须允许长连接和 `text/event-stream` 响应。
+公网部署应由反向代理提供 HTTPS。生产 session Cookie 设置 `secure=true`；代理还需允许 SSE 长连接，避免将 `text/event-stream` 缓冲成完整响应。
 
-## 2. 必要环境变量
+比赛评委在本机使用时，优先按 [评委启动说明](../../../scripts/submission/README.md) 执行 `start.sh`、`start.command` 或 `start.bat`。这些启动器使用独立 `prisma/review.db`、只监听 `127.0.0.1`，并初始化演示账户，属于评审演示流程；不是公网生产的管理员初始化方案。
 
-最小本地配置：
+## 2. 环境配置与真实 API
 
-```env
-DATABASE_URL="file:./dev.db"
-TBOX_MODE="mock"
-```
+从 `.env.example` 复制本地 `.env`，模板默认 `TBOX_MODE=mock`、`CAREERMATE_AGENTIC_V2=false`，无需真实 API 凭据即可运行演示。`DATABASE_URL="file:./dev.db"` 是相对 Prisma schema 的开发库路径。
 
-真实百宝箱 Agentic V2 环境：
+真实百宝箱 V2 的示例配置：
 
 ```env
-DATABASE_URL="file:./data/production.db"
+DATABASE_URL="file:/srv/careermate/production.db"
 TBOX_MODE="api"
 TBOX_API_KEY="<server-only-api-key>"
-TBOX_AGENT_ID="<validated-agent-id>"
+TBOX_AGENT_ID="<published-agent-id>"
 TBOX_AGENT_VERSION="<validated-agent-version>"
 CAREERMATE_AGENTIC_V2="true"
 TBOX_CONTEXT_TRANSPORT="question_prefix"
-TBOX_HISTORY_MODE="provider"
+TBOX_HISTORY_MODE="context_only"
 STATEFUL_CHAT_TURNS="true"
 TBOX_SEARCH_ENGINE="false"
+NEXT_PUBLIC_APP_URL="https://your-domain.example"
 ```
 
-可选开关：
+`production.db` 的绝对路径是部署者选择的持久化位置，父目录需提前创建并赋予应用进程权限。`TBOX_AGENT_VERSION` 默认为空，代码没有写死平台发布版本；示例版本应换成实际验证过的值。客户端实际发送 `agent_id`，不发送 `app_id`，所以 `TBOX_APP_ID` 不是聊天请求的必需参数。
 
-- `PLAN_V2_WRITE=true`：允许写入 V2 灵活计划。
-- `TBOX_STRUCTURED_MODE=terminal`：启用旧 AgentResponse terminal 路径；只有完成探针验证后才应开启。
-- `AGENT_OPERATIONS_V1=true`：启用旧 structured operations；默认关闭。
+V2 默认将脱敏快照放进模型可见的问题前缀；普通 V2 主聊天遇到非 `question_prefix` 的有效配置值时，会将结构化 context 交给客户端发送为 `business_data` JSON 字符串字段。它不发送 `history`，会复用与当前 Agent ID/版本匹配的远端会话绑定，并以每轮 `searchPolicy=off` 关闭内置搜索。知识库与研究员的实际调用仍取决于平台绑定，见 [绑定说明](../platform/BINDINGS.md)。
 
-不要配置或依赖不存在于当前代码中的 `CAREERMATE_AUTH_SECRET`、`CAREERMATE_ADMIN_USERNAME` 或 `CAREERMATE_ADMIN_PASSWORD_HASH`。
+`TBOX_HISTORY_MODE` 目前仅被配置读取器保留，没有实际运行分支消费；有状态旧聊天是否发送历史由 `TBOX_CONTEXT_TRANSPORT=provider_history` 决定，普通 V2 对该值仍按结构化 context 处理。
+
+保留开关的实际范围：
+
+| 配置 | 当前作用与默认值 |
+|---|---|
+| `STATEFUL_CHAT_TURNS` | 默认 true，启用轮次幂等、锁和分阶段事务 |
+| `TBOX_REUSE_REMOTE_CONVERSATION_ID` | 默认 false，控制旧聊天的远端会话复用；V2 有独立的匹配绑定逻辑 |
+| `TBOX_STRUCTURED_MODE` | 默认 disabled；terminal 属于旧 AgentResponse 协议，不是 V2 Artifact 文本信封开关 |
+| `AGENT_OPERATIONS_V1` | 默认 false，控制旧 structured operations；V2 候选确认使用另一套处理链路 |
+| `PLAN_V2_WRITE` | 默认 false，限制旧聊天 operations 的 `plan_draft` 写入；不是所有 V2 候选的总开关 |
+| `CONVERSATION_SUMMARY` | 默认 false，控制版本化会话摘要 |
+
+旧 structured 路径依赖上游实际返回对应字段，不能通过开启开关就宣称真实 API 已支持。`OPEN_CHAT_ENTRY` 虽仍有定义，目前没有运行时调用；把它设为 false 不会恢复旧首页或旧引导。也没有 `CAREERMATE_AUTH_SECRET`、`CAREERMATE_ADMIN_USERNAME` 或 `CAREERMATE_ADMIN_PASSWORD_HASH` 的可用认证初始化逻辑。
 
 ## 3. 认证和管理员
 
-当前认证实现是数据库 session：
+[auth.ts](../../lib/auth.ts) 使用数据库 session：登录生成随机 token，数据库只存 SHA-256 token hash，浏览器持有 `httpOnly`、`sameSite=lax` 的 `careermate_session` Cookie。有效期为 7 天，生产环境 Cookie 还设置 `secure=true`。
 
-```text
-登录
-→ 随机 session token
-→ 数据库保存 token hash
-→ httpOnly Cookie careermate_session
-```
+管理员鉴权读取 `User.role === "admin"`。注册接口创建普通用户；仓库没有可通过管理员环境变量自动创建生产管理员的启动过程。生产管理员应通过受控的数据库操作创建或提升角色，并设置独立密码；不能使用评委/开发种子的固定演示凭据作为公网管理员凭据。
 
-管理员权限来自 `User.role === "admin"`，不是独立的管理员环境变量。管理员用户应通过受控的数据库初始化或后台流程创建，不能在公开部署中依赖固定演示密码。
+## 4. 数据库与依赖初始化
 
-相关代码：
-
-- `src/lib/auth.ts`
-- `src/lib/session-security.ts`
-- `src/app/api/auth/*`
-
-## 4. 数据库初始化
-
-首次部署：
+从仓库部署应使用锁文件安装依赖。默认开发新库的初始化顺序为：
 
 ```bash
-npm install
+npm ci
 npm run prisma:generate
+node -e "require('node:fs').closeSync(require('node:fs').openSync('prisma/dev.db', 'a'))"
 npm run db:migrate:deploy
 ```
 
-仅在本地开发或专用测试环境使用：
+创建文件的命令仅对应默认开发路径；生产环境应先确保实际配置的持久化父目录存在，并创建应用可访问的空库，替换上述 `prisma/dev.db` 创建步骤。数据库文件准备好后再执行迁移。已有数据库升级前应备份，再执行 `db:migrate:deploy`；不要用 `db:migrate` 的开发迁移生成流程替代部署迁移。
 
-```bash
-npm run seed
-```
+`npm run seed` 执行的 [prisma/seed.ts](../../../prisma/seed.ts) 会清空多类数据并重建虚构演示账户、模板和资源。只用于专用开发/测试库，正常生产环境会拒绝执行；隔离 E2E 的例外仅允许指定测试数据库。评委启动器使用另一个 [review-seed.ts](../../../prisma/review-seed.ts)，仅在无用户的独立评委库中初始化，重复启动保留已有用户和成长数据。
 
-`prisma/seed.ts` 写入虚构用户、岗位模板和资源；生产环境不要直接使用演示种子覆盖数据库。
+## 5. 当前页面和业务链路
 
-## 5. 主要公网行为
+| 路径 | 当前行为 |
+|---|---|
+| `/` | 未登录显示介绍界面；已登录按画像状态跳转 `/chat` 或 `/onboarding` |
+| `/login` | 登录/注册界面；已登录跳转 `/` |
+| `/onboarding` | 兼容入口，转到 `/chat?intent=profile` |
+| `/chat` | 主聊天、画像引导、业务卡片及训练会话 |
+| `/dashboard` | 成长工作台 |
+| `/path` | 职业计划与学习路线 |
+| `/simulation` | 场景推荐、预览、开始/恢复训练 |
+| `/resources` | 学习资源与已导入岗位样本 |
+| `/memory` | 待确认建议、画像/能力和本地记忆 |
+| `/settings` | 账户、密码、外观、隐私导出与成长数据清空 |
+| `/admin` | 管理员资源审核与模板管理 |
 
-浏览器页面：
-
-```text
-/
-/login
-/onboarding
-/dashboard
-/path
-/simulation
-/resources
-/memory
-/admin
-```
-
-产品聊天：
+产品聊天入口：
 
 ```text
 POST /api/chat/conversations/:id/stream
 ```
 
-该接口要求当前 CareerMate session Cookie，不是供百宝箱直接用无状态 Bearer Token 调用的公网 Chat API。
+接口要求本地 session Cookie 和会话所有权。普通聊天响应为 SSE；未完成训练会话由专用训练服务处理，完成后可在原会话讨论报告。它不是供平台用无状态 Bearer Token 调用的公网 Chat API。
 
-Agentic V2 的业务上下文由 CareerMate 服务端在请求内部组装为 `business_data`。当前 V2 聊天不依赖公网业务 MCP，也不依赖签名上下文令牌。
+训练专用生成服务使用精简训练上下文，不自动附带普通 V2 完整的 `taskContext`/`evidenceBundle` 和三个工作流开始参数；本地追问或评分契约校验成功不证明云端已经补齐这些参数或调用相应工作流。
 
-候选接口：
+业务快照由服务端按权限脱敏、裁剪并传输。当前 V2 主链路不依赖公网业务 MCP 或签名上下文令牌。V2 候选先保存到独立候选表，只有决策接口接受并通过契约、所有权、状态和版本复核，才在事务中投影为正式业务数据：
 
 ```text
 GET  /api/agentic-v2/candidates
@@ -124,61 +117,45 @@ POST /api/agentic-v2/candidates/:candidateId/decision
 
 ## 6. 部署后验证
 
-先检查页面：
+先检查未登录页面可访问：
 
 ```bash
 curl -I https://your-domain.example/
 curl -I https://your-domain.example/login
 ```
 
-再用已登录浏览器验证：
+再用浏览器验证真实边界：
 
-1. 登录并进入 `/dashboard`。
-2. 确认工作台可以加载 `/api/me`。
-3. 打开 Kurisu 浮窗并创建会话。
-4. 发送消息，确认 SSE 返回 `context`、`delta` 和 `done`。
-5. 验证候选只能在用户确认后写入正式数据。
-6. 验证 `/memory` 的导出和清空确认词流程。
+1. 打开 `/` 查看介绍界面，在 `/login` 登录；画像已完成进入 `/chat`，未完成进入画像引导。
+2. 确认 `/api/me` 和登录后页面可加载，创建会话并发送消息。
+3. 普通聊天应得到 `context`、`delta`、可选 `artifact` 及终态 `done`/`error`；确认消息持久化，刷新能恢复。
+4. 真实 API 配置下查看执行元信息：`actualMode=api`、`source=tbox-api`，并确认未降级；有回答不能单独证明上游实际运行。
+5. 对一个有效候选在页面执行接受，验证正式记录变化；用未确认候选、版本冲突或跨用户访问验证不能越权写入。
+6. 场景预览后开始训练，至少完成 3 个有效回答，再核对评分与报告；创建接口允许 `roundLimit` 为 3–6，当前页面默认 6。
+7. 在测试账户的 `/settings` 隐私页导出 JSON，并用 `CLEAR_MY_DATA` 清空成长数据。清空是同步本地事务，保留账户、角色和登录态，不能证明远端平台数据已删除。
 
-本地质量门禁：
+本地质量门禁是 `npm run verify`，包含秘密扫描、lint、类型、单元测试、迁移 smoke、评委初始化 smoke 和生产构建。端到端测试另用 `npm run test:e2e`、`npm run test:e2e:v2`；它们使用 Mock 和隔离测试库，不是平台发布验收。
 
-```bash
-npm run secret:scan
-npm run lint
-npm run typecheck
-npm run test
-npm run test:migrations
-npm run build
-```
+## 7. 服务端配置与数据边界
 
-## 7. 安全边界
+- API key、session Cookie、上下文密钥和个人 SQLite 数据库不得提交到 Git。真实评委 API 配置仅在明确授权的本地私有交付包中携带。
+- 客户端 API 端点校验仅接受 HTTPS 的 `tbox.cn` 或其子域；测试依赖可以显式绕过，生产调用不设置该标记。
+- 数据库应放在进程可写、可持久化的位置并限制访问权限；反向代理需正确传递 Cookie 和 SSE。
+- `CAREERMATE_CONTEXT_TOKEN_SECRET`、`CAREERMATE_PLUGIN_TOKEN` 与 `/api/mcp/v2` 是仍有实现的独立工具基础设施；当前 V2 主聊天不要求配置它们。启用前需单独验证 Scope、Origin 和跨用户隔离。
+- 技术诊断使用 [diagnostics.ts](../../lib/diagnostics.ts) 的元信息字段与敏感键过滤；这不等于聊天数据库不保存用户消息，也不证明所有错误日志具有统一脱敏。
 
-- `TBOX_API_KEY`、`TBOX_AGENT_ID` 和上下文密钥只能存在于服务端环境变量。
-- 不要把真实密钥、session Cookie 或 SQLite 数据库提交到 Git。
-- 生产环境使用持久化数据库路径，并限制数据库文件访问权限。
-- 反向代理必须正确转发 Cookie、SSE 和长连接。
-- `CAREERMATE_CONTEXT_TOKEN_SECRET`、`CAREERMATE_PLUGIN_TOKEN` 和 `/api/mcp/v2` 属于保留基础设施；启用它们前必须单独完成 Scope、Origin、协议和跨用户隔离验证。
+## 8. 公网代理限流与请求体
 
-## 8. 公开部署的限流（T23b）
+当前源码没有内置应用限流器，也没有现成代理配置。公网部署者应在代理/网关配置共享限流，阈值按成本和流量调整；以下仅为部署建议，不能视为仓库已经实施：
 
-**限流位置必须在反向代理 / 网关层，而不是应用进程内。**
+| 入口 | 示例阈值 |
+|---|---|
+| `POST /api/auth/login` | 每 IP 5 次/分钟 |
+| `POST /api/auth/register` | 每 IP 3 次/分钟 |
+| 产品聊天 `…/stream` | 每用户 30 次/分钟 |
+| `POST /api/plans/generate` | 每用户 3 次/小时 |
+| 自定义场景生成、训练评分 | 每用户按实际模型成本设置 |
 
-当前代码不内置进程内限流器，原因：进程内 Map/固定窗口在**多实例**下会各自计数、无法跨实例共享，若宣称其“多实例有效”会给用户错误的安全预期。单实例自托管 + 反向代理是当前部署形态，限流由代理承担，各实例天然共享同一代理的限流窗口，因此多实例适用边界也由该层决定。
+代理可返回 HTTP 429、`Retry-After` 和统一 JSON 错误。通用客户端 [client-api.ts](../../lib/client-api.ts) 对 429 提供 `RATE_LIMITED` 默认码及“操作过于频繁，请稍后重试”文案；这不能证明代理已配置，也不代表每个专用 SSE 消费器都走同一个处理函数。
 
-**建议代理阈值（可在代理层按实例/用户/IP 配置）：**
-
-| 入口 | 建议 | 说明 |
-|---|---|---|
-| `POST /api/auth/login` | 每 IP 5 次/分钟 | 防暴力破解密码 |
-| `POST /api/auth/register` | 每 IP 3 次/分钟 | 防批量注册 |
-| 产品聊天 `…/stream` | 每用户 30 次/分钟 | 昂贵 AI 入口，防止并发打爆模型 |
-| `POST /api/plans/generate` | 每用户 3 次/小时 | 昂贵生成 |
-| `POST /api/simulations/:id/complete` | 每用户 10 次/小时 | 昂贵评分 |
-
-**429 行为：** 代理返回 `HTTP 429`，`Retry-After` 秒数，响应体为 `{"ok":false,"error":{"code":"RATE_LIMITED","message":…}}`。客户端（`src/lib/client-api.ts`）已识别 `RATE_LIMITED` 并展示“操作过于频繁，请稍后重试”。**恢复文案**（已内置）：`操作过于频繁，请稍后重试`。
-
-**应用层已做的**（`src/lib/api.ts` `parseBodyJson`，T23a）：请求体 16KB 上限、空体/坏体 400，防止超大/畸形请求打到代理之后的更内层；认证入口额外做字符串长度上限。
-
-**多实例适用边界已记录：** 代理限流覆盖多实例（共享限流窗口）；若改为无代理的多实例直连，需另选共享存储的限流方案（如 Redis 令牌桶），本仓库不提供、也未宣称进程内方案多实例有效。
-
-**应用层不把原始密码/令牌/聊天正文写入诊断日志**（`src/lib/diagnostics.ts` 的 `redactForDiagnostics` 会删除敏感键，见 T24）。
+[api.ts](../../lib/api.ts) 的 `parseBodyJson` 默认以 `16 * 1024` 检查 `raw.length`，对空体、坏 JSON 和超限文本归一化错误；目前认证入口使用它，不能称为所有 Route Handler 的统一 UTF-8 字节上限或读取前的流式限制。部署者仍需在代理配置请求体大小上限。

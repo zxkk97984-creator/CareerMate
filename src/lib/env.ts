@@ -83,9 +83,9 @@ export function isStatefulChatTurns(): boolean {
 }
 
 /**
- * Sends only a short-lived scoped token plus observational page context to
- * the new Agentic V2 application. Off by default so switching agent_id back
- * to the existing application is a complete rollback.
+ * Enables the Agentic V2 snapshot/artifact runtime. It sends sanitized business
+ * snapshots through the configured context transport, not signed context tokens.
+ * Off by default; the legacy chat runtime remains available when disabled.
  */
 export function isAgenticV2Enabled(): boolean {
   return readBoolean("CAREERMATE_AGENTIC_V2", false);

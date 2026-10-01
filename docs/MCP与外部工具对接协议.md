@@ -5,17 +5,26 @@
 | 项目 | 内容 |
 |---|---|
 | 系统名称 | CareerMate AI 职业成长工作台 |
-| 文档版本 | 1.1 · 参赛版 |
-| 编制日期 | 2026-09-12 |
+| 文档版本 | 1.2 · 源码校准版 |
+| 源码校准日期 | 2026-10-01 |
 | 适用范围 | 百宝箱智能体接入、夸克公开信息搜索、职业研究结果交换、CareerMate 业务 MCP V2 |
 | 应用对象 | 高校学生、职场新人及具有职业成长需求的用户 |
 | 技术定位 | 智能体编排、公开信息研究与可确认业务执行的一体化对接 |
 
 ### 摘要
 
-CareerMate 面向职业方向不清晰、学习行动难落地、成长反馈不连续等问题，构建集职业画像、方向探索、职业规划、学习路线、模拟训练和成长复盘于一体的 AI 职业成长工作台。系统通过百宝箱主智能体组织任务，借助职业情报研究员与夸克含正文搜索补充公开信息，以统一证据契约连接个人背景、职业要求和市场变化，并通过结构化工作流将分析结果转化为可查看、可确认、可追踪的业务成果。
+CareerMate 面向职业方向不清晰、学习行动难落地、成长反馈不连续等问题，构建集职业画像、方向探索、职业规划、学习路线、模拟训练和成长复盘于一体的 AI 职业成长工作台。启用 API/V2 并完成平台配置后，系统按仓库约定由百宝箱主智能体组织任务，借助职业情报研究员与夸克含正文搜索补充公开信息，以统一证据契约连接个人背景、职业要求和市场变化，并通过结构化工作流将分析结果交付本地应用。实际平台执行情况应由当次记录证明。
 
 本协议覆盖平台工具接入、研究数据交换、业务结果交付和 CareerMate MCP V2 服务四个层次，重点说明外部搜索如何融入职业服务闭环，以及系统如何通过权限隔离、来源标注、版本校验和用户确认控制执行边界。其技术价值在于贯通“信息获取—个性分析—行动形成—成长反馈”，为持续职业服务提供统一接口基础。
+
+本文同时包含本地实现和平台编排约定，阅读时应以以下边界为准。`.env.example` 默认 `TBOX_MODE=mock`、`CAREERMATE_AGENTIC_V2=false`；百宝箱 API/V2 链路需要在服务端另行配置。仓库中的 Prompt、绑定说明和导出脚本能证明交付契约存在，不能证明云端资源已经挂载、发布或当次调用实际执行了搜索。
+
+| 范围 | 当前源码能够确认的内容 | 核对来源 |
+|---|---|---|
+| 产品聊天 | 浏览器调用会话 SSE；V2 分支向百宝箱传脱敏快照，并在本地解析 Artifact 和候选 | [stream-service.ts](../src/lib/chat/stream-service.ts)、[candidate-ingestion.ts](../src/lib/agentic-v2/candidate-ingestion.ts) |
+| 平台研究与工作流 | 研究员、搜索绑定、八个工作流及代码节点具有仓库交付规则；实际执行依赖平台配置 | [研究员 Prompt](../src/agentic-v2/platform/prompts/researcher.md)、[绑定说明](../src/agentic-v2/platform/BINDINGS.md) |
+| MCP V2 | 独立 POST JSON-RPC 入口、外层鉴权、七个业务工具和服务端短时令牌函数 | [处理器](../src/lib/mcp-v2-handler.ts)、[工具注册表](../src/lib/tools/careermate-v2-registry.ts)、[令牌函数](../src/lib/agent-context-auth.ts) |
+| 自动串联边界 | 当前产品聊天不调用 `/api/mcp/v2`，也不自动签发并把 `context_token` 交给百宝箱；MCP 集成方需自行组织服务端签发 | [V2 快照](../src/lib/chat/agentic-v2-snapshot.ts)、[V2 上下文](../src/lib/chat/agentic-v2-context.ts) |
 
 ## 1. 协议目标
 
@@ -36,17 +45,17 @@ CareerMate 将用户画像、职业探索、成长计划、学习资源、模拟
 | 对接层 | 调用双方 | 协议与职责 |
 |---|---|---|
 | 应用服务层 | CareerMate 后端 → 百宝箱主智能体 | HTTP API；传递用户问题、脱敏业务快照和会话信息，接收模型结果 |
-| 平台工具层 | 职业情报研究员 V2P → 夸克含正文搜索 | 使用百宝箱平台资源绑定调用公开搜索工具，由平台管理工具连接与原生参数 |
+| 平台工具层 | 职业情报研究员 V2P → 夸克含正文搜索 | 仓库约定通过百宝箱平台资源绑定调用公开搜索工具；挂载、连接与原生参数由平台配置 |
 | 业务契约层 | 研究员、主智能体、工作流、CareerMate 后端 | 使用 ResearchReportV1、证据包和 Artifact 统一组织数据 |
 | MCP 服务层 | 授权 MCP 客户端 → CareerMate 业务 MCP V2 | JSON-RPC 2.0；提供受权限约束的业务读取、候选创建和训练追加能力 |
 
-夸克含正文搜索的资源标识为 `quark_article_search_content`，采用百宝箱平台插件绑定方式组织调用。平台负责原生工具连接、参数适配和认证；CareerMate 定义研究任务及标准化结果协议。本文中的研究字段属于项目级业务契约，夸克工具原生接口遵循平台定义。
+仓库研究员 Prompt 中的夸克含正文搜索资源标识为 `quark_article_search_content`，采用百宝箱平台插件绑定方式组织调用。本地没有直接请求夸克原生 API 的客户端。平台负责原生工具连接、参数适配和认证；CareerMate 定义研究任务及标准化结果协议。本文中的研究字段属于项目级业务契约，夸克工具原生接口遵循实际平台定义。
 
 主产品链路通过百宝箱聊天 API 传递业务快照，业务 MCP V2 则为授权客户端提供独立的业务访问入口。两者共享本地业务规则，分别承担交互编排和工具服务职责。
 
 ## 3. 总体调用架构
 
-下图展示需要公开市场信息的职业服务流程。夸克搜索由平台资源绑定触发，候选持久化及用户确认由应用后端处理。
+下图展示 V2 API 模式配置完成后，按仓库编排约定需要公开市场信息时的流程。图中平台内调用是预期流程，需使用平台执行记录确认；候选持久化及用户确认则由本地应用后端处理。
 
 ```mermaid
 sequenceDiagram
@@ -82,7 +91,7 @@ sequenceDiagram
   end
 ```
 
-架构将公开市场信息与用户个人事实分别管理。外部搜索扩大信息覆盖范围，本地画像和历史记录提供个性化依据，工作流与后端契约将有效结果交付业务系统。需要候选审查的任务还由伦理证据审查员参与评估，审查结论与用户确认承担不同职责。
+架构将公开市场信息与用户个人事实分别管理。外部搜索扩大信息覆盖范围，本地画像和历史记录提供个性化依据，工作流与后端契约将有效结果交付业务系统。平台 Prompt 约定需要候选审查的任务调用伦理证据审查员；本地候选决定接口不会额外实时调用该审查员，平台审查也不能代替用户确认。
 
 ## 4. 百宝箱主智能体接入
 
@@ -107,6 +116,8 @@ CareerMate 后端通过 `POST` 请求百宝箱聊天接口，接口地址由部�
 ### 4.2 上下文约定
 
 系统默认以 `question_prefix` 将业务快照放入问题前缀，并支持通过 `business_data` 字段发送序列化上下文。两种方式传递一致的业务语义，由后端统一组装。
+
+普通 V2 聊天始终不单独发送 `history`；在 V2 分支中，`question_prefix` 以外的传输配置都走 `business_data`。`provider_history` 的独立上游历史行为属于非 V2 分支。远端 `conversation_id` 还需匹配当前 Agent ID 与版本绑定，不能复用其他 Agent 的会话标识，具体请求组装见 [client.ts](../src/lib/tbox/client.ts) 与 [stream-service.ts](../src/lib/chat/stream-service.ts)。
 
 快照包含已确认画像、成长历史、相关训练状态、页面交互及权限描述，并可附带任务上下文、证据包与后端已计算的 `verifiedAnalysis`。个人数据的读取、脱敏和结构化裁剪由应用后端完成，使智能体能够利用已有信息提供连续服务，减少重复询问。
 
@@ -143,7 +154,7 @@ CareerMate 后端通过 `POST` 请求百宝箱聊天接口，接口地址由部�
   "region": "杭州",
   "experienceLevel": "应届或初级",
   "timeRange": "近一年",
-  "currentTime": "2026-09-12T12:00:00Z"
+  "currentTime": "2026-10-01T08:00:00Z"
 }
 ```
 
@@ -171,13 +182,13 @@ CareerMate 后端通过 `POST` 请求百宝箱聊天接口，接口地址由部�
 
 研究员输出约定中，每条 finding 使用 `claim`、`evidence`、`sourceIds` 和 `confidence`；每条 source 使用 `id`、`title`、`url`、`publisher`、`publishedAt`、`accessedAt`。`sourceIds` 应指向本次报告中的来源 ID。
 
-报告顶层结构由 Schema 定义，结论与来源按研究员输出契约组织。结构检查负责数据格式一致性，来源核对负责证据可追溯性，两者共同支撑后续分析。
+报告顶层结构由 [researchReportV1Schema](../src/lib/agentic-v2/contracts.ts) 定义，`findings`、`sources`、`conflicts`、`limitations` 在该 Schema 中是可序列化 JSON 数组；上表的 finding/source 细分字段与引用关系属于研究员 Prompt 约定，Schema 未逐项检查。当前产品运行链路没有单独接收并调用该 Schema 校验研究报告，也没有逐 URL 自动核验来源。不能把结构定义或提示词约束描述为来源已被验证。
 
 ## 6. 证据转换与业务结果交付
 
 ### 6.1 市场证据映射
 
-主智能体将研究报告映射至本次 `evidenceBundle.marketEvidence`，保留画像、历史和职业基线的独立来源。
+平台主 Prompt 约定将研究报告映射至本次 `evidenceBundle.marketEvidence`，保留画像、历史和职业基线的独立来源。该映射由平台智能体完成；本地快照构建器不会直接执行夸克搜索或自动写入搜索结果。
 
 | 研究报告信息 | 市场证据字段 | 转换规则 |
 |---|---|---|
@@ -193,7 +204,7 @@ CareerMate 后端通过 `POST` 请求百宝箱聊天接口，接口地址由部�
 
 ### 6.2 工作流交换接口
 
-主智能体通过三个必填文本参数调用相应工作流：`request`、`task_context_json`、`evidence_bundle_json`。工作流采用“开始—大模型—代码校验—结束”的处理结构，结束节点输出 `artifact`。
+平台交付资产约定主智能体通过三个必填文本参数调用相应工作流：`request`、`task_context_json`、`evidence_bundle_json`。工作流采用“开始—大模型—代码校验—结束”的处理结构，结束节点输出 `artifact`；导出脚本生成节点所需资产，实际节点连接和发布由平台完成。
 
 工作流体系覆盖画像评估、职业探索、职业规划、学习路线、职场模拟、场景生成、简历作品和成长复盘。不同任务采用统一 Artifact 外壳表达结果，任务数据执行各自的业务校验：
 
@@ -205,13 +216,15 @@ CareerMate 后端通过 `POST` 请求百宝箱聊天接口，接口地址由部�
 | 确认 | `requiresUserConfirmation`、`baseVersion` |
 | 后续动作 | `nextActions` |
 
-主智能体将代码节点输出的 Artifact 原样放入一个 `CAREERMATE_ARTIFACT` 信封。本地后端过滤协议内容、解析结果并执行任务相关校验，前端展示可读正文和适用的结构化部件。
+主 Prompt 要求将代码节点输出的 Artifact 原样放入一个 `CAREERMATE_ARTIFACT` 信封。本地后端过滤协议内容、解析结果并执行任务相关校验，前端展示可读正文和适用的结构化部件；平台输出不符合约定时，本地不能凭正文中“已生成/已保存”字样认定业务成功。
 
 ### 6.3 确认与持久化
 
 `success` 表示业务结果可由对应服务消费；`pending_confirmation` 且 `requiresUserConfirmation=true` 表示可进入候选处理；`needs_input` 表示补充必要信息；`error` 表示当前任务未能交付有效结果。
 
 用户接受候选后，后端再次校验候选归属、状态、基准版本和业务数据，在事务中完成正式投影。搜索结果和研究员结论不直接修改用户画像、能力评分或活动计划。聊天记录、训练过程和报告由各自业务服务保存，形成可供后续咨询与复盘使用的成长记录。
+
+并非每个 Artifact 都生成候选。普通聊天仅摄入 `pending_confirmation` 且要求确认、并且具有受支持任务映射的结果；训练续答和场景预览走专用服务。职业探索只有包含相应岗位字段时可形成岗位草稿候选。`ability_evidence` 接受时写入能力证据，评分报告不会直接覆写画像分数。候选 `baseVersion` 对画像/能力候选是画像版本，对计划/路线/重规划是活动计划版本；学习路线还检查独立的 `baseRouteVersion`。完整映射和投影见 [candidate-ingestion.ts](../src/lib/agentic-v2/candidate-ingestion.ts) 与 [candidate-resolution.ts](../src/lib/agentic-v2/candidate-resolution.ts)。
 
 ## 7. 标准化业务 MCP 服务
 
@@ -229,21 +242,23 @@ MCP-Protocol-Version: 2025-03-26
 
 服务支持 `2025-03-26` 与 `2025-11-25` 协议版本，提供 `initialize`、`ping`、`tools/list` 和 `tools/call` 方法。POST 正常返回 JSON；GET 和 DELETE 经鉴权后返回 405，不建立持久会话流。
 
-外层 Bearer 验证接入客户端，工具参数中的 `context_token` 验证具体用户、会话、权限和有效期。令牌由后端签名，默认有效期 300 秒，最长 600 秒。携带 Origin 的请求还需匹配服务端允许名单。该接入凭据与百宝箱 API Key 分开管理。
+外层 Bearer 验证接入客户端，配置令牌至少 32 UTF-8 字节且不能为示例值；不存在开发免鉴权放行。工具参数中的 `context_token` 验证签名中的用户、来源会话声明、权限和有效期。服务端函数使用独立的 `CAREERMATE_CONTEXT_TOKEN_SECRET`（至少32字节）签名，默认有效期 300 秒，最长 600 秒。携带 Origin 的请求还需精确匹配 `CAREERMATE_MCP_ALLOWED_ORIGINS`。该接入凭据与百宝箱 API Key 分开管理。
+
+POST 必须声明 UTF-8 JSON（省略 charset 也可），Accept 须同时包含 `application/json` 和 `text/event-stream`，且不能用仅通配符代替。版本头可省略，默认 `2025-03-26`；请求体最大 1 MiB。`2025-03-26` 接受1–100项批处理，`2025-11-25` 拒绝批处理；合法通知或客户端响应返回202空体。该实现不分配持久 MCP 会话，也不因 Accept 包含 SSE 自动开始事件流。
 
 ### 7.2 工具目录
 
-所有工具均要求 `context_token`；完整参数以 `tools/list` 返回的 `inputSchema` 为准。
+所有工具均要求 `context_token`。`tools/list` 返回工具发现所需的 `inputSchema`；完整长度限制、字段组合和服务校验以 [工具注册表](../src/lib/tools/careermate-v2-registry.ts) 的 Zod Schema 为准。工具参数不得另传 `userId` 覆盖签名身份。
 
 | 工具名称 | 所需 scope | 业务能力 |
 |---|---|---|
-| `profile.read` | `profile:read` | 读取令牌所属用户的画像与相关能力信息 |
-| `growth_history.read` | `history:read` | 读取成长历史 |
-| `career_templates.query` | `resources:read` | 查询本地职业模板 |
-| `learning_resources.query` | `resources:read` | 查询学习资源 |
-| `simulation_state.read` | `history:read` | 读取所属用户的训练状态 |
-| `candidate.create` | `candidates:create` | 创建符合契约的待确认业务候选 |
-| `simulation_turn.append` | `simulation:append` | 按预期轮次追加训练内容 |
+| `profile.read` | `profile:read` | 无其他参数；返回画像版本、画像和最多100条已确认能力证据 |
+| `growth_history.read` | `history:read` | `limit?` 1–50，默认20；返回当前计划、计划摘要历史、日志和训练摘要 |
+| `career_templates.query` | `resources:read` | `roleKey?,query?,limit?` 1–20，默认10；返回本地模板数组 |
+| `learning_resources.query` | `resources:read` | `roleKey?,abilityKey?,stage?,maxHours?,query?,limit?` 1–20，默认10；返回原始本地资源数组 |
+| `simulation_state.read` | `history:read` | `sessionId?` 或 `scenarioKey?` 至少一项；返回所属用户训练状态，同时给定时优先sessionId |
+| `candidate.create` | `candidates:create` | `candidateType,artifact`；验证来源聊天归属，只创建待确认候选 |
+| `simulation_turn.append` | `simulation:append` | `sessionId,expectedTurnCount` 0–6、`userMessage` 1–4000、`assistantMessage` 1–8000；事务追加并记录幂等执行 |
 
 示例：读取授权用户画像，示例令牌需替换为后端实际签发值。
 
@@ -263,6 +278,10 @@ MCP-Protocol-Version: 2025-03-26
 
 成功工具结果通过 `result.content` 和 `result.structuredContent` 返回。执行错误可返回 `result.isError=true`；身份、scope 或未知工具错误可返回 JSON-RPC `error`。接入方应检查结果状态，不以 HTTP 200 代替业务成功判断。
 
+数组工具结果的 `structuredContent` 包装为 `{result:[...]}`。只读工具以签名用户查询个人记录，但不会统一查询来源 `sid` 会话是否仍存在；候选创建进一步验证来源聊天归属。资源工具没有产品 `/api/resources` 的 active/verified/来源过滤。训练追加工具固定最多6轮，不读取自定义 `roundLimit`，不生成评分或同步产品聊天记录；它是独立工具能力，不代表完整训练流程。它的幂等身份来自令牌 `jti`、`sid` 与目标训练/轮次，同一身份不同正文返回冲突。
+
+旧 `/api/mcp`（协议2024-11-05）及 `/api/mcp/profile/*`、`courses/query`、`jobs/query`、`progress/update` 继续作为兼容入口存在，使用静态服务端用户绑定，不接受 V2 参数。其中旧 `jobs.query` 生成确定性脱敏模拟样例；产品 `/api/jobs` 查询已导入 `JobSample`。详细请求与返回见 [API文档](接口设计文档.md)。
+
 ## 8. 异常处理与安全规则
 
 | 情况 | 协议处理要求 |
@@ -273,16 +292,18 @@ MCP-Protocol-Version: 2025-03-26
 | 来源冲突 | 保留冲突与适用范围，避免输出无依据的唯一结论 |
 | 业务结果格式无效 | 后端拒绝对应结果摄入，返回或记录相应错误 |
 | 候选版本冲突 | 保留当前正式数据，提示刷新或重新生成 |
-| MCP 身份或 scope 不匹配 | 拒绝调用，不接受工具参数覆盖当前用户身份 |
+| MCP 身份或 scope 不匹配 | 外层 Bearer/Origin 拒绝；工具令牌或scope失败返回 JSON-RPC error，不接受工具参数覆盖当前用户身份 |
 | API 调用降级 | 记录 requestedMode、actualMode、degraded、fallbackReason 和 source |
 
 密钥由服务端配置管理。外部搜索遵循最小必要数据原则，本地业务查询按用户隔离。平台记忆与本地 `MemoryItem` 分别管理；本地隐私清除的执行范围是 CareerMate 本地数据。
+
+上述搜索次数、来源数量和不发送个人资料等规则是平台 Prompt 约定，需要平台工具执行记录验证。服务端确实执行本地身份、Schema、候选状态与版本检查，但这些检查不会自动证明云端遵守了所有编排或来源真实性要求。外层 MCP 常见HTTP错误为401/403、406（Accept）、415（Content-Type）、413（体积）；参数及业务执行错误可能仍是HTTP200下的JSON-RPC或 `isError`。
 
 ## 9. 典型应用场景
 
 ### 9.1 场景描述
 
-以一名具有基础数据分析经验、希望了解杭州初级数据分析岗位并制定学习计划的学生为例，系统可以将职业研究、个性化分析与行动规划组织为连续服务。下表为业务演示流程，具体岗位结论与推荐内容以当次检索和用户确认的信息为依据。
+以一名具有基础数据分析经验、希望了解杭州初级数据分析岗位并制定学习计划的学生为例，平台配置完成后可按约定将职业研究、个性化分析与行动规划组织为连续服务。下表为预期业务演示流程，不是本次文档核对已经完成的真实搜索记录；具体岗位结论与推荐内容以当次检索和用户确认的信息为依据。
 
 | 环节 | 系统处理 | 面向用户的交付 |
 |---|---|---|
@@ -335,3 +356,5 @@ MCP-Protocol-Version: 2025-03-26
 | 异常处理 | 来源不足、上游失败、无效输出和重复请求 | 错误响应、执行元信息与重试结果 |
 
 文档中的 JSON 为协议结构示例；实际验证材料使用对应环境的调用和业务记录。文档版本、业务契约版本与平台发布版本分别管理。接口或数据结构变更时同步更新协议及校验规则，保持智能体编排与本地业务处理的一致性。
+
+本次校准采用源码、Route Handler、Zod契约、工具注册表和现有测试的静态对照，没有重新执行远端百宝箱发布、研究员搜索或原生夸克调用。可核对的本地测试包括 [MCP 路由测试](../src/app/api/mcp/v2/route.test.ts)、[V2工具测试](../src/lib/tools/careermate-v2-registry.test.ts)、[候选服务测试](../src/lib/agentic-v2/candidate-service.test.ts)；这些测试覆盖相应本地行为，不能当作云端调用链已验证的证据。
