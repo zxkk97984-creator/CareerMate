@@ -102,6 +102,7 @@ const allowedPatterns = [
 
 // Live2D 模型与纹理是产品运行必需资源，允许二进制进入版本库
 const allowedBinaryPatterns = [
+  /^public\/images\/marketing\/growth-landscape\.webp$/,
   /^public\/live2d\//,
   /^public\/images\/companion\//,
   /^public\/images\/kurisu-avatar\.png$/,

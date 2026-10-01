@@ -1,52 +1,93 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { ArrowRight, ChevronDown, Eye, EyeOff, TriangleAlert, Check } from "lucide-react";
-import "./login-layout.css";
 import styles from "./login-form.module.css";
-import { DEMO_ACCOUNTS, DEMO_PASSWORD, FIELD_LABELS, validateField, validateFields, initLoginMotion, type AuthMode, type AuthFields, type FieldErrors, type FieldName } from "./login-motion";
+import { DEMO_ACCOUNTS, DEMO_PASSWORD, FIELD_LABELS, validateField, validateFields, type AuthMode, type AuthFields, type FieldErrors, type FieldName } from "./login-motion";
 
-/** Native login and registration surface for the existing CareerMate auth APIs. */
+import { GrowthScene } from "../marketing/growth-scene";
+import { initMarketingMotion } from "../marketing/marketing-motion";
+
+/** Preserve the application's authenticated submit flow inside the supplied visual layout. */
 export function LoginForm() {
   const rootRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const root = rootRef.current;
-    if (root) return initLoginMotion(root);
+    if (rootRef.current) return initMarketingMotion(rootRef.current);
   }, []);
   return (
-    <div ref={rootRef} className={[styles.loginPage, "cm-auth"].join(" ")}>
+    <div ref={rootRef} className={[styles.page, "cm-auth"].join(" ")} data-motion-mode="full">
+      <div aria-hidden="true" className="cl-ambient-background">
+        <div className="cl-ambient-bg-grid" />
+        <div className="cl-ambient-bg-glow" />
+      </div>
       <header className="cm-auth-header od-row">
-        <Link className="cm-auth-brand od-row" href="/" aria-label="CareerMate 首页"><span className="cm-auth-brand-mark"><svg className="cm-auth-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="7" width="18" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2M3 11a20 20 0 0 0 18 0M12 11v4"/></svg></span><span>CareerMate<span className="cm-auth-brand-dot">.</span></span></Link>
-        <Link className="cm-auth-back od-row" href="/"><svg className="cm-auth-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 12H4M11 5l-7 7 7 7"/></svg><span>返回首页</span></Link>
+        <Link aria-label="CareerMate 首页" className="cm-auth-brand od-row" href="/">
+          <svg aria-hidden="true" className="v2-logo" height="35" viewBox="0 0 40 40" width="35">
+            <path d="M21 19V13C21 5 29 1 37 3c2 8-2 16-10 16Z" fill="#2367FF" />
+            <path d="M19 21v6C19 35 11 39 3 37c-2-8 2-16 10-16Z" fill="#2367FF" />
+            <path d="M19 19h-6C5 19 1 11 3 3c8-2 16 2 16 10Z" fill="#7EACFF" />
+            <path d="M21 21h6c8 0 12 8 10 16-8 2-16-2-16-10Z" fill="#C5DBFF" />
+          </svg>
+          <span>
+            {"CareerMate"}
+          </span>
+        </Link>
+        <div className="v3-header-end">
+          <Link className="cm-auth-back od-row" href="/">
+            <svg aria-hidden="true" className="cm-auth-icon" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" viewBox="0 0 24 24">
+              <path d="M20 12H4M11 5l-7 7 7 7" />
+            </svg>
+            <span>
+              {"返回首页"}
+            </span>
+          </Link>
+        </div>
       </header>
       <main className="cm-auth-main">
-        <section className="cm-auth-intro" aria-label="CareerMate 职业成长伙伴">
-          <div className="cm-auth-eyebrow od-row"><span className="cm-auth-signal" aria-hidden="true"></span><span>AI 职业成长伙伴</span></div>
-          <p className="cm-auth-brand-title">下一程，<br /><span>从了解自己开始。</span></p>
-          <p className="cm-auth-brand-description">聊聊你的经历，理清你的方向。<br />让每一次学习和练习，都成为成长的下一步。</p>
-          <figure className="cm-auth-visual" aria-label="从认识自己到形成计划，再到持续成长的路径示意">
-            <svg className="cm-auth-path" viewBox="0 0 520 240" width="520" height="240" fill="none" aria-hidden="true">
-              <ellipse className="cm-auth-path-ground" cx="262" cy="183" rx="230" ry="33" />
-              <path className="cm-auth-path-back" d="M40 176C92 176 126 107 189 107S273 159 330 118 405 62 484 62" />
-              <path className="cm-auth-path-guide" d="M40 176C123 176 139 209 236 185S364 146 484 62" />
-              <path className="cm-auth-path-guide" d="M40 176C112 118 127 57 218 66S365 20 484 62" />
-              <path className="cm-auth-path-main" d="M40 176C118 176 159 138 236 133S356 64 484 62" />
-              <g className="cm-auth-path-node cm-auth-path-node-one"><circle cx="40" cy="176" r="17"/><circle className="cm-auth-path-dot" cx="40" cy="176" r="5"/></g>
-              <g className="cm-auth-path-node cm-auth-path-node-two"><circle cx="236" cy="133" r="24"/><path d="m227 134 6 6 12-14"/></g>
-              <g className="cm-auth-path-node cm-auth-path-node-three"><circle cx="484" cy="62" r="17"/><path d="M478 68l12-12M478 56h12v12"/></g>
-              <circle className="cm-auth-path-small" cx="125" cy="164" r="3"/>
-              <circle className="cm-auth-path-small" cx="352" cy="87" r="3"/>
-            </svg>
-            <figcaption className="cm-auth-path-captions"><span className="od-stat"><span className="cm-auth-step-no">01</span><span>认识自己</span></span><span className="od-stat"><span className="cm-auth-step-no">02</span><span>形成计划</span></span><span className="od-stat"><span className="cm-auth-step-no">03</span><span>持续成长</span></span></figcaption>
-          </figure>
-          <div className="cm-auth-intro-note od-row"><svg className="cm-auth-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m16 8-2.5 5.5L8 16l2.5-5.5L16 8Z"/></svg><span>你的下一步，由你决定。</span></div>
+        <section aria-label="CareerMate 职业成长伙伴" className="cm-auth-intro">
+          <div className="v2-auth-copy">
+            <div className="cm-auth-eyebrow od-row">
+              <span aria-hidden="true" className="cm-auth-signal" />
+              <span>
+                {"AI 职业成长伙伴"}
+              </span>
+            </div>
+            <p className="cm-auth-brand-title">
+              {"下一程，"}
+              <br />
+              <span>
+                {"从了解自己开始。"}
+              </span>
+            </p>
+            <p className="cm-auth-brand-description">
+              {"聊聊你的经历，理清你的方向。"}
+              <br />
+              {"让每一次学习和练习，都成为成长的下一步。"}
+            </p>
+            <div className="cm-auth-intro-note od-row">
+              <svg aria-hidden="true" className="v2-icon" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" viewBox="0 0 24 24">
+                <path d="m12 3 9 4v5c0 5-9 9-9 9s-9-4-9-9V7l9-4Z" />
+                <path d="m8 12 3 3 5-5" />
+              </svg>
+              <span>
+                {"你的下一步，由你决定。"}
+              </span>
+            </div>
+          </div>
+          <GrowthScene compact />
         </section>
         <section className="cm-auth-panel" aria-labelledby="cm-auth-title"><AuthPanel /></section>
       </main>
-      <footer className="cm-auth-footer od-row"><span>© 2026 CareerMate</span><span>陪你探索方向，也陪你走好每一步。</span></footer>
-
+      <footer className="cm-auth-footer od-row">
+        <span>
+          {"© 2026 CareerMate"}
+        </span>
+        <span>
+          {"陪你探索方向，也陪你走好每一步。"}
+        </span>
+      </footer>
     </div>
   );
 }
@@ -163,7 +204,7 @@ function AuthPanel() {
   }
 
   return (
-    <div className="cm-auth-content" data-state={status} ref={panelRef}>
+    <div className="cm-auth-content" data-state={status} data-mode={mode} ref={panelRef}>
       <h1 className="cm-auth-title" id="cm-auth-title">{mode === "login" ? "欢迎回来。" : "开启你的下一程。"}</h1>
       <p className="cm-auth-subtitle">{mode === "login" ? "登录，继续你的成长旅程。" : "创建账号，从认识自己开始。"}</p>
       <div className="cm-auth-tabs" role="tablist" aria-label="登录或注册">

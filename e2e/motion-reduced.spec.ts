@@ -23,7 +23,7 @@ test.describe("动效降级(reduced motion)", () => {
   test("未登录落地页关键元素可见且 opacity=1", async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto("/");
-    const title = page.locator(".cl-hero-title");
+    const title = page.locator("#hero-title");
     await expect(title).toBeVisible({ timeout: 15000 });
     // 门控生效时无动画、无内联透明;轮询兜底到稳定态,防"卡在透明"
     await expect
@@ -31,7 +31,7 @@ test.describe("动效降级(reduced motion)", () => {
       .toBe("1");
     await expect
       .poll(() =>
-        page.locator(".cl-hero-copy .cl-eyebrow").evaluate((el) => getComputedStyle(el).opacity),
+        page.locator(".v2-pretitle").evaluate((el) => getComputedStyle(el).opacity),
       )
       .toBe("1");
     expect(await title.getAttribute("style")).toBeNull();
