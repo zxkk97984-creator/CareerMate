@@ -19,7 +19,7 @@
 .chat-home-layout :is(button, a, input, textarea, select):focus-visible { outline: 2px solid #0e76ff; outline-offset: 3px; }
 .product-sidebar { background: #f8f8f7; backdrop-filter: none; padding: 0 12px; }
 .product-sidebar .sidebar-brand { padding: 20px 10px 16px; gap: 10px; text-decoration: none; color: #202124; flex-shrink: 0; }
-.product-sidebar .brand-icon { width: 32px; height: 32px; border-radius: 9px; background: #0e76ff; box-shadow: none; color: white; font-size: 12px; display: grid; place-items: center; }
+.product-sidebar .brand-mark { display: block; width: 32px; height: 32px; flex: none; }
 .product-sidebar .brand-name { font-size: 16px; font-weight: 650; letter-spacing: -.3px; }
 .product-sidebar .new-chat-btn {
   display: flex;

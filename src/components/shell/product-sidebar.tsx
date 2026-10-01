@@ -1,4 +1,5 @@
 "use client";
+import { BrandMark } from "@/components/brand-mark";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -26,7 +27,7 @@ export function ProductSidebar({ displayName, avatar = null, isAdmin, open, onCl
   }, [open, onClose]);
   const enter = () => { onClose(); router.push("/chat"); };
   return <aside className={`chat-sidebar product-sidebar ${open ? "sidebar-open" : ""}`} id="primary-sidebar" data-testid="primary-sidebar" aria-label="主导航">
-    <Link href="/chat" className="sidebar-brand"><span className="brand-icon">CM</span><span className="brand-name">CareerMate</span></Link>
+    <Link href="/chat" className="sidebar-brand"><BrandMark className="brand-mark" /><span className="brand-name">CareerMate</span></Link>
     <button className="new-chat-btn" onClick={() => { c.newChat(); enter(); }}><SquarePen size={18} />新对话</button>
     <div className="sidebar-section-label" aria-hidden="true">导航</div>
     <nav className="product-nav" aria-label="功能导航">

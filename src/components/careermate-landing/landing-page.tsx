@@ -1,5 +1,6 @@
 "use client";
 
+import { BrandMark } from "@/components/brand-mark";
 import Link from "next/link";
 import { GetStarted, FrequentlyAsked, Closing } from "./landing-sections";
 import { TrainingShowcase } from "./landing-training";
@@ -35,12 +36,7 @@ export function LandingPage() {
       <header className="cl-header">
         <div className="cl-nav cl-container od-row">
           <a aria-label="CareerMate 首页" className="cl-brand od-row" href="#top">
-            <svg aria-hidden="true" className="v2-logo" height="35" viewBox="0 0 40 40" width="35">
-              <path d="M21 19V13C21 5 29 1 37 3c2 8-2 16-10 16Z" fill="#2367FF" />
-              <path d="M19 21v6C19 35 11 39 3 37c-2-8 2-16 10-16Z" fill="#2367FF" />
-              <path d="M19 19h-6C5 19 1 11 3 3c8-2 16 2 16 10Z" fill="#7EACFF" />
-              <path d="M21 21h6c8 0 12 8 10 16-8 2-16-2-16-10Z" fill="#C5DBFF" />
-            </svg>
+            <BrandMark className="v2-logo" />
             <span>
               {"CareerMate"}
             </span>
@@ -100,12 +96,7 @@ export function LandingPage() {
       <footer className="cl-footer cl-container">
         <div className="cl-footer-top od-row">
           <a className="cl-brand od-row" href="#top">
-            <svg aria-hidden="true" className="v2-logo" height="35" viewBox="0 0 40 40" width="35">
-              <path d="M21 19V13C21 5 29 1 37 3c2 8-2 16-10 16Z" fill="#2367FF" />
-              <path d="M19 21v6C19 35 11 39 3 37c-2-8 2-16 10-16Z" fill="#2367FF" />
-              <path d="M19 19h-6C5 19 1 11 3 3c8-2 16 2 16 10Z" fill="#7EACFF" />
-              <path d="M21 21h6c8 0 12 8 10 16-8 2-16-2-16-10Z" fill="#C5DBFF" />
-            </svg>
+            <BrandMark className="v2-logo" />
             <span>
               {"CareerMate"}
             </span>
