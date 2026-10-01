@@ -202,8 +202,8 @@ MCP V2 的外层 Bearer、Origin 与协议校验见 `mcp-v2-handler.ts`，工具
 
 环境变量见 [.env.example](../.env.example) 和 `src/lib/env.ts`。普通聊天、结构化生成和训练有各自的降级规则，统一记录 `requestedMode`、`actualMode`、`degraded`、`fallbackReason`、`source`。不能把 HTTP 200、模型正文、Mock 完成与正式业务成功等同。
 
-生产服务需要可写且持久化的 SQLite 文件，数据库迁移使用版本化 SQL。开发用 `npm run seed` 会重建目标数据库：非 E2E 的生产环境禁止执行，E2E 模式还要求目标文件名为 `e2e.db` 或 `e2e-test.db`；普通开发环境不限制数据库文件名。评委启动器运行的是独立 `prisma/review-seed.ts`，在已有账号时直接保留记录，只对空评委库初始化体验数据，两者不可混用。
+生产服务需要可写且持久化的 SQLite 文件，数据库迁移使用版本化 SQL。开发用 `npm run seed` 会重建目标数据库：非 E2E 的生产环境禁止执行，E2E 模式还要求目标文件名为 `e2e.db` 或 `e2e-test.db`；普通开发环境不限制数据库文件名。评委启动器运行的是独立 `prisma/review-seed.ts`，只对无账号的评委库初始化体验账号和计划；每次启动都由 `prisma/review-catalog.ts` 增量补齐公共学习/岗位目录，按唯一键仅新增缺失条目，保留已有编辑和成长记录，两者不可混用。
 
-跨系统入口 `start.sh`、`start.command`、`start.bat` 汇合到 `scripts/launch-review.mjs`。共用启动器强制使用 `file:./review.db`（相对 Prisma 目录），安装锁定依赖、生成 Client、部署迁移、初始化空库、构建并监听 `127.0.0.1`；指纹未变且文件齐备时复用依赖和构建。个人开发库、依赖与构建产物不进入源码评委包。交付说明见 [scripts/submission/README.md](../scripts/submission/README.md)。单应用不等于已经具备多实例写入或弹性扩容能力，仓库没有实现分布式队列和锁服务。
+跨系统入口 `start.sh`、`start.command`、`start.bat` 汇合到 `scripts/launch-review.mjs`。共用启动器强制使用 `file:./review.db`（相对 Prisma 目录），安装锁定依赖、生成 Client、部署迁移、初始化空库账号并增量补齐公共目录、构建并监听 `127.0.0.1`；指纹未变且文件齐备时复用依赖和构建。个人开发库、依赖与构建产物不进入源码评委包。交付说明见 [scripts/submission/README.md](../scripts/submission/README.md)。单应用不等于已经具备多实例写入或弹性扩容能力，仓库没有实现分布式队列和锁服务。
 
 `npm run verify` 执行密钥扫描、lint、类型、Vitest、迁移烟测、评委初始化烟测与生产构建。`npm run test:e2e` 和 `test:e2e:v2` 分别验证基础 Mock 和 V2 Mock，E2E 服务使用独立 `e2e.db`。候选矩阵、上下文、平台代码节点、并发及训练恢复有对应源码测试；实际执行结果按执行时的命令输出判断，不写死历史通过数量。本次文档校准核对源码和文档链接，未据此重新宣称构建、E2E 或真实平台测试已通过。百宝箱部署、工具实际执行和生成质量仍需真实环境验证。

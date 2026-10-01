@@ -12,7 +12,7 @@ CareerMate 是面向大学生和职场新人的 AI 职业成长工作台，围�
 
 Windows 双击 `start.bat`，macOS 双击 `start.command`，Linux 执行 `bash start.sh`。脚本自动下载缺失的 Node.js 与锁定依赖，建立独立的 `prisma/review.db`，构建并打开 `http://localhost:3000`。只监听本机；按 Ctrl+C 停止。
 
-全新评审数据库自动创建体验账号 `reviewer / careermate123`，重复启动保留数据。从仓库启动时，未配置 `.env` 会复制 mock 模板；比赛私有交付包可附带作者提供的真实 API 配置。
+全新评审数据库自动创建体验账号 `reviewer / careermate123`。每次启动均按唯一键增量补齐包内的 23 条学习资源和 1213 条公开岗位样本，保留已有目录编辑、账号和成长记录；既有评审库也能获得此前缺失的目录。从仓库启动时，未配置 `.env` 会复制 mock 模板；比赛私有交付包可附带作者提供的真实 API 配置。
 
 制作精简评委包（需要打包机已安装 Node.js 22/24 与 Python 3.9+）：
 
@@ -20,7 +20,7 @@ Windows 双击 `start.bat`，macOS 双击 `start.command`，Linux 执行 `bash s
 python3 scripts/package-submission.py --with-api
 ```
 
-输出到被 Git 忽略的 `submission/`，包含 ZIP 和 SHA256 校验文件。包内保留必要源码、静态资源、迁移和启动说明，排除开发文档、测试、已安装依赖、构建、Git 历史和个人数据库；打包时会裁减测试与 lint 依赖并重新生成对应锁文件，因此打包机也需要联网访问 npm 官方源。`--with-api` 只将本地 `.env` 中模板定义的应用配置加入压缩包，要求有效的 API 模式配置，不会提交密钥；不传该参数可生成不含密钥的源码包。打包程序不会删除本地资料。正式包应在工作区提交完成后生成，以便 `release-manifest.json` 对应确切提交；有未提交改动时，文件名带 `-preview`，清单标记 `uncommittedChanges: true`。外置 `.zip.sha256` 用于核对传输完整性，不参与启动。
+输出到被 Git 忽略的 `submission/`，包含 ZIP 和 SHA256 校验文件。包内保留必要源码、静态资源、迁移、公共学习/岗位目录的数据源和启动说明，排除开发文档、测试、已安装依赖、构建、Git 历史和个人数据库；打包时会裁减测试与 lint 依赖并重新生成对应锁文件，因此打包机也需要联网访问 npm 官方源。`--with-api` 只将本地 `.env` 中模板定义的应用配置加入压缩包，要求有效的 API 模式配置，不会提交密钥；不传该参数可生成不含密钥的源码包。打包程序不会删除本地资料。正式包应在工作区提交完成后生成，以便 `release-manifest.json` 对应确切提交；有未提交改动时，文件名带 `-preview`，清单标记 `uncommittedChanges: true`。外置 `.zip.sha256` 用于核对传输完整性，不参与启动。
 
 详细评审说明见 [启动说明](scripts/submission/README.md)。已在 Linux 验证全新依赖安装、缺少 Node.js 时的官方下载、数据库初始化、生产启动与真实 API 对话；Windows/macOS 启动器尚未在目标系统实机验证。
 

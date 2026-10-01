@@ -15,12 +15,18 @@ TOP_LEVEL = {
     ".env.example", "package.json", "package-lock.json", "next.config.ts",
     "postcss.config.mjs", "tsconfig.json", "start.sh", "start.command", "start.bat",
 }
-RUNTIME_SCRIPTS = {"scripts/launch-review.mjs", "scripts/bootstrap-windows.ps1"}
-PRISMA_FILES = {"prisma/schema.prisma", "prisma/review-seed.ts", "prisma/seed-data.ts"}
+RUNTIME_SCRIPTS = {
+    "scripts/launch-review.mjs", "scripts/bootstrap-windows.ps1",
+    "scripts/lib/csv.ts", "scripts/lib/resource-import-validation.ts",
+}
+PRISMA_FILES = {
+    "prisma/schema.prisma", "prisma/review-seed.ts", "prisma/review-catalog.ts", "prisma/seed-data.ts",
+}
+DATA_FILES = {"data/resources/learning-resources.csv", "data/jobs/review-job-samples.json"}
 
 
 def included(path):
-    if path in TOP_LEVEL | RUNTIME_SCRIPTS | PRISMA_FILES:
+    if path in TOP_LEVEL | RUNTIME_SCRIPTS | PRISMA_FILES | DATA_FILES:
         return True
     if path.startswith("prisma/migrations/"):
         return path.endswith((".sql", ".toml"))
@@ -61,6 +67,9 @@ def main():
         if file.is_file():
             files[name] = file.read_bytes()
     files["README.md"] = (ROOT / "scripts/submission/README.md").read_bytes()
+    missing = sorted((TOP_LEVEL | RUNTIME_SCRIPTS | PRISMA_FILES | DATA_FILES) - files.keys())
+    if missing:
+        raise SystemExit("Missing required submission files: " + ", ".join(missing))
     manifest = json.loads(files["package.json"])
     manifest["scripts"] = {
         "launch": "node scripts/launch-review.mjs",
